@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings(database_url=args.db) if args.db else Settings()
     configure_logging(settings.log_level)
 
-    rows = generate(seed=args.seed)
+    rows = generate(settings.trazo_now, seed=args.seed)
     db = Database(settings.database_url)
     try:
         db.create_all()
