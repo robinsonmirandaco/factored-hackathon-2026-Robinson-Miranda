@@ -13,10 +13,6 @@ services:
       timeout: 3s
       retries: 20
 
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
-
   api:
     build: .
     # Same tag as panel so the image is built and stored once.
@@ -27,11 +23,9 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://bank:bank@postgres:5432/bankagent
-      REDIS_URL: redis://redis:6379/0
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
-      redis: { condition: service_started }
     command: >
       sh -c "python -m app.cli.ingest synthetic --seed 42 &&
              uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"
