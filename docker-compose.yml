@@ -1,14 +1,16 @@
+# Credentials come only from .env (copy .env.example). Compose stops with a clear message if
+# one is missing instead of starting with a default password.
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: bank
-      POSTGRES_PASSWORD: bank
-      POSTGRES_DB: bankagent
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bank -d bankagent"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -16,15 +18,15 @@ services:
   api:
     build: .
     image: bankagent:local
-    # Optional so a fresh clone starts without a .env (LLM falls back to rules).
     env_file:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://bank:bank@postgres:5432/bankagent
+      # Overrides the localhost URL in .env: inside compose the database host is "db".
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     ports: ["8000:8000"]
     depends_on:
-      postgres: { condition: service_healthy }
+      db: { condition: service_healthy }
     command: >
       sh -c "python -m app.cli.ingest synthetic --seed 42 &&
              uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"

@@ -25,6 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # No .env on purpose: this is what a fresh clone sees.
-      - run: docker compose config -q
+      # No .env in CI: the example file supplies the variables compose requires.
+      - run: docker compose --env-file .env.example config -q
       - run: docker build -t bankagent:ci .
