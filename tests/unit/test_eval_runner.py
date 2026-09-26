@@ -47,8 +47,8 @@ def test_every_skipped_case_names_the_story_that_rewrites_it():
 
 
 def test_wrong_expectation_is_reported_as_failure(tmp_path):
-    d = _one_case(tmp_path, "01_blocked_low_risk_en.yaml")
-    case_file = d / "01_blocked_low_risk_en.yaml"
+    d = _one_case(tmp_path, "09_lost_card_freezes.yaml")
+    case_file = d / "09_lost_card_freezes.yaml"
     case = yaml.safe_load(case_file.read_text())
     case["turns"][0]["expect"]["outcome"] = "escalated"
     case_file.write_text(yaml.safe_dump(case))
@@ -60,7 +60,7 @@ def test_wrong_expectation_is_reported_as_failure(tmp_path):
 
 
 def test_known_failure_that_starts_passing_is_flagged(tmp_path):
-    d = _one_case(tmp_path, "01_blocked_low_risk_en.yaml", known_failure="pretend this is broken")
+    d = _one_case(tmp_path, "09_lost_card_freezes.yaml", known_failure="pretend this is broken")
     results, summary = run(d, tmp_path / "reports")
     assert results[0].status == "unexpected_pass"
     assert summary["unexpected_passes"] == 1
@@ -78,8 +78,8 @@ def test_skipped_case_is_not_run_and_keeps_its_reason(tmp_path):
 
 
 def test_fixture_rejected_by_validator_is_an_error(tmp_path):
-    d = _one_case(tmp_path, "01_blocked_low_risk_en.yaml")
-    case_file = d / "01_blocked_low_risk_en.yaml"
+    d = _one_case(tmp_path, "05_blocked_over_limit_escalates.yaml")
+    case_file = d / "05_blocked_over_limit_escalates.yaml"
     case = yaml.safe_load(case_file.read_text())
     case["fixtures"]["transactions"][0]["amount"] = -5
     case_file.write_text(yaml.safe_dump(case))

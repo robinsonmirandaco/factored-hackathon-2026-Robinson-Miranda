@@ -1,5 +1,6 @@
 description: Two identical Uber Eats charges -> reverse the newest one, only after the customer confirms
 tags: [golden, duplicate_charge, confirmation, multi_turn]
+skip: reescrito en TRZ-17
 # Newest match is EVTX035 (3h ago). Risk: 0.6*0.123 + 0 + 0.15*(23/800)/3 = 0.075 -> low.
 # ceiling(duplicate_charge)=2 -> reverse_charge is class 2 -> needs confirmation -> L2.
 fixtures:

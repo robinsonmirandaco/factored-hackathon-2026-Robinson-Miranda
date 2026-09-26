@@ -352,14 +352,6 @@ def template_reply(facts: dict[str, Any], language: str) -> str:
     outcome = facts.get("outcome")
     if outcome == "auto_resolved":
         action = facts.get("action_taken", "")
-        if "unblock" in action:
-            return (
-                "Listo, tu compra fue liberada. Fue bloqueada por precaución y ya puedes "
-                "volver a intentarla."
-                if es
-                else "Done, your purchase has been released. It was blocked as a precaution "
-                "and you can try again now."
-            )
         if "freeze" in action:
             return (
                 "Tu tarjeta quedó bloqueada. Te contactaremos para la reposición."

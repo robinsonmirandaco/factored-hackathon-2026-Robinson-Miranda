@@ -2,9 +2,7 @@
 
 Action classes:
   0 read          lookup, profile
-  1 reversible    unblock, freeze, open case
-  2 sensitive     provisional credit, reverse charge   (needs customer confirmation)
-  3 irreversible  refund, close account                (human only, always)
+  1 reversible    freeze card, open dispute
 
 Display levels derived from a decision: L0 inform, L1 act, L2 act with confirmation, L3 human.
 """

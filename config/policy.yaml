@@ -2,9 +2,8 @@
 #
 # Action classes:
 #   0 read          lookup, profile
-#   1 reversible    unblock, freeze, open case
-#   2 sensitive     provisional credit, reverse charge   (needs customer confirmation)
-#   3 irreversible  refund, close account                (human only, always)
+#   1 reversible    freeze card, open dispute
+# No action moves money. Anything that would is escalated to a human.
 #
 # Display levels: L0 inform, L1 act, L2 act with confirmation, L3 human.
 #
@@ -20,8 +19,8 @@ amount_limits_usd:
 # Intent -> highest action class the agent may run for it, before amount adjustments.
 intent_ceiling:
   blocked_purchase: 1
-  unrecognized_charge: 2
-  duplicate_charge: 2
+  unrecognized_charge: 1
+  duplicate_charge: 1
   lost_or_stolen_card: 1
   general_inquiry: 0
   unknown: 0
@@ -32,13 +31,8 @@ action_class:
   get_customer_profile: 0
   list_recent_transactions: 0
   escalate_to_human: 0
-  unblock_transaction: 1
   freeze_card: 1
   open_dispute: 1
-  issue_provisional_credit: 2
-  reverse_charge: 2
-  issue_refund: 3
-  close_account: 3
 
 # Hard rules evaluated first. Any match forces escalation with clearance 0.
 hard_escalation_rules:

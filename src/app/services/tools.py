@@ -176,43 +176,7 @@ def lookup_transaction(
     return res
 
 
-# ---- state-changing tools (class 1, 2) --------------------------------------------------
-
-
-def unblock_transaction(session: Session, tx_id: str, case_id: str) -> ToolResult:
-    """Releases a blocked transaction.
-
-    Args:
-        session: Open database session.
-        tx_id: Transaction to release.
-        case_id: Case that owns the action; part of the idempotency key.
-
-    Returns:
-        Status before and after, or the stored result on a replay.
-    """
-    key = f"{case_id}:unblock_transaction:{tx_id}"
-    if prev := _existing(session, key):
-        return ToolResult(True, prev.result or {}, "already applied (idempotent)")
-    with timed() as t:
-        tx = session.get(Transaction, tx_id)
-        if not tx:
-            return ToolResult(False, {}, "transaction not found")
-        before = tx.status
-        tx.status = "approved"
-        res = ToolResult(
-            True, {"tx_id": tx_id, "status_before": before, "status_after": "approved"}
-        )
-    write_audit(
-        session,
-        "tool",
-        "unblock_transaction",
-        case_id,
-        {"tx_id": tx_id},
-        res.data,
-        t["ms"],
-        idempotency_key=key,
-    )
-    return res
+# ---- state-changing tools (class 1) -----------------------------------------------------
 
 
 def freeze_card(session: Session, customer_id: str, case_id: str) -> ToolResult:
@@ -278,71 +242,6 @@ def open_dispute(session: Session, tx_id: str, case_id: str, reason: str) -> Too
         "open_dispute",
         case_id,
         {"tx_id": tx_id, "reason": reason[:200]},
-        res.data,
-        t["ms"],
-        idempotency_key=key,
-    )
-    return res
-
-
-def issue_provisional_credit(session: Session, tx_id: str, case_id: str) -> ToolResult:
-    """Credits the disputed amount provisionally. Class 2: only after customer confirmation.
-
-    Args:
-        session: Open database session.
-        tx_id: Disputed transaction.
-        case_id: Case that owns the action; part of the idempotency key.
-
-    Returns:
-        The credit issued, or the stored result on a replay.
-    """
-    key = f"{case_id}:issue_provisional_credit:{tx_id}"
-    if prev := _existing(session, key):
-        return ToolResult(True, prev.result or {}, "already applied (idempotent)")
-    with timed() as t:
-        tx = session.get(Transaction, tx_id)
-        if not tx:
-            return ToolResult(False, {}, "transaction not found")
-        res = ToolResult(True, {"tx_id": tx_id, "credit_amount": tx.amount, "type": "provisional"})
-    write_audit(
-        session,
-        "tool",
-        "issue_provisional_credit",
-        case_id,
-        {"tx_id": tx_id},
-        res.data,
-        t["ms"],
-        idempotency_key=key,
-    )
-    return res
-
-
-def reverse_charge(session: Session, tx_id: str, case_id: str) -> ToolResult:
-    """Reverses a charge, for example a duplicate.
-
-    Args:
-        session: Open database session.
-        tx_id: Charge to reverse.
-        case_id: Case that owns the action; part of the idempotency key.
-
-    Returns:
-        The reversal, or the stored result on a replay.
-    """
-    key = f"{case_id}:reverse_charge:{tx_id}"
-    if prev := _existing(session, key):
-        return ToolResult(True, prev.result or {}, "already applied (idempotent)")
-    with timed() as t:
-        tx = session.get(Transaction, tx_id)
-        if not tx:
-            return ToolResult(False, {}, "transaction not found")
-        tx.status = "reversed"
-        res = ToolResult(True, {"tx_id": tx_id, "status_after": "reversed", "amount": tx.amount})
-    write_audit(
-        session,
-        "tool",
-        "reverse_charge",
-        case_id,
-        {"tx_id": tx_id},
         res.data,
         t["ms"],
         idempotency_key=key,

@@ -241,7 +241,7 @@ def handle_blocked_purchase(
     profile: dict[str, Any],
     confirm: bool,
 ) -> Facts:
-    """Unblocks a purchase the customer says they made, if policy allows.
+    """Checks a blocked purchase and hands it to a human, who decides whether to release it.
 
     All sub-agents share one contract: they receive the open session, the agent dependencies,
     the case, the validated extraction, the customer profile and the confirmation flag, and
@@ -266,19 +266,11 @@ def handle_blocked_purchase(
         facts["note"] = "transaction is not blocked"
         case.status = "closed"
         return facts
-    if decision.require_confirmation and not confirm:
-        case.status = "awaiting_customer"
-        facts["outcome"] = "awaiting_customer"
-        facts["pending_action"] = "unblock_transaction"
-        return facts
-    if deps.policy.can_execute("unblock_transaction", decision):
-        T.unblock_transaction(session, tx["tx_id"], case.id)
-        facts["actions_taken"].append("unblock_transaction")
-        facts["action_taken"] = "unblock_transaction"
-        facts["outcome"] = "auto_resolved"
-        case.status = "auto_resolved"
-        return facts
-    return _escalate(session, case, "policy does not allow unblock at this level", "unblock", facts)
+    # No tool releases a blocked purchase, because releasing it moves money.
+    case.autonomy_level = facts["autonomy_level"] = "L3"
+    return _escalate(
+        session, case, "releasing a blocked purchase needs a human", "unblock if legitimate", facts
+    )
 
 
 def handle_unrecognized_charge(
@@ -289,7 +281,7 @@ def handle_unrecognized_charge(
     profile: dict[str, Any],
     confirm: bool,
 ) -> Facts:
-    """Freezes the card and opens a dispute; offers provisional credit if allowed.
+    """Freezes the card and opens a dispute, if policy allows.
 
     All sub-agents share one contract: they receive the open session, the agent dependencies,
     the case, the validated extraction, the customer profile and the confirmation flag, and
@@ -318,23 +310,7 @@ def handle_unrecognized_charge(
         facts["actions_taken"].append("open_dispute")
 
     if decision.escalate:
-        return _escalate(
-            session, case, decision.reason, "review dispute, consider provisional credit", facts
-        )
-
-    # Provisional credit is class 2: needs confirmation.
-    if pol.can_execute("issue_provisional_credit", decision):
-        if not confirm:
-            case.status = "awaiting_customer"
-            facts["outcome"] = "awaiting_customer"
-            facts["pending_action"] = "issue_provisional_credit"
-            return facts
-        T.issue_provisional_credit(session, tx["tx_id"], case.id)
-        facts["actions_taken"].append("issue_provisional_credit")
-        facts["action_taken"] = "issue_provisional_credit"
-        facts["outcome"] = "auto_resolved"
-        case.status = "auto_resolved"
-        return facts
+        return _escalate(session, case, decision.reason, "review dispute", facts)
 
     facts["action_taken"] = "open_dispute"
     facts["outcome"] = "auto_resolved"
@@ -350,7 +326,7 @@ def handle_duplicate_charge(
     profile: dict[str, Any],
     confirm: bool,
 ) -> Facts:
-    """Reverses the second of two identical charges after customer confirmation.
+    """Confirms two identical charges and hands the reversal to a human.
 
     All sub-agents share one contract: they receive the open session, the agent dependencies,
     the case, the validated extraction, the customer profile and the confirmation flag, and
@@ -377,19 +353,11 @@ def handle_duplicate_charge(
     facts["duplicate_of"] = matches[1]["tx_id"]
     if decision.escalate:
         return _escalate(session, case, decision.reason, "reverse duplicate", facts)
-    if deps.policy.can_execute("reverse_charge", decision):
-        if not confirm:
-            case.status = "awaiting_customer"
-            facts["outcome"] = "awaiting_customer"
-            facts["pending_action"] = "reverse_charge"
-            return facts
-        T.reverse_charge(session, tx["tx_id"], case.id)
-        facts["actions_taken"].append("reverse_charge")
-        facts["action_taken"] = "reverse_charge"
-        facts["outcome"] = "auto_resolved"
-        case.status = "auto_resolved"
-        return facts
-    return _escalate(session, case, "reverse not allowed at this level", "reverse duplicate", facts)
+    # No tool reverses a charge, because reversing it moves money.
+    case.autonomy_level = facts["autonomy_level"] = "L3"
+    return _escalate(
+        session, case, "reversing a duplicate charge needs a human", "reverse duplicate", facts
+    )
 
 
 def handle_lost_or_stolen(
