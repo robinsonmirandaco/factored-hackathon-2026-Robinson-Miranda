@@ -1,1 +1,1 @@
-"""Source adapters that map external datasets to canonical rows."""
+"""Source adapters that produce canonical rows. Only the synthetic generator remains."""

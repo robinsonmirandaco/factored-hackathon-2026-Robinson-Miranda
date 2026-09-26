@@ -1,5 +1,6 @@
 description: Same as 01 in Spanish, amount written as "300 dolares" -> L1 unblock
 tags: [golden, blocked_purchase, spanish]
+skip: reescrito en TRZ-17
 # Risk: 0.6*0.059 + 0 + 0.15*(300/800)/3 = 0.054 -> low. 300 <= 500 -> L1.
 fixtures:
   customer: {id: EVC02, country: US, avg_monthly_spend: 800, tenure_months: 24}

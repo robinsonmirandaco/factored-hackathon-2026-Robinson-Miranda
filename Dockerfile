@@ -1,24 +1,24 @@
 FROM python:3.12-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
-RUN pip install --no-cache-dir uv \
+# uv is pinned to the version that wrote uv.lock.
+RUN pip install --no-cache-dir uv==0.11.31 \
     && useradd --create-home --uid 10001 appuser \
     && chown appuser /app
 
-# Dependencies get their own layer, keyed only on pyproject.toml, so a code change reuses it
-# instead of reinstalling about 2 GB of libraries. The panel shares this image, so its extra
-# is installed; test and lint tools are not.
-COPY pyproject.toml ./
-RUN uv pip install --system --no-cache -r pyproject.toml --extra panel
+# Dependencies get their own layer, keyed only on the lockfile, so a code change reuses it.
+# Test and lint tools (the dev group) are not installed.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 COPY --chown=appuser README.md ./
 COPY --chown=appuser src ./src
-RUN uv pip install --system --no-cache --no-deps .
+RUN uv sync --frozen --no-dev --no-editable --no-cache
 
 # The API writes the ingestion report under eval/reports, so app files belong to appuser.
 COPY --chown=appuser config ./config
 COPY --chown=appuser eval ./eval
-COPY --chown=appuser panel ./panel
 RUN mkdir -p data/seed && chown -R appuser data
 USER appuser
 EXPOSE 8000

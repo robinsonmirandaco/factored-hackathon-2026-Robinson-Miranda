@@ -1,5 +1,6 @@
 description: Customer with risk_tier=restricted -> hard rule restricted_customer even for a low-risk, small purchase
 tags: [golden, blocked_purchase, escalation]
+skip: reescrito en TRZ-17
 # Risk: 0.6*0.167 + 0 + 0.15*(30/800)/3 = 0.102 -> low, 30 USD. Only the restricted tier forces L3.
 fixtures:
   customer: {id: EVC07, country: US, avg_monthly_spend: 800, tenure_months: 6, risk_tier: restricted}

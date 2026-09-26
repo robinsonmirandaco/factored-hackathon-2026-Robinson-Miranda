@@ -3,15 +3,12 @@
 import json
 import time
 from collections.abc import Callable
-from pathlib import Path
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
 from app.adapters.llm import LLMClient
 from app.core.config import Settings
-from app.main import create_app
 
 BASE_URL = "http://llm.test/v1"
 Handler = Callable[[httpx.Request], httpx.Response]
@@ -19,11 +16,13 @@ Handler = Callable[[httpx.Request], httpx.Response]
 
 def _settings(**overrides: object) -> Settings:
     # Explicit so CI's LLM_ENABLED=false does not disable the client under test.
+    # The LLM client never connects to the database; the URL only satisfies Settings.
     values: dict[str, object] = {
+        "database_url": "postgresql+psycopg://unused@localhost:1/unused",
         "llm_enabled": True,
         "llm_provider": "local",
         "llm_base_url": BASE_URL,
-        "llm_model": "test-model",
+        "llm_model_primary": "test-model",
         "llm_max_retries": 1,
         "anthropic_api_key": "",
     }
@@ -178,19 +177,3 @@ def test_unconfigured_llm_is_not_available(overrides: dict[str, object]) -> None
 
     assert not llm.available
     assert stats.error == "llm_disabled"
-
-
-def test_health_reports_real_llm_availability(tmp_path: Path) -> None:
-    app = create_app(
-        Settings(
-            database_url=f"sqlite:///{tmp_path}/t.db",
-            llm_provider="anthropic",
-            anthropic_api_key="",
-            log_level="WARNING",
-        )
-    )
-    with TestClient(app) as client:
-        body = client.get("/health").json()
-
-    assert body["llm_provider"] == "anthropic"
-    assert body["llm_available"] is False

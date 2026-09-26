@@ -1,7 +1,6 @@
 """API contract: error envelope, trace_id, case ownership and PII in operator notes."""
 
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -16,12 +15,12 @@ from app.core.time import utcnow
 from app.main import create_app
 from app.services.ingestion import ingest_rows
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
-def app(tmp_path: Path) -> FastAPI:
-    return create_app(
-        Settings(database_url=f"sqlite:///{tmp_path}/t.db", llm_enabled=False, log_level="WARNING")
-    )
+def app(database_url: str) -> FastAPI:
+    return create_app(Settings(database_url=database_url, llm_enabled=False, log_level="WARNING"))
 
 
 @pytest.fixture
@@ -144,3 +143,19 @@ def test_decision_on_non_escalated_case_conflicts(client: TestClient) -> None:
     r = client.post(f"/cases/{chat.json()['case_id']}/decision", json={"decision": "approve"})
     assert r.status_code == 409
     _assert_envelope(r.json(), "case_not_escalated")
+
+
+def test_health_reports_real_llm_availability(database_url: str) -> None:
+    app = create_app(
+        Settings(
+            database_url=database_url,
+            llm_provider="anthropic",
+            anthropic_api_key="",
+            log_level="WARNING",
+        )
+    )
+    with TestClient(app) as client:
+        body = client.get("/health").json()
+
+    assert body["llm_provider"] == "anthropic"
+    assert body["llm_available"] is False

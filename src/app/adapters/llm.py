@@ -87,7 +87,7 @@ class LLMClient:
             http_client: Client for the local provider; built from settings when omitted.
         """
         self.provider = settings.llm_provider
-        self.model = settings.llm_model
+        self.model = settings.llm_model_primary
         self._max_retries = settings.llm_max_retries
         # httpx timeouts bound each network phase, not the whole call, so a slow server can
         # hold a turn far longer than the design's 5 s. The pool enforces a wall-clock deadline.
@@ -352,14 +352,6 @@ def template_reply(facts: dict[str, Any], language: str) -> str:
     outcome = facts.get("outcome")
     if outcome == "auto_resolved":
         action = facts.get("action_taken", "")
-        if "unblock" in action:
-            return (
-                "Listo, tu compra fue liberada. Fue bloqueada por precaución y ya puedes "
-                "volver a intentarla."
-                if es
-                else "Done, your purchase has been released. It was blocked as a precaution "
-                "and you can try again now."
-            )
         if "freeze" in action:
             return (
                 "Tu tarjeta quedó bloqueada. Te contactaremos para la reposición."

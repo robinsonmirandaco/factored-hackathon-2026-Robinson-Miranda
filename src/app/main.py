@@ -7,7 +7,6 @@ from fastapi import FastAPI
 
 from app.adapters.db.session import Database
 from app.adapters.llm import LLMClient
-from app.adapters.scorer import build_scorer
 from app.api.deps import Runtime
 from app.api.routes import router
 from app.core.config import Settings
@@ -27,7 +26,7 @@ def build_runtime(settings: Settings) -> Runtime:
         settings: Application settings.
 
     Returns:
-        The runtime: database, policy, LLM client and scorer.
+        The runtime: database, policy and LLM client.
     """
     return Runtime(
         settings=settings,
@@ -35,7 +34,6 @@ def build_runtime(settings: Settings) -> Runtime:
         agent=AgentDeps(
             policy=PolicyEngine.from_file(settings.policy_path),
             llm=LLMClient(settings),
-            scorer=build_scorer(settings),
         ),
     )
 
@@ -58,10 +56,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime.db.create_all()
         log.info(
             "startup",
-            env=settings.env,
-            scorer=runtime.agent.scorer.name,
+            app_env=settings.app_env,
             llm_provider=settings.llm_provider,
-            llm_model=settings.llm_model,
+            llm_model=settings.llm_model_primary,
             llm_available=runtime.agent.llm.available,
         )
         yield

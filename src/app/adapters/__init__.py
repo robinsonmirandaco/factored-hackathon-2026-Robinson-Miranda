@@ -1,1 +1,1 @@
-"""Integrations with the outside world: database, LLM, scorer, data sources."""
+"""Integrations with the outside world: database, LLM, data sources."""

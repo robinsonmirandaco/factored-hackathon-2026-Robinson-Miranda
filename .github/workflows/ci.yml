@@ -5,17 +5,34 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # Integration tests and golden cases run on Postgres, as in compose.
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci" --health-interval 3s --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      LLM_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install uv && uv pip install --system -e ".[dev,panel]"
-      - run: ruff check src tests panel
-      - run: ruff format --check src tests panel
-      - run: LLM_ENABLED=false pytest --cov=app --cov-report=xml
-      - run: LLM_ENABLED=false python -m app.cli.ingest synthetic --seed 42 --db sqlite:///ci.db
-      # Each golden case seeds its own throwaway DB, so no DATABASE_URL here.
-      - run: LLM_ENABLED=false python -m app.cli.eval eval/cases --out eval/reports
+      # Python comes from .python-version; dependencies come only from uv.lock.
+      - uses: astral-sh/setup-uv@v6
+        with: { version: "0.11.31" }
+      - run: uv sync --frozen
+      - run: uv run --frozen ruff check src tests
+      - run: uv run --frozen ruff format --check src tests
+      - run: uv run --frozen pytest --cov=app --cov-report=xml
+      # The synthetic generator is the CI fixture: it exercises validation and quarantine.
+      - run: uv run --frozen python -m app.cli.ingest synthetic --seed 42
+      # Each golden case runs on its own throwaway schema.
+      - run: uv run --frozen python -m app.cli.eval eval/cases --out eval/reports
       - uses: actions/upload-artifact@v4
         with:
           name: eval-report
@@ -24,6 +41,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # No .env on purpose: this is what a fresh clone sees.
-      - run: docker compose config -q
+      # No .env in CI: the example file supplies the variables compose requires.
+      - run: docker compose --env-file .env.example config -q
       - run: docker build -t bankagent:ci .

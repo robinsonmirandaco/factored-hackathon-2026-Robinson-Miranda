@@ -19,7 +19,6 @@ class CustomerRow(BaseModel):
     country: str = Field(default="US", min_length=2, max_length=2)
     tenure_months: int = Field(default=0, ge=0, le=600)
     avg_monthly_spend: float = Field(default=0.0, ge=0)
-    risk_tier: str = "standard"
     card_status: str = "active"
 
 
@@ -36,7 +35,6 @@ class TransactionRow(BaseModel):
     channel: str = "online"
     timestamp: datetime
     status: str = "approved"
-    is_fraud: bool | None = None
     source: str = "synthetic"
 
     @field_validator("currency")

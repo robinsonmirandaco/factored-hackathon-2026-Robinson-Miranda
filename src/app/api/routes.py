@@ -32,9 +32,8 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
     s = runtime.settings
     return HealthOut(
         status="ok",
-        env=s.env,
+        app_env=s.app_env,
         db="ok",
-        scorer=s.scorer_backend,
         llm_provider=s.llm_provider,
         llm_available=runtime.agent.llm.available,
     )
@@ -53,7 +52,6 @@ def chat(body: ChatIn, session: SessionDep, runtime: RuntimeDep) -> ChatOut:
         reply=r.reply,
         outcome=r.outcome,
         autonomy_level=r.autonomy_level,
-        risk_score=r.risk_score,
         actions_taken=r.actions_taken,
         llm_fallback=r.llm_fallback,
         tokens=r.tokens,
@@ -91,5 +89,5 @@ def human_decision(case_id: str, body: HumanDecisionIn, session: SessionDep) -> 
 
 @router.get("/metrics", response_model=MetricsOut)
 def metrics(session: SessionDep) -> MetricsOut:
-    """Returns operational counters for the panel."""
+    """Returns operational counters from the cases table and the audit log."""
     return cases.get_metrics(session)

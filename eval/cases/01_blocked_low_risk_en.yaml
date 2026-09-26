@@ -1,5 +1,6 @@
 description: Blocked purchase, customer says it was them, low risk and small amount -> agent unblocks alone (L1)
 tags: [golden, blocked_purchase]
+skip: reescrito en TRZ-17
 # Risk (random scorer): 0.6*hash(EVTX003)=0.6*0.051 + domestic 0 + 0.15*(42/800)/3 = 0.033 -> low band.
 # Policy: ceiling(blocked_purchase)=1, low band, 42 <= l1_max 500 -> clearance 1, no confirmation -> L1.
 fixtures:

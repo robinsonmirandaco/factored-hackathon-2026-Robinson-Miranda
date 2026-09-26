@@ -1,49 +1,53 @@
-# bankagent
+# TRAZO
 
-AI-first banking customer service agent with graded autonomy, risk scoring and human-in-the-loop.
-Built for the Factored AI & Data Hackathon 2026.
+An AI-first intake assistant for disputed card transactions, built for the Factored AI & Data Hackathon 2026. The LLM understands and drafts; code decides and acts; statistics define how much autonomy the system earns.
 
-Status: scaffold. The system runs end to end on synthetic data with a placeholder random scorer.
-The challenge dataset, the trained model and the measured results are added in later steps.
+## Status
+
+Scaffold. The service runs end to end on synthetic data, aligned with the target architecture. It does not yet use the challenge dataset or the dispute workflow of the design. 8 of the 13 golden cases are skipped until the dispute policy is rewritten (TRZ-17); `make eval` reports them as skipped with that reason.
 
 ## Requirements
 
-- Docker with Docker Compose, or Python 3.12 for the local mode
-- About 3 GB of free disk for the Docker image
-- Free ports 8000 (API), 8501 (panel), 5432 (Postgres) and 6379 (Redis) when using Docker
-- Optional: an Anthropic API key. Without a working LLM provider every turn uses the
-  deterministic fallback, so the whole system still runs.
+- Docker with Docker Compose.
+- [uv](https://docs.astral.sh/uv/) for local development (the lock file was produced with uv 0.11.31).
+- Free ports: 8000 (API) and 5432 (Postgres).
+- Optional: an Anthropic API key in `ANTHROPIC_API_KEY`. Without it, every turn falls back to deterministic rules and templates, and `/health` reports `llm_available: false`.
 
 ## Run with Docker (recommended)
 
 ```bash
-cp .env.example .env    # optional; set ANTHROPIC_API_KEY to enable the LLM
+cp .env.example .env
 docker compose up --build
 ```
 
-The API seeds synthetic data on startup (`--seed 42`), then serves:
+Copying `.env.example` is required: Compose needs `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` to start. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
+
+The `db` service starts first. The `api` service then loads the synthetic fixture (`ingest synthetic --seed 42`) and serves:
 
 | Service | URL |
 | --- | --- |
 | API docs | http://localhost:8000/docs |
 | Health | http://localhost:8000/health |
-| Panel | http://localhost:8501 |
 
-Compose runs the system on Postgres. `docker compose down` keeps the data volume.
+`docker compose down` stops the services and keeps the database volume.
 
-## Run locally without Docker
+## Run the API locally
 
-SQLite is used for local runs and unit tests only; the system runs on Postgres under Docker Compose.
+The API runs on your machine against the Postgres service from Compose. `--wait` returns only when Postgres is healthy, so the next commands can connect:
 
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,panel]"
-cp .env.example .env                                # optional, see Requirements
-python -m app.cli.ingest synthetic --seed 42        # seeds SQLite, writes eval/reports/ingest_synthetic.json
-uvicorn app.main:create_app --factory --port 8000   # http://localhost:8000/docs
+cp .env.example .env
+uv sync
+docker compose up -d --wait db
+uv run python -m app.cli.ingest synthetic --seed 42
+uv run uvicorn app.main:create_app --factory --port 8000
 ```
 
-Try it:
+Then open http://localhost:8000/docs.
+
+## Try it
+
+**Warning:** the endpoints do not have authentication yet, and `/chat` still takes `customer_id` in the request body. Session-based authentication arrives with TRZ-09. Do not expose this service on a public URL before then.
 
 ```bash
 curl -s -X POST localhost:8000/chat \
@@ -51,33 +55,39 @@ curl -s -X POST localhost:8000/chat \
   -d '{"customer_id": "C00001", "message": "What is my balance?"}'
 ```
 
-The response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and a `trace_id`;
-`GET /cases/{case_id}/trace` returns the audit events of that case.
+The response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and a `trace_id`. `GET /cases/{case_id}/trace` returns the audit events of that case.
 
 ## Test and evaluate
 
 | Command | What it does | Output |
 | --- | --- | --- |
-| `make test` | Unit tests with coverage (integration tests excluded) | Terminal |
+| `make test` | Unit tests with coverage; they do not need a database | Terminal |
 | `make lint` | ruff check and format check | Terminal |
+| `uv run pytest -m integration` | Integration tests against Postgres | Terminal |
 | `make eval` | Runs the golden conversation cases in `eval/cases/` | `eval/reports/golden_report.md` |
-| `python -m app.cli.ingest synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
+| `uv run python -m app.cli.ingest synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
 
-Integration tests are marked `@pytest.mark.integration` and need the Docker Compose stack.
-CI (`.github/workflows/ci.yml`) runs lint, tests, ingestion, the golden cases and the Docker build
-on every push, and publishes `eval/reports/` as an artifact.
+Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
+
+CI (`.github/workflows/ci.yml`) runs lint, unit and integration tests against a Postgres service, ingestion, the golden cases and the Docker build on every push and pull request, and publishes `eval/reports/` as an artifact.
+
+## Synthetic data
+
+The synthetic generator creates customers, transactions and messages, including deliberately invalid rows, to exercise validation and quarantine. It is a fixture for CI and Compose, not the challenge dataset. The challenge data is never stored in this repository.
 
 ## API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/health` | Status of database, scorer and LLM provider |
+| GET | `/health` | Status of the app, database and LLM provider |
 | POST | `/chat` | One customer turn |
 | GET | `/cases/{case_id}` | Case state |
 | GET | `/cases/{case_id}/trace` | Audit events of a case |
 | GET | `/queue` | Cases waiting for a human |
 | POST | `/cases/{case_id}/decision` | Human decision on an escalated case |
-| GET | `/metrics` | Operational metrics from the audit log |
+| GET | `/metrics` | Operational metrics |
+
+`/health` returns `status`, `app_env`, `db`, `llm_provider` and `llm_available`.
 
 ## Repository layout
 
@@ -86,12 +96,14 @@ on every push, and publishes `eval/reports/` as an artifact.
 | `src/app/api/` | Thin FastAPI routers |
 | `src/app/schemas/` | Pydantic input and output models |
 | `src/app/services/` | Application logic (agent, tools, cases, ingestion) |
-| `src/app/domain/` | Pure business rules (policy router, risk, PII redaction) |
-| `src/app/adapters/` | Database, LLM client, scorer, ingestion adapters |
+| `src/app/domain/` | Pure business rules (policy, PII redaction) |
+| `src/app/adapters/` | Database, LLM client and ingestion adapters |
 | `src/app/core/` | Settings, logging, errors, trace_id middleware |
-| `config/policy.yaml` | Autonomy policy: risk bands, amount limits, action classes |
+| `config/policy.yaml` | Autonomy policy: amount limits, intent ceilings, action classes and hard escalation rules |
 | `eval/cases/` | Golden conversation cases, one YAML per case |
-| `panel/` | Streamlit panel for the human agent |
+| `web/` | Reserved for the customer and back-office web app |
+| `tests/unit/` | Unit tests, no database |
+| `tests/integration/` | Integration tests against Postgres |
 
 ## License
 

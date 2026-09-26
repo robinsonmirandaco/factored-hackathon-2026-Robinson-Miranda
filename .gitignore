@@ -19,8 +19,8 @@ coverage.xml
 
 # Local data and model artifacts
 *.db
-data/raw/
-data/models/
+*.log
+data/
 eval/reports/
 
 # OS
