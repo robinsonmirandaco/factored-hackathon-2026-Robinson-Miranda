@@ -5,8 +5,9 @@
 Each case is one YAML file: fixtures (initial DB state), then one or more chat turns, each
 with the expected intent, outcome, autonomy level and actions. The runner:
 
-  1. gives every case its own fresh SQLite database, so cases are order-independent and do not
-     depend on the synthetic dataset (whose timestamps move with the clock),
+  1. gives every case its own throwaway schema in the Postgres of DATABASE_URL, so cases are
+     order-independent, never touch existing tables and do not depend on the synthetic dataset
+     (whose timestamps move with the clock),
   2. loads the fixtures through the real ingestion validator (bad fixtures fail loudly),
   3. drives the conversation through the real API (POST /chat) in-process,
   4. compares, and writes a JSON + Markdown report.
@@ -25,7 +26,6 @@ import json
 import os
 import statistics
 import sys
-import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -34,6 +34,7 @@ from typing import Any
 import yaml
 from fastapi.testclient import TestClient
 
+from app.adapters.db.session import isolated_schema
 from app.api.deps import Runtime
 from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger
@@ -116,12 +117,12 @@ def _fixture_rows(
 # ---- running ------------------------------------------------------------------------------
 
 
-def run_case(case: dict[str, Any], workdir: Path) -> CaseResult:
-    """Runs one case against its own fresh SQLite database through the real API.
+def run_case(case: dict[str, Any], database_url: str) -> CaseResult:
+    """Runs one case through the real API against the given database.
 
     Args:
         case: Parsed case.
-        workdir: Directory for the case database.
+        database_url: URL of an empty schema reserved for this case.
 
     Returns:
         The case result.
@@ -133,7 +134,7 @@ def run_case(case: dict[str, Any], workdir: Path) -> CaseResult:
         status="pass",
         known_failure=case.get("known_failure"),
     )
-    app = create_app(Settings(database_url=f"sqlite:///{workdir / case['id']}.db"))
+    app = create_app(Settings(database_url=database_url))
     runtime: Runtime = app.state.runtime
     customers, transactions, interactions = _fixture_rows(case, utcnow())
 
@@ -329,33 +330,34 @@ def run(cases_dir: str | Path, out_dir: str | Path) -> tuple[list[CaseResult], d
     cases = load_cases(cases_dir)
     if not cases:
         raise SystemExit(f"no cases found in {cases_dir}")
+    base_url = Settings().database_url
     results = []
-    with tempfile.TemporaryDirectory(prefix="bankagent-eval-") as tmp:
-        for case in cases:
-            if case.get("skip"):
-                results.append(
-                    CaseResult(
-                        id=case["id"],
-                        description=case.get("description", ""),
-                        tags=case.get("tags", []),
-                        status="skipped",
-                        skipped=case["skip"],
-                    )
+    for case in cases:
+        if case.get("skip"):
+            results.append(
+                CaseResult(
+                    id=case["id"],
+                    description=case.get("description", ""),
+                    tags=case.get("tags", []),
+                    status="skipped",
+                    skipped=case["skip"],
                 )
-                continue
-            try:
-                results.append(run_case(case, Path(tmp)))
-            except Exception as e:  # a crash in one case must not hide the others
-                results.append(
-                    CaseResult(
-                        id=case["id"],
-                        description=case.get("description", ""),
-                        tags=case.get("tags", []),
-                        status="error",
-                        known_failure=case.get("known_failure"),
-                        error=f"{type(e).__name__}: {e}",
-                    )
+            )
+            continue
+        try:
+            with isolated_schema(base_url, "golden") as url:
+                results.append(run_case(case, url))
+        except Exception as e:  # a crash in one case must not hide the others
+            results.append(
+                CaseResult(
+                    id=case["id"],
+                    description=case.get("description", ""),
+                    tags=case.get("tags", []),
+                    status="error",
+                    known_failure=case.get("known_failure"),
+                    error=f"{type(e).__name__}: {e}",
                 )
+            )
     summary = summarize(results)
     write_report(results, summary, out_dir)
     return results, summary

@@ -1,1 +1,1 @@
-"""Postgres/SQLite persistence: models, sessions, audit log."""
+"""Postgres persistence: models, sessions, audit log."""

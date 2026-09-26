@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     app_name: str = "bankagent"
     app_env: str = "local"  # local | ci | prod
 
-    # Postgres in compose, SQLite for local runs and tests.
-    database_url: str = "sqlite:///./bankagent.db"
+    # Required: postgresql+psycopg://... There is no default, so a missing value fails at startup.
+    database_url: str
 
     # anthropic: Claude through the official SDK. local: an OpenAI-compatible server such as
     # Docker Model Runner or Ollama, so the agent can run without a paid key.
