@@ -5,6 +5,7 @@ bronze rows = silver rows + quarantine rows, per table, or the run fails.
 
 import shutil
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import duckdb
@@ -17,10 +18,6 @@ from pipeline.manifest import BronzeFile
 log = get_logger("pipeline.silver")
 
 PARQUET = "FORMAT parquet, COMPRESSION zstd"
-PARTITIONED_PARQUET = (
-    f"{PARQUET}, PARTITION_BY (partition_date), WRITE_PARTITION_COLUMNS true, "
-    "FILENAME_PATTERN 'data', OVERWRITE_OR_IGNORE true"
-)
 
 
 @dataclass(frozen=True)
@@ -57,21 +54,51 @@ class Normalization:
 
 @dataclass(frozen=True)
 class TableResult:
-    """Row counts of one table in one run.
+    """Row counts of one table after a run, over all of its bronze files.
 
     Attributes:
         table: Table name.
-        files: Bronze files read.
-        bronze_rows: Rows in those files.
-        silver_rows: Rows written to silver.
-        quarantine_rows: Rows written to quarantine.
+        files: Bronze files of the table.
+        files_read: Files read in this run; the rest were already processed.
+        bronze_rows: Rows in the bronze files.
+        silver_rows: Rows in silver.
+        quarantine_rows: Rows in quarantine.
     """
 
     table: str
     files: int
+    files_read: int
     bronze_rows: int
     silver_rows: int
     quarantine_rows: int
+
+
+@dataclass(frozen=True)
+class FileCounts:
+    """Rows of one bronze file and where they went.
+
+    Attributes:
+        bronze: Rows in the file.
+        silver: Rows written to silver.
+        quarantine: Rows written to quarantine.
+    """
+
+    bronze: int
+    silver: int
+    quarantine: int
+
+
+@dataclass(frozen=True)
+class Lineage:
+    """Run-level lineage stamped on every silver and gold row.
+
+    Attributes:
+        batch_id: Identifier of the run's input: same bronze content and version, same id.
+        pipeline_version: Version of the contracts and transformations.
+    """
+
+    batch_id: str
+    pipeline_version: str
 
 
 def load_normalization(path: Path) -> Normalization:
@@ -322,7 +349,13 @@ def output_columns(contract: Contract) -> list[str]:
             f"coalesce({_all_present(contract.business_key, 't')} "
             f"AND count(*) OVER (PARTITION BY {keys}) > 1, false) AS alert_duplicate_business_key"
         )
-    items += ["r.source_file AS source_file", "r.partition_date AS partition_date"]
+    items += [
+        "r.source_file AS source_file",
+        "r.partition_date AS partition_date",
+        "r.batch_id AS batch_id",
+        "r.ingested_at AS ingested_at",
+        "r.pipeline_version AS pipeline_version",
+    ]
     return items
 
 
@@ -334,17 +367,63 @@ def _rule(rule: str, column: str, value: str, where: str) -> str:
 
 
 def _duplicates(rule: str, keys: tuple[str, ...], contract: Contract) -> str:
-    """Flags every occurrence of a key after the first, in partition and file order."""
+    """Flags a key already in silver (`existing_keys`), and every repeat after the first in the
+    files being read, in partition and file order."""
     partition = ", ".join(f"r.{q(k)}" for k in keys)
     tiebreak = ", ".join(f"r.{q(c)}" for c in contract.header)
+    match = " AND ".join(f"e.{q(k)} = t.{q(k)}" for k in keys)
     return f"""
         SELECT _rid, {sql_str(rule)}, {sql_str(",".join(keys))}, key_value FROM (
             SELECT r._rid, concat_ws('|', {partition}) AS key_value,
                    row_number() OVER (PARTITION BY {partition}
-                                      ORDER BY r.partition_date, r.source_file, {tiebreak}) AS n
-            FROM raw r WHERE {_all_present(keys, "r")})
-        WHERE n > 1
+                                      ORDER BY r.partition_date, r.source_file, {tiebreak}) AS n,
+                   EXISTS (SELECT 1 FROM existing_keys e WHERE {match}) AS in_silver
+            FROM raw r JOIN typed t ON t._rid = r._rid WHERE {_all_present(keys, "r")})
+        WHERE n > 1 OR in_silver
     """
+
+
+def key_columns(contract: Contract) -> list[str]:
+    """Returns the primary and business key columns checked for duplicates, without repeats.
+
+    Args:
+        contract: Table contract.
+
+    Returns:
+        Column names.
+    """
+    keys = list(contract.primary_key)
+    if contract.partitioned:
+        keys += [k for k in contract.business_key if k not in keys]
+    return keys
+
+
+def register_existing_keys(
+    con: duckdb.DuckDBPyConnection, contract: Contract, kept: list[Path]
+) -> None:
+    """Loads the keys of the silver files that stay, typed like `typed`, as `existing_keys`.
+
+    Zoned timestamps are turned back into naive local time so they compare with the source.
+
+    Args:
+        con: DuckDB connection with `typed` built.
+        contract: Table contract.
+        kept: Silver Parquet files of partitions that are not being read again.
+    """
+    types = {c.name: c.type for c in contract.columns}
+    keys = key_columns(contract)
+    if kept:
+        items = ", ".join(
+            f"timezone(timezone, {q(k)}) AS {q(k)}"
+            if types[k] == "TIMESTAMP" and contract.zone
+            else q(k)
+            for k in keys
+        )
+        files = ", ".join(sql_str(str(p)) for p in kept)
+        source = f"SELECT {items} FROM read_parquet([{files}])"
+    else:
+        source = f"SELECT {', '.join(q(k) for k in keys)} FROM typed WHERE false"
+    con.execute(f"CREATE OR REPLACE TEMP TABLE existing_keys AS {source}")
 
 
 def violation_queries(contract: Contract) -> list[str]:
@@ -418,13 +497,31 @@ def violation_queries(contract: Contract) -> list[str]:
     return queries
 
 
+def partition_dirs(folder: Path) -> dict[date, Path]:
+    """Lists the `partition_date=YYYY-MM-DD` folders of a partitioned output.
+
+    Args:
+        folder: Silver or quarantine folder of a table.
+
+    Returns:
+        Folder per partition date.
+    """
+    if not folder.exists():
+        return {}
+    return {
+        date.fromisoformat(p.name.split("=", 1)[1]): p
+        for p in folder.iterdir()
+        if p.is_dir() and p.name.startswith("partition_date=")
+    }
+
+
 def register_silver_view(
     con: duckdb.DuckDBPyConnection, data_dir: Path, contract: Contract
 ) -> None:
     """Exposes a table's silver output as `silver_<table>` for lookups by later tables.
 
     Args:
-        con: DuckDB connection.
+        con: DuckDB connection; `silver_out` must hold this table's schema if silver is empty.
         data_dir: Root data directory.
         contract: Table contract.
     """
@@ -440,11 +537,20 @@ def register_silver_view(
         con.execute(f"CREATE OR REPLACE TABLE {name} AS SELECT * FROM silver_out LIMIT 0")
 
 
+def _clear(target: Path, partitioned: bool, keep: set[date]) -> None:
+    """Removes the output that is about to be rewritten: every partition not in `keep`."""
+    if not partitioned:
+        shutil.rmtree(target, ignore_errors=True)
+        return
+    for day, folder in partition_dirs(target).items():
+        if day not in keep:
+            shutil.rmtree(folder)
+
+
 def _write(
     con: duckdb.DuckDBPyConnection, relation: str, order: str, target: Path, partitioned: bool
 ) -> None:
     """Writes a relation to Parquet in a fixed order, so equal input gives byte-identical files."""
-    shutil.rmtree(target, ignore_errors=True)
     rows = con.execute(f"SELECT count(*) FROM {relation}").fetchone()
     if not rows or rows[0] == 0:
         return
@@ -453,11 +559,21 @@ def _write(
         f"CREATE OR REPLACE TEMP TABLE ordered_out AS SELECT * FROM {relation} ORDER BY {order}"
     )
     # With several threads, sorted chunks reach each file in thread order, so row order and
-    # therefore the file hash would change between runs.
+    # therefore the file hash would change between runs. Each partition gets its own COPY:
+    # DuckDB's partitioned writer splits row groups by global buffer size, which would make a
+    # partition's file depend on how many other partitions are written with it.
     con.execute("SET threads = 1")
     try:
         if partitioned:
-            con.execute(f"COPY ordered_out TO {sql_str(str(target))} ({PARTITIONED_PARQUET})")
+            days = con.execute("SELECT DISTINCT partition_date FROM ordered_out ORDER BY 1")
+            for (day,) in days.fetchall():
+                folder = target / f"partition_date={day.isoformat()}"
+                folder.mkdir()
+                con.execute(
+                    "COPY (SELECT * FROM ordered_out "
+                    f"WHERE partition_date = DATE '{day.isoformat()}') "
+                    f"TO {sql_str(str(folder / 'data0.parquet'))} ({PARQUET})"
+                )
         else:
             con.execute(f"COPY ordered_out TO {sql_str(str(target / 'data.parquet'))} ({PARQUET})")
     finally:
@@ -484,21 +600,16 @@ def header_diff(expected: list[str], found: list[str]) -> str:
 
 def _quarantine_file(
     con: duckdb.DuckDBPyConnection, data_dir: Path, contract: Contract, file: BronzeFile
-) -> int:
-    """Sends every row of a file whose header breaks the contract to quarantine.
-
-    Returns:
-        Rows quarantined.
-    """
+) -> None:
+    """Sends every row of a file whose header breaks the contract to quarantine."""
     keys = [k for k in contract.primary_key if k in file.header]
     record_key = (
         "concat_ws('|', " + ", ".join(q(k) for k in keys) + ")"
         if len(keys) == len(contract.primary_key)
         else "NULL"
     )
-    partition = f"DATE {sql_str(file.partition_date)}" if file.partition_date else "NULL::DATE"
+    partition = f"DATE {sql_str(file.lineage_date.isoformat())}"
     detail = sql_str(header_diff(contract.header, file.header))
-    before = con.execute("SELECT count(*) FROM quarantine_out").fetchone()
     con.execute(
         f"""
         INSERT INTO quarantine_out
@@ -509,44 +620,70 @@ def _quarantine_file(
                       delim = ',', quote = '"', escape = '"')
         """
     )
-    after = con.execute("SELECT count(*) FROM quarantine_out").fetchone()
-    return (after[0] if after else 0) - (before[0] if before else 0)
+
+
+def _counts(con: duckdb.DuckDBPyConnection, relation: str) -> dict[str, int]:
+    return dict(con.execute(f"SELECT source_file, count(*) FROM {relation} GROUP BY 1").fetchall())
 
 
 def build_table(
-    con: duckdb.DuckDBPyConnection, data_dir: Path, contract: Contract, files: list[BronzeFile]
-) -> TableResult:
-    """Builds silver and quarantine for one table from its bronze files.
+    con: duckdb.DuckDBPyConnection,
+    data_dir: Path,
+    contract: Contract,
+    files: list[BronzeFile],
+    keep: set[date],
+    lineage: Lineage,
+) -> dict[str, FileCounts]:
+    """Reads bronze files of one table into silver and quarantine, replacing their partitions.
+
+    Partitions in `keep` stay as they are and are only used to detect repeated keys; every other
+    partition folder is removed and rewritten from `files`, so reading a partition again never
+    duplicates rows.
 
     Args:
-        con: DuckDB connection with `home_countries` and the silver views of earlier tables.
+        con: DuckDB connection with the reference tables and the silver views of earlier tables.
         data_dir: Root data directory.
         contract: Table contract.
-        files: Bronze files of this table.
+        files: Bronze files to read in this run.
+        keep: Partition dates already processed that stay untouched.
+        lineage: Batch id and pipeline version stamped on each row.
 
     Returns:
-        Row counts.
+        Row counts per bronze file read.
 
     Raises:
-        ValueError: If silver plus quarantine rows do not add up to the bronze rows.
+        ValueError: If silver plus quarantine rows do not add up to the bronze rows of a file.
     """
     matching = [f for f in files if f.header == contract.header]
     mismatched = [f for f in files if f.header != contract.header]
     con.execute(
-        "CREATE OR REPLACE TEMP TABLE bronze_files "
-        "(path VARCHAR, abs_path VARCHAR, partition_date DATE)"
+        "CREATE OR REPLACE TEMP TABLE bronze_files (path VARCHAR, abs_path VARCHAR, "
+        "partition_date DATE, ingested_at TIMESTAMP, batch_id VARCHAR, pipeline_version VARCHAR)"
     )
-    con.executemany(
-        "INSERT INTO bronze_files VALUES (?, ?, ?)",
-        [(f.path, str(data_dir / f.path), f.partition) for f in matching],
-    )
+    if matching:
+        con.executemany(
+            "INSERT INTO bronze_files VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    f.path,
+                    str(data_dir / f.path),
+                    f.lineage_date,
+                    f.loaded_at,
+                    lineage.batch_id,
+                    lineage.pipeline_version,
+                )
+                for f in matching
+            ],
+        )
     paths = "[" + ", ".join(sql_str(str(data_dir / f.path)) for f in matching) + "]"
     header_types = "{" + ", ".join(f"{sql_str(c)}: 'VARCHAR'" for c in contract.header) + "}"
+    lineage_columns = (
+        "f.path AS source_file, f.partition_date, f.ingested_at, f.batch_id, f.pipeline_version"
+    )
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE raw AS
-        SELECT row_number() OVER () AS _rid, f.path AS source_file, f.partition_date,
-               r.* EXCLUDE (filename)
+        SELECT row_number() OVER () AS _rid, {lineage_columns}, r.* EXCLUDE (filename)
         FROM read_csv({paths}, header = true, delim = ',', quote = '"', escape = '"',
                       columns = {header_types}, filename = true, hive_partitioning = false) r
         JOIN bronze_files f ON f.abs_path = r.filename
@@ -554,19 +691,26 @@ def build_table(
         if matching
         else f"""
         CREATE OR REPLACE TEMP TABLE raw AS
-        SELECT NULL::BIGINT AS _rid, NULL::VARCHAR AS source_file, NULL::DATE AS partition_date,
+        SELECT NULL::BIGINT AS _rid, {lineage_columns},
                {", ".join(f"NULL::VARCHAR AS {q(c)}" for c in contract.header)}
-        WHERE false
+        FROM bronze_files f WHERE false
         """
     )
     parsed = ", ".join(f"{parse_expr(c)} AS {q(c.name)}" for c in contract.columns)
     con.execute(f"CREATE OR REPLACE TEMP TABLE typed AS SELECT r._rid, {parsed} FROM raw r")
-    queries = violation_queries(contract)
+    silver_folder = silver_dir(data_dir, contract.table)
+    kept = [
+        p
+        for day, folder in partition_dirs(silver_folder).items()
+        if day in keep
+        for p in sorted(folder.glob("*.parquet"))
+    ]
+    register_existing_keys(con, contract, kept)
     con.execute(
         "CREATE OR REPLACE TEMP TABLE violations "
         "(_rid BIGINT, rule VARCHAR, column_name VARCHAR, value VARCHAR)"
     )
-    for query in queries:
+    for query in violation_queries(contract):
         con.execute(f"INSERT INTO violations {query}")
 
     con.execute(
@@ -589,35 +733,35 @@ def build_table(
         GROUP BY r._rid, r.source_file, r.partition_date, record_key
         """
     )
-
-    mismatched_rows = sum(_quarantine_file(con, data_dir, contract, f) for f in mismatched)
+    for file in mismatched:
+        _quarantine_file(con, data_dir, contract, file)
 
     pk = ", ".join(q(k) for k in contract.primary_key)
+    quarantine_folder = quarantine_dir(data_dir, contract.table)
+    _clear(silver_folder, contract.partitioned, keep)
+    _clear(quarantine_folder, contract.partitioned, keep)
     _write(
-        con,
-        "silver_out",
-        f"partition_date, {pk}, source_file",
-        silver_dir(data_dir, contract.table),
-        contract.partitioned,
+        con, "silver_out", f"partition_date, {pk}, source_file", silver_folder, contract.partitioned
     )
     _write(
         con,
         "quarantine_out",
         "source_file, record_key, violations",
-        quarantine_dir(data_dir, contract.table),
+        quarantine_folder,
         contract.partitioned,
     )
     register_silver_view(con, data_dir, contract)
 
-    counts = con.execute(
-        "SELECT (SELECT count(*) FROM raw), (SELECT count(*) FROM silver_out), "
-        "(SELECT count(*) FROM quarantine_out)"
-    ).fetchone()
-    assert counts is not None
-    result = TableResult(
-        contract.table, len(files), counts[0] + mismatched_rows, counts[1], counts[2]
+    bronze, silver, quarantine = (
+        _counts(con, "raw"),
+        _counts(con, "silver_out"),
+        _counts(con, "quarantine_out"),
     )
-    if result.bronze_rows != result.silver_rows + result.quarantine_rows:
-        raise ValueError(f"{contract.table}: silver + quarantine rows do not equal bronze rows")
-    log.info("silver_table", **result.__dict__)
-    return result
+    counts = {}
+    for file in files:
+        # A file with a foreign header is read only to quarantine it, so all its rows are there.
+        rows = bronze.get(file.path, 0) if file in matching else quarantine.get(file.path, 0)
+        counts[file.path] = FileCounts(rows, silver.get(file.path, 0), quarantine.get(file.path, 0))
+        if rows != counts[file.path].silver + counts[file.path].quarantine:
+            raise ValueError(f"{file.path}: silver + quarantine rows do not equal bronze rows")
+    return counts

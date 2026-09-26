@@ -7,6 +7,9 @@ Only the tables in `CONTRACTS` are extracted and processed. `digital_events`, `c
 from dataclasses import dataclass
 from typing import Literal, cast, get_args
 
+# Bump when a contract, a rule or a silver column changes: every partition is then read again.
+PIPELINE_VERSION = "1.0.0"
+
 ColumnType = Literal[
     "VARCHAR", "BIGINT", "DECIMAL", "DOUBLE", "DATE", "TIMESTAMP", "TIME", "BOOLEAN"
 ]

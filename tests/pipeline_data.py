@@ -11,6 +11,7 @@ from pathlib import Path
 
 from pipeline.contracts import BY_TABLE
 from pipeline.run import RunResult, run
+from pipeline.settings import PipelineSettings
 
 Rows = dict[str, list[dict[str, str]]]
 PARTITION = "_partition"
@@ -365,21 +366,23 @@ def write_dataset(data_dir: Path, rows: Rows) -> None:
             )
 
 
-def run_pipeline(data_dir: Path, now: datetime = NOW) -> RunResult:
+def run_pipeline(data_dir: Path, now: datetime = NOW, reprocess_days: int = 7) -> RunResult:
     """Runs the pipeline on a test data directory, with the report inside that directory.
 
     Args:
         data_dir: Root data directory.
         now: Registration time for new bronze files.
+        reprocess_days: Reprocessing window in days.
 
     Returns:
         The run result.
     """
-    return run(
-        data_dir,
-        Path("config/normalization.yaml"),
-        now,
-        data_dir / "calidad.md",
-        TRAZO_NOW,
+    settings = PipelineSettings(
+        data_dir=data_dir,
+        normalization_path=Path("config/normalization.yaml"),
+        quality_report_path=data_dir / "calidad.md",
+        trazo_now=TRAZO_NOW,
         seed=42,
+        pipeline_reprocess_days=reprocess_days,
     )
+    return run(settings, now)

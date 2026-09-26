@@ -53,6 +53,15 @@ class BronzeFile:
         """Partition day as a date, or None for a snapshot file."""
         return date.fromisoformat(self.partition_date) if self.partition_date else None
 
+    @property
+    def lineage_date(self) -> date:
+        """Day stamped as `partition_date` on the file's rows.
+
+        A snapshot file has no partition, so its rows carry the day the file was last modified,
+        which extraction sets to the S3 LastModified.
+        """
+        return self.partition or date.fromisoformat(self.modified_at[:10])
+
 
 def manifest_path(data_dir: Path) -> Path:
     """Returns where the bronze manifest is stored.
