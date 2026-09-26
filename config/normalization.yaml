@@ -1,0 +1,22 @@
+# Versioned reference data for the silver layer. Bump `version` on any change: the pipeline
+# records it with every run, so a change is traceable in the quality report.
+version: 1
+
+# Country names as they appear in the source, mapped to ISO 3166-1 alpha-2.
+countries:
+  Argentina: AR
+  Colombia: CO
+  México: MX
+
+# Customer home countries. Source timestamps carry no zone; silver reads them as local
+# wall-clock time of the customer's country (assumption, see docs/reports/calidad.md).
+home_countries:
+  AR:
+    zone: America/Argentina/Buenos_Aires
+    currency: ARS
+  CO:
+    zone: America/Bogota
+    currency: COP
+  MX:
+    zone: America/Mexico_City
+    currency: MXN
