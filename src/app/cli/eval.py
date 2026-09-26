@@ -15,6 +15,10 @@ with the expected intent, outcome, autonomy level and actions. The runner:
 A case may declare `known_failure: <why>`. It still runs and shows up in the report, but does
 not fail the run. If it starts passing, the run fails so the case gets promoted to a normal one.
 
+A case may declare `now: <ISO datetime>`, the moment the customer writes. It becomes the
+simulated clock of that case, and fixture timestamps (`hours_ago`) count back from it. Without
+it, the case uses TRAZO_NOW.
+
 A case may declare `skip: <why>` when its expectations no longer apply and a later story will
 rewrite it. It is not run, and it is listed in the report with its reason.
 
@@ -134,9 +138,11 @@ def run_case(case: dict[str, Any], database_url: str) -> CaseResult:
         status="pass",
         known_failure=case.get("known_failure"),
     )
-    app = create_app(Settings(database_url=database_url))
+    overrides = {"trazo_now": case["now"]} if "now" in case else {}
+    settings = Settings(database_url=database_url, **overrides)
+    app = create_app(settings)
     runtime: Runtime = app.state.runtime
-    customers, transactions, interactions = _fixture_rows(case, utcnow())
+    customers, transactions, interactions = _fixture_rows(case, settings.trazo_now)
 
     with TestClient(app) as client:
         with runtime.db.session() as s:

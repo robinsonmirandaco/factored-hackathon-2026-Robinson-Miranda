@@ -23,6 +23,7 @@ from app.adapters.db.models import Case, Customer
 from app.adapters.llm import LLMClient
 from app.core.errors import AppError
 from app.core.logging import trace_id_var
+from app.domain.clock import SimulatedClock
 from app.domain.pii import redact
 from app.domain.policy import PolicyContext, PolicyDecision, PolicyEngine
 from app.schemas.extraction import IntentExtraction
@@ -38,10 +39,12 @@ class AgentDeps:
     Attributes:
         policy: Autonomy policy engine.
         llm: LLM client with fallbacks.
+        clock: Simulated clock for data windows, relative dates and deadlines.
     """
 
     policy: PolicyEngine
     llm: LLMClient
+    clock: SimulatedClock
 
 
 @dataclass
@@ -168,8 +171,12 @@ def handle_message(
 # ---- shared steps ----------------------------------------------------------------------
 
 
-def _find_tx(session: Session, case: Case, ex: IntentExtraction) -> dict[str, Any] | None:
-    res = T.lookup_transaction(session, case.customer_id, ex.amount, ex.merchant, case_id=case.id)
+def _find_tx(
+    session: Session, deps: AgentDeps, case: Case, ex: IntentExtraction
+) -> dict[str, Any] | None:
+    res = T.lookup_transaction(
+        session, deps.clock, case.customer_id, ex.amount, ex.merchant, case_id=case.id
+    )
     if not res.ok:
         return None
     tx = res.data["matches"][0]
@@ -250,7 +257,7 @@ def handle_blocked_purchase(
     Returns:
         Facts with at least intent, outcome, autonomy_level and actions_taken.
     """
-    tx = _find_tx(session, case, ex)
+    tx = _find_tx(session, deps, case, ex)
     if tx is None:
         facts = _base_facts(ex, None, None)
         return _escalate(
@@ -290,7 +297,7 @@ def handle_unrecognized_charge(
     Returns:
         Facts with at least intent, outcome, autonomy_level and actions_taken.
     """
-    tx = _find_tx(session, case, ex)
+    tx = _find_tx(session, deps, case, ex)
     if tx is None:
         facts = _base_facts(ex, None, None)
         return _escalate(
@@ -335,7 +342,9 @@ def handle_duplicate_charge(
     Returns:
         Facts with at least intent, outcome, autonomy_level and actions_taken.
     """
-    res = T.lookup_transaction(session, case.customer_id, ex.amount, ex.merchant, case_id=case.id)
+    res = T.lookup_transaction(
+        session, deps.clock, case.customer_id, ex.amount, ex.merchant, case_id=case.id
+    )
     matches = res.data.get("matches", []) if res.ok else []
     if len(matches) < 2:
         facts = _base_facts(ex, matches[0] if matches else None, None)

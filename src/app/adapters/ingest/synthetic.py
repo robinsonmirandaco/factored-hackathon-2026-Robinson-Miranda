@@ -1,14 +1,14 @@
 """Synthetic adapter. Generates coherent customers, transactions and interactions.
 
 Includes deliberate dirty rows (negative amounts, unknown customers, bad currencies) so the
-validator and quarantine path are exercised on every run. Deterministic per seed.
+validator and quarantine path are exercised on every run. Timestamps count back from the
+simulated TRAZO_NOW passed in, never the wall clock, so the same seed and anchor always yield the
+same rows and the data sits inside the windows the agent searches.
 """
 
 import random
 from datetime import datetime, timedelta
 from typing import Any
-
-from app.core.time import utcnow
 
 MERCHANTS = [
     ("Amazon", "electronics", "online"),
@@ -54,12 +54,17 @@ TEMPLATES = {
 
 
 def generate(
-    seed: int = 42, n_customers: int = 200, tx_per_customer: int = 25, dirty: bool = True
+    now: datetime,
+    seed: int = 42,
+    n_customers: int = 200,
+    tx_per_customer: int = 25,
+    dirty: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Generates customers, transactions and interactions.
 
     Args:
-        seed: Random seed; the same seed always yields the same rows.
+        now: Simulated "now" (TRAZO_NOW); every timestamp falls before it.
+        seed: Random seed; with the same `now`, the same seed always yields the same rows.
         n_customers: Number of customers.
         tx_per_customer: Transactions per customer.
         dirty: Whether to append deliberately invalid rows.
@@ -68,7 +73,7 @@ def generate(
         Raw customer, transaction and interaction rows, not yet validated.
     """
     rng = random.Random(seed)
-    now = utcnow().replace(microsecond=0)
+    now = now.replace(microsecond=0)
     customers: list[dict[str, Any]] = []
     transactions: list[dict[str, Any]] = []
     interactions: list[dict[str, Any]] = []
@@ -94,7 +99,8 @@ def generate(
             if is_fraud:
                 amount = round(avg * rng.uniform(0.8, 4.0), 2)
                 country = rng.choice(["NG", "RU", "GB", "MX"])
-                ts = ts.replace(hour=rng.choice([1, 2, 3, 4, 23]))
+                # On the anchor's own day, a late hour could land after `now`.
+                ts = min(ts.replace(hour=rng.choice([1, 2, 3, 4, 23])), now)
                 cat = rng.choice(["electronics", "gambling", "crypto", "travel"])
                 channel = "online"
             else:

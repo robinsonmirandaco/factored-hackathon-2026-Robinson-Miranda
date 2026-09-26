@@ -11,7 +11,6 @@ from sqlalchemy.exc import OperationalError
 from app.adapters.db.models import AuditRecord
 from app.api.deps import Runtime, get_session
 from app.core.config import Settings
-from app.core.time import utcnow
 from app.main import create_app
 from app.services.ingestion import ingest_rows
 
@@ -38,7 +37,7 @@ def client(app: FastAPI) -> Iterator[TestClient]:
                         "customer_id": "C1",
                         "amount": 5000.0,
                         "merchant": "Walmart",
-                        "timestamp": utcnow(),
+                        "timestamp": runtime.settings.trazo_now,
                         "status": "blocked",
                     }
                 ],

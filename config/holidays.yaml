@@ -1,0 +1,307 @@
+# Bank holidays: days banks do not operate, per country, with the official source of each date.
+# Saturdays and Sundays are never business days and are not listed, except holidays that fall
+# on a weekend, which are kept so the table matches its sources.
+#
+# Mexico: the yearly CNBV rules published in the DOF.
+# Colombia: no yearly official list exists; dates apply the move-to-Monday rule of Ley 51 de
+#   1983 (and Ley 2578 de 2026) to each year's Easter date. Banco de la República defines a
+#   bank day as excluding Saturdays, Sundays and holidays.
+# Argentina: the yearly BCRA "C" communications listing the days financial entities do not
+#   operate, plus Ley 27.399 for holidays that fall on a weekend and the bank workers'
+#   agreement for Día del Bancario.
+#
+# Only closures set by a law, decree, regulator rule or binding agreement count. `unconfirmed`
+# lists closures reported without such an instrument; they are not used when counting.
+#
+# Update this file when a new year's official list is published; dates outside `years` make
+# the business-day count refuse to answer.
+
+years: [2023, 2026]
+
+countries:
+  MX:
+    sources:
+      mx_dof_2023:
+        title: "CNBV, días de 2023 en que las entidades financieras cierran y suspenden operaciones, DOF 28/11/2022"
+        url: "https://dof.gob.mx/nota_detalle.php?codigo=5672531&fecha=28/11/2022"
+      mx_dof_2024:
+        title: "CNBV, días de 2024 en que las entidades financieras cierran y suspenden operaciones, DOF 12/12/2023"
+        url: "https://dof.gob.mx/nota_detalle.php?codigo=5711052&fecha=12/12/2023"
+      mx_dof_2025:
+        title: "CNBV, días de 2025 en que las entidades financieras cierran y suspenden operaciones, DOF 27/12/2024"
+        url: "https://www.diariooficial.gob.mx/nota_detalle.php?codigo=5746258&fecha=27/12/2024"
+      mx_dof_2026:
+        title: "CNBV, días de 2026 en que las entidades financieras cierran y suspenden operaciones, DOF 10/12/2025"
+        url: "https://dof.gob.mx/nota_detalle.php?codigo=5775684&fecha=10/12/2025"
+    holidays:
+      - {date: 2023-01-01, name: "Año Nuevo (1o. de enero)", source: mx_dof_2023}
+      - {date: 2023-02-06, name: "Primer lunes de febrero, en conmemoración del 5 de febrero (Constitución)", source: mx_dof_2023}
+      - {date: 2023-03-20, name: "Tercer lunes de marzo, en conmemoración del 21 de marzo (Natalicio de Benito Juárez)", source: mx_dof_2023}
+      - {date: 2023-04-06, name: "Jueves Santo (fecha fijada en el DOF)", source: mx_dof_2023}
+      - {date: 2023-04-07, name: "Viernes Santo (fecha fijada en el DOF)", source: mx_dof_2023}
+      - {date: 2023-05-01, name: "Día del Trabajo (1o. de mayo)", source: mx_dof_2023}
+      - {date: 2023-09-16, name: "Día de la Independencia (16 de septiembre)", source: mx_dof_2023}
+      - {date: 2023-11-02, name: "Día de Muertos (2 de noviembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2023}
+      - {date: 2023-11-20, name: "Tercer lunes de noviembre, en conmemoración del 20 de noviembre (Revolución)", source: mx_dof_2023}
+      - {date: 2023-12-12, name: "Día de la Virgen de Guadalupe (12 de diciembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2023}
+      - {date: 2023-12-25, name: "Navidad (25 de diciembre)", source: mx_dof_2023}
+      - {date: 2024-01-01, name: "Año Nuevo (1o. de enero)", source: mx_dof_2024}
+      - {date: 2024-02-05, name: "Primer lunes de febrero, en conmemoración del 5 de febrero (Constitución)", source: mx_dof_2024}
+      - {date: 2024-03-18, name: "Tercer lunes de marzo, en conmemoración del 21 de marzo (Natalicio de Benito Juárez)", source: mx_dof_2024}
+      - {date: 2024-03-28, name: "Jueves Santo (fecha fijada en el DOF)", source: mx_dof_2024}
+      - {date: 2024-03-29, name: "Viernes Santo (fecha fijada en el DOF)", source: mx_dof_2024}
+      - {date: 2024-05-01, name: "Día del Trabajo (1o. de mayo)", source: mx_dof_2024}
+      - {date: 2024-09-16, name: "Día de la Independencia (16 de septiembre)", source: mx_dof_2024}
+      - {date: 2024-10-01, name: "Transmisión del Poder Ejecutivo Federal (1 de octubre)", source: mx_dof_2024}
+      - {date: 2024-11-02, name: "Día de Muertos (2 de noviembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2024}
+      - {date: 2024-11-18, name: "Tercer lunes de noviembre, en conmemoración del 20 de noviembre (Revolución)", source: mx_dof_2024}
+      - {date: 2024-12-12, name: "Día de la Virgen de Guadalupe (12 de diciembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2024}
+      - {date: 2024-12-25, name: "Navidad (25 de diciembre)", source: mx_dof_2024}
+      - {date: 2025-01-01, name: "Año Nuevo (1o. de enero)", source: mx_dof_2025}
+      - {date: 2025-02-03, name: "Primer lunes de febrero, en conmemoración del 5 de febrero (Constitución)", source: mx_dof_2025}
+      - {date: 2025-03-17, name: "Tercer lunes de marzo, en conmemoración del 21 de marzo (Natalicio de Benito Juárez)", source: mx_dof_2025}
+      - {date: 2025-04-17, name: "Jueves Santo (fecha fijada en el DOF)", source: mx_dof_2025}
+      - {date: 2025-04-18, name: "Viernes Santo (fecha fijada en el DOF)", source: mx_dof_2025}
+      - {date: 2025-05-01, name: "Día del Trabajo (1o. de mayo)", source: mx_dof_2025}
+      - {date: 2025-09-16, name: "Día de la Independencia (16 de septiembre)", source: mx_dof_2025}
+      - {date: 2025-11-02, name: "Día de Muertos (2 de noviembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2025}
+      - {date: 2025-11-17, name: "Tercer lunes de noviembre, en conmemoración del 20 de noviembre (Revolución)", source: mx_dof_2025}
+      - {date: 2025-12-12, name: "Día de la Virgen de Guadalupe (12 de diciembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2025}
+      - {date: 2025-12-25, name: "Navidad (25 de diciembre)", source: mx_dof_2025}
+      - {date: 2026-01-01, name: "Año Nuevo (1o. de enero)", source: mx_dof_2026}
+      - {date: 2026-02-02, name: "Primer lunes de febrero, en conmemoración del 5 de febrero (Constitución)", source: mx_dof_2026}
+      - {date: 2026-03-16, name: "Tercer lunes de marzo, en conmemoración del 21 de marzo (Natalicio de Benito Juárez)", source: mx_dof_2026}
+      - {date: 2026-04-02, name: "Jueves Santo (fecha fijada en el DOF)", source: mx_dof_2026}
+      - {date: 2026-04-03, name: "Viernes Santo (fecha fijada en el DOF)", source: mx_dof_2026}
+      - {date: 2026-05-01, name: "Día del Trabajo (1o. de mayo)", source: mx_dof_2026}
+      - {date: 2026-09-16, name: "Día de la Independencia (16 de septiembre)", source: mx_dof_2026}
+      - {date: 2026-11-02, name: "Día de Muertos (2 de noviembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2026}
+      - {date: 2026-11-16, name: "Tercer lunes de noviembre, en conmemoración del 20 de noviembre (Revolución)", source: mx_dof_2026}
+      - {date: 2026-12-12, name: "Día de la Virgen de Guadalupe (12 de diciembre; cierre bancario, no es descanso obligatorio federal)", source: mx_dof_2026}
+      - {date: 2026-12-25, name: "Navidad (25 de diciembre)", source: mx_dof_2026}
+  CO:
+    sources:
+      co_l51:
+        title: "Ley 51 de 1983, festivos y traslado al lunes siguiente (fechas derivadas aplicando su regla)"
+        url: "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=4954"
+      co_l2578:
+        title: "Ley 2578 de 2026, festivo del 9 de julio con traslado según Ley 51 de 1983 (nota del Ministerio del Interior)"
+        url: "https://www.mininterior.gov.co/noticias/gobierno-sanciona-ley-que-convierte-el-9-de-julio-en-nuevo-festivo-nacional/"
+      co_br:
+        title: "Banco de la República, Circular DSP-158: el día bancario excluye sábados, domingos y festivos"
+        url: "https://www.banrep.gov.co/sites/default/files/reglamentacion/dsp_158.pdf"
+      co_prensa:
+        title: "Anuncios de bancos en prensa sobre el cierre del 31 de diciembre (no oficial)"
+        url: "https://www.bloomberglinea.com/latinoamerica/colombia/horarios-de-atencion-de-los-bancos-en-colombia-este-31-de-diciembre-y-1-de-enero-de-2026/"
+    holidays:
+      - {date: 2023-01-01, name: "Año Nuevo (fijo)", source: co_l51}
+      - {date: 2023-01-09, name: "Reyes Magos (6 de enero), trasladado desde 2023-01-06", source: co_l51}
+      - {date: 2023-03-20, name: "San José (19 de marzo), trasladado desde 2023-03-19", source: co_l51}
+      - {date: 2023-04-06, name: "Jueves Santo", source: co_l51}
+      - {date: 2023-04-07, name: "Viernes Santo", source: co_l51}
+      - {date: 2023-05-01, name: "Día del Trabajo (fijo)", source: co_l51}
+      - {date: 2023-05-22, name: "Ascensión del Señor, trasladado desde 2023-05-18", source: co_l51}
+      - {date: 2023-06-12, name: "Corpus Christi, trasladado desde 2023-06-08", source: co_l51}
+      - {date: 2023-06-19, name: "Sagrado Corazón de Jesús, trasladado desde 2023-06-16", source: co_l51}
+      - {date: 2023-07-03, name: "San Pedro y San Pablo (29 de junio), trasladado desde 2023-06-29", source: co_l51}
+      - {date: 2023-07-20, name: "Día de la Independencia (fijo)", source: co_l51}
+      - {date: 2023-08-07, name: "Batalla de Boyacá (fijo)", source: co_l51}
+      - {date: 2023-08-21, name: "Asunción de la Virgen (15 de agosto), trasladado desde 2023-08-15", source: co_l51}
+      - {date: 2023-10-16, name: "Día de la Raza (12 de octubre), trasladado desde 2023-10-12", source: co_l51}
+      - {date: 2023-11-06, name: "Todos los Santos (1 de noviembre), trasladado desde 2023-11-01", source: co_l51}
+      - {date: 2023-11-13, name: "Independencia de Cartagena (11 de noviembre), trasladado desde 2023-11-11", source: co_l51}
+      - {date: 2023-12-08, name: "Inmaculada Concepción (fijo)", source: co_l51}
+      - {date: 2023-12-25, name: "Navidad (fijo)", source: co_l51}
+      - {date: 2024-01-01, name: "Año Nuevo (fijo)", source: co_l51}
+      - {date: 2024-01-08, name: "Reyes Magos (6 de enero), trasladado desde 2024-01-06", source: co_l51}
+      - {date: 2024-03-25, name: "San José (19 de marzo), trasladado desde 2024-03-19", source: co_l51}
+      - {date: 2024-03-28, name: "Jueves Santo", source: co_l51}
+      - {date: 2024-03-29, name: "Viernes Santo", source: co_l51}
+      - {date: 2024-05-01, name: "Día del Trabajo (fijo)", source: co_l51}
+      - {date: 2024-05-13, name: "Ascensión del Señor, trasladado desde 2024-05-09", source: co_l51}
+      - {date: 2024-06-03, name: "Corpus Christi, trasladado desde 2024-05-30", source: co_l51}
+      - {date: 2024-06-10, name: "Sagrado Corazón de Jesús, trasladado desde 2024-06-07", source: co_l51}
+      - {date: 2024-07-01, name: "San Pedro y San Pablo (29 de junio), trasladado desde 2024-06-29", source: co_l51}
+      - {date: 2024-07-20, name: "Día de la Independencia (fijo)", source: co_l51}
+      - {date: 2024-08-07, name: "Batalla de Boyacá (fijo)", source: co_l51}
+      - {date: 2024-08-19, name: "Asunción de la Virgen (15 de agosto), trasladado desde 2024-08-15", source: co_l51}
+      - {date: 2024-10-14, name: "Día de la Raza (12 de octubre), trasladado desde 2024-10-12", source: co_l51}
+      - {date: 2024-11-04, name: "Todos los Santos (1 de noviembre), trasladado desde 2024-11-01", source: co_l51}
+      - {date: 2024-11-11, name: "Independencia de Cartagena (11 de noviembre), cae en lunes", source: co_l51}
+      - {date: 2024-12-08, name: "Inmaculada Concepción (fijo)", source: co_l51}
+      - {date: 2024-12-25, name: "Navidad (fijo)", source: co_l51}
+      - {date: 2025-01-01, name: "Año Nuevo (fijo)", source: co_l51}
+      - {date: 2025-01-06, name: "Reyes Magos (6 de enero), cae en lunes", source: co_l51}
+      - {date: 2025-03-24, name: "San José (19 de marzo), trasladado desde 2025-03-19", source: co_l51}
+      - {date: 2025-04-17, name: "Jueves Santo", source: co_l51}
+      - {date: 2025-04-18, name: "Viernes Santo", source: co_l51}
+      - {date: 2025-05-01, name: "Día del Trabajo (fijo)", source: co_l51}
+      - {date: 2025-06-02, name: "Ascensión del Señor, trasladado desde 2025-05-29", source: co_l51}
+      - {date: 2025-06-23, name: "Corpus Christi, trasladado desde 2025-06-19", source: co_l51}
+      - {date: 2025-06-30, name: "Sagrado Corazón de Jesús, trasladado desde 2025-06-27 y San Pedro y San Pablo (29 de junio), trasladado desde 2025-06-29", source: co_l51}
+      - {date: 2025-07-20, name: "Día de la Independencia (fijo)", source: co_l51}
+      - {date: 2025-08-07, name: "Batalla de Boyacá (fijo)", source: co_l51}
+      - {date: 2025-08-18, name: "Asunción de la Virgen (15 de agosto), trasladado desde 2025-08-15", source: co_l51}
+      - {date: 2025-10-13, name: "Día de la Raza (12 de octubre), trasladado desde 2025-10-12", source: co_l51}
+      - {date: 2025-11-03, name: "Todos los Santos (1 de noviembre), trasladado desde 2025-11-01", source: co_l51}
+      - {date: 2025-11-17, name: "Independencia de Cartagena (11 de noviembre), trasladado desde 2025-11-11", source: co_l51}
+      - {date: 2025-12-08, name: "Inmaculada Concepción (fijo)", source: co_l51}
+      - {date: 2025-12-25, name: "Navidad (fijo)", source: co_l51}
+      - {date: 2026-01-01, name: "Año Nuevo (fijo)", source: co_l51}
+      - {date: 2026-01-12, name: "Reyes Magos (6 de enero), trasladado desde 2026-01-06", source: co_l51}
+      - {date: 2026-03-23, name: "San José (19 de marzo), trasladado desde 2026-03-19", source: co_l51}
+      - {date: 2026-04-02, name: "Jueves Santo", source: co_l51}
+      - {date: 2026-04-03, name: "Viernes Santo", source: co_l51}
+      - {date: 2026-05-01, name: "Día del Trabajo (fijo)", source: co_l51}
+      - {date: 2026-05-18, name: "Ascensión del Señor, trasladado desde 2026-05-14", source: co_l51}
+      - {date: 2026-06-08, name: "Corpus Christi, trasladado desde 2026-06-04", source: co_l51}
+      - {date: 2026-06-15, name: "Sagrado Corazón de Jesús, trasladado desde 2026-06-12", source: co_l51}
+      - {date: 2026-06-29, name: "San Pedro y San Pablo (29 de junio), cae en lunes", source: co_l51}
+      - {date: 2026-07-13, name: "Nuestra Señora del Rosario de Chiquinquirá (9 de julio), trasladado desde 2026-07-09", source: co_l2578}
+      - {date: 2026-07-20, name: "Día de la Independencia (fijo)", source: co_l51}
+      - {date: 2026-08-07, name: "Batalla de Boyacá (fijo)", source: co_l51}
+      - {date: 2026-08-17, name: "Asunción de la Virgen (15 de agosto), trasladado desde 2026-08-15", source: co_l51}
+      - {date: 2026-10-12, name: "Día de la Raza (12 de octubre), cae en lunes", source: co_l51}
+      - {date: 2026-11-02, name: "Todos los Santos (1 de noviembre), trasladado desde 2026-11-01", source: co_l51}
+      - {date: 2026-11-16, name: "Independencia de Cartagena (11 de noviembre), trasladado desde 2026-11-11", source: co_l51}
+      - {date: 2026-12-08, name: "Inmaculada Concepción (fijo)", source: co_l51}
+      - {date: 2026-12-25, name: "Navidad (fijo)", source: co_l51}
+    # Not used by the business-day count until confirmed. See the reason of each one.
+    unconfirmed:
+      - {date: 2024-12-31, name: "Cierre bancario de fin de año (sin atención presencial al público)", source: co_prensa, reason: "no se encontró norma de SFC, Banrep ni Asobancaria; solo anuncios de bancos en prensa"}
+      - {date: 2025-12-31, name: "Cierre bancario de fin de año (sin atención presencial al público)", source: co_prensa, reason: "no se encontró norma de SFC, Banrep ni Asobancaria; solo anuncios de bancos en prensa"}
+      - {date: 2026-12-31, name: "Cierre bancario de fin de año (sin atención presencial al público)", source: co_prensa, reason: "no se encontró norma de SFC, Banrep ni Asobancaria; solo anuncios de bancos en prensa"}
+  AR:
+    sources:
+      ar_l27399:
+        title: "Ley 27.399, feriados nacionales y días no laborables"
+        url: "https://servicios.infoleg.gob.ar/infolegInternet/anexos/280000-284999/281835/norma.htm"
+      ar_d764:
+        title: "Decreto 764/2022, feriados con fines turísticos 2023"
+        url: "https://www.boletinoficial.gob.ar/detalleAviso/primera/276209/20221122"
+      ar_d106:
+        title: "Decreto 106/2023, feriados con fines turísticos 2024"
+        url: "https://www.boletinoficial.gob.ar/detalleAviso/primera/301434/20231229"
+      ar_d1027:
+        title: "Decreto 1027/2024, días no laborables con fines turísticos 2025"
+        url: "https://www.boletinoficial.gob.ar/detalleAviso/primera/317188/20241121"
+      ar_d614:
+        title: "Decreto 614/2025, feriados nacionales trasladables"
+        url: "https://www.boletinoficial.gob.ar/detalleAviso/primera/330457/20250828"
+      ar_r164:
+        title: "Resolución JGM 164/2025, días no laborables con fines turísticos 2026"
+        url: "https://www.boletinoficial.gob.ar/detalleAviso/primera/336753/20251226"
+      ar_c94199:
+        title: "BCRA, Comunicación C 94199: feriados de las entidades financieras en 2023"
+        url: "https://www.bcra.gob.ar/archivos/Pdfs/comytexord/C94199.pdf"
+      ar_c97002:
+        title: "BCRA, Comunicación C 97002: feriados de las entidades financieras en 2024"
+        url: "https://www.bcra.gob.ar/Pdfs/comytexord/C97002.pdf"
+      ar_c99321:
+        title: "BCRA, Comunicación C 99321: feriados de las entidades financieras en 2025"
+        url: "https://www.bcra.gob.ar/archivos/Pdfs/comytexord/C99321.pdf"
+      ar_c101352:
+        title: "BCRA, Comunicación C 101352: feriados de las entidades financieras en 2026"
+        url: "https://www.bcra.gob.ar/archivos/Pdfs/comytexord/C101352.pdf"
+      ar_cct:
+        title: "Convenio Colectivo de Trabajo 18/75 (bancarios), art. 50: Día del Bancario el 6 de noviembre"
+        url: "https://labancaria.org/wp-content/uploads/2021/08/BANCARIOS-CONVENIO-COLECTIVO-1875-1.pdf"
+      ar_bcra_db2023:
+        title: "BCRA, funcionamiento de los bancos el 6 de noviembre de 2023, Día del Bancario (copia archivada)"
+        url: "https://web.archive.org/web/20240811151426/https://www.bcra.gob.ar/Noticias/funcionamiento-bancos-dia-trabajadores-bancarios.asp"
+      ar_p51199:
+        title: "BCRA, Comunicado 51199: actividad de los bancos el 24 y 31 de diciembre de 2025 (invitación)"
+        url: "https://www.bcra.gob.ar/archivos/Pdfs/comytexord/P51199.pdf"
+      ar_prensa_2024:
+        title: "Infobae 19/12/2024: asueto bancario del 24 y 31 de diciembre de 2024 (no oficial)"
+        url: "https://www.infobae.com/economia/2024/12/19/los-martes-24-y-31-de-diciembre-no-abriran-los-bancos-pero-funcionaran-los-canales-digitales/"
+    holidays:
+      - {date: 2023-01-01, name: "Año Nuevo", source: ar_l27399}
+      - {date: 2023-02-20, name: "Carnaval", source: ar_c94199}
+      - {date: 2023-02-21, name: "Carnaval", source: ar_c94199}
+      - {date: 2023-03-24, name: "Día Nacional de la Memoria por la Verdad y la Justicia", source: ar_c94199}
+      - {date: 2023-04-02, name: "Día del Veterano y de los Caídos en la Guerra de Malvinas", source: ar_l27399}
+      - {date: 2023-04-06, name: "Jueves Santo (día no laborable; entidades financieras no funcionan)", source: ar_c94199}
+      - {date: 2023-04-07, name: "Viernes Santo", source: ar_c94199}
+      - {date: 2023-05-01, name: "Día del Trabajador", source: ar_c94199}
+      - {date: 2023-05-25, name: "Día de la Revolución de Mayo", source: ar_c94199}
+      - {date: 2023-05-26, name: "Feriado con fines turísticos (Decreto 764/2022)", source: ar_c94199}
+      - {date: 2023-06-17, name: "Paso a la Inmortalidad del Gral. Güemes (trasladable; cae en sábado, no se trasladó)", source: ar_l27399}
+      - {date: 2023-06-19, name: "Feriado con fines turísticos (Decreto 764/2022)", source: ar_c94199}
+      - {date: 2023-06-20, name: "Paso a la Inmortalidad del Gral. Manuel Belgrano", source: ar_c94199}
+      - {date: 2023-07-09, name: "Día de la Independencia", source: ar_l27399}
+      - {date: 2023-08-21, name: "Paso a la Inmortalidad del Gral. San Martín (trasladado desde 2023-08-17)", source: ar_c94199}
+      - {date: 2023-10-13, name: "Feriado con fines turísticos (Decreto 764/2022)", source: ar_c94199}
+      - {date: 2023-10-16, name: "Día del Respeto a la Diversidad Cultural (trasladado desde 2023-10-12)", source: ar_c94199}
+      - {date: 2023-11-06, name: "Día del Bancario (CCT 18/75 art. 50); sin atención al público ni cámaras compensadoras", source: ar_bcra_db2023}
+      - {date: 2023-11-20, name: "Día de la Soberanía Nacional", source: ar_c94199}
+      - {date: 2023-12-08, name: "Inmaculada Concepción de María", source: ar_c94199}
+      - {date: 2023-12-25, name: "Navidad", source: ar_c94199}
+      - {date: 2024-01-01, name: "Año Nuevo", source: ar_c97002}
+      - {date: 2024-02-12, name: "Carnaval", source: ar_c97002}
+      - {date: 2024-02-13, name: "Carnaval", source: ar_c97002}
+      - {date: 2024-03-24, name: "Día Nacional de la Memoria por la Verdad y la Justicia", source: ar_l27399}
+      - {date: 2024-03-28, name: "Jueves Santo (día no laborable; entidades financieras no funcionan)", source: ar_c97002}
+      - {date: 2024-03-29, name: "Viernes Santo", source: ar_c97002}
+      - {date: 2024-04-01, name: "Feriado con fines turísticos (Decreto 106/2023)", source: ar_c97002}
+      - {date: 2024-04-02, name: "Día del Veterano y de los Caídos en la Guerra de Malvinas", source: ar_c97002}
+      - {date: 2024-05-01, name: "Día del Trabajador", source: ar_c97002}
+      - {date: 2024-05-25, name: "Día de la Revolución de Mayo", source: ar_l27399}
+      - {date: 2024-06-17, name: "Paso a la Inmortalidad del Gral. Güemes", source: ar_c97002}
+      - {date: 2024-06-20, name: "Paso a la Inmortalidad del Gral. Manuel Belgrano", source: ar_c97002}
+      - {date: 2024-06-21, name: "Feriado con fines turísticos (Decreto 106/2023)", source: ar_c97002}
+      - {date: 2024-07-09, name: "Día de la Independencia", source: ar_c97002}
+      - {date: 2024-08-17, name: "Paso a la Inmortalidad del Gral. San Martín (trasladable; cae en sábado, no se trasladó)", source: ar_l27399}
+      - {date: 2024-10-11, name: "Feriado con fines turísticos (Decreto 106/2023)", source: ar_c97002}
+      - {date: 2024-10-12, name: "Día del Respeto a la Diversidad Cultural (cae en sábado, no se trasladó)", source: ar_l27399}
+      - {date: 2024-11-06, name: "Día del Bancario (CCT 18/75 art. 50)", source: ar_cct}
+      - {date: 2024-11-18, name: "Día de la Soberanía Nacional (trasladado desde 2024-11-20)", source: ar_c97002}
+      - {date: 2024-12-08, name: "Inmaculada Concepción de María", source: ar_l27399}
+      - {date: 2024-12-25, name: "Navidad", source: ar_c97002}
+      - {date: 2025-01-01, name: "Año Nuevo", source: ar_c99321}
+      - {date: 2025-03-03, name: "Carnaval", source: ar_c99321}
+      - {date: 2025-03-04, name: "Carnaval", source: ar_c99321}
+      - {date: 2025-03-24, name: "Día Nacional de la Memoria por la Verdad y la Justicia", source: ar_c99321}
+      - {date: 2025-04-02, name: "Día del Veterano y de los Caídos en la Guerra de Malvinas", source: ar_c99321}
+      - {date: 2025-04-17, name: "Jueves Santo (día no laborable; entidades financieras no funcionan)", source: ar_c99321}
+      - {date: 2025-04-18, name: "Viernes Santo", source: ar_c99321}
+      - {date: 2025-05-01, name: "Día del Trabajador", source: ar_c99321}
+      - {date: 2025-05-02, name: "Día no laborable con fines turísticos (Decreto 1027/2024)", source: ar_c99321}
+      - {date: 2025-05-25, name: "Día de la Revolución de Mayo", source: ar_l27399}
+      - {date: 2025-06-16, name: "Paso a la Inmortalidad del Gral. Güemes (trasladado desde 2025-06-17)", source: ar_c99321}
+      - {date: 2025-06-20, name: "Paso a la Inmortalidad del Gral. Manuel Belgrano", source: ar_c99321}
+      - {date: 2025-07-09, name: "Día de la Independencia", source: ar_c99321}
+      - {date: 2025-08-15, name: "Día no laborable con fines turísticos (Decreto 1027/2024)", source: ar_c99321}
+      - {date: 2025-08-17, name: "Paso a la Inmortalidad del Gral. San Martín (cae en domingo, no se trasladó)", source: ar_l27399}
+      - {date: 2025-10-12, name: "Día del Respeto a la Diversidad Cultural (cae en domingo, no se trasladó)", source: ar_l27399}
+      - {date: 2025-11-06, name: "Día del Bancario (CCT 18/75 art. 50)", source: ar_cct}
+      - {date: 2025-11-21, name: "Día no laborable con fines turísticos (Decreto 1027/2024)", source: ar_c99321}
+      - {date: 2025-11-24, name: "Día de la Soberanía Nacional (trasladado desde 2025-11-20)", source: ar_c99321}
+      - {date: 2025-12-08, name: "Inmaculada Concepción de María", source: ar_c99321}
+      - {date: 2025-12-25, name: "Navidad", source: ar_c99321}
+      - {date: 2026-01-01, name: "Año Nuevo", source: ar_c101352}
+      - {date: 2026-02-16, name: "Carnaval", source: ar_c101352}
+      - {date: 2026-02-17, name: "Carnaval", source: ar_c101352}
+      - {date: 2026-03-23, name: "Día no laborable con fines turísticos (Resolución JGM 164/2025)", source: ar_c101352}
+      - {date: 2026-03-24, name: "Día Nacional de la Memoria por la Verdad y la Justicia", source: ar_c101352}
+      - {date: 2026-04-02, name: "Día del Veterano y de los Caídos en la Guerra de Malvinas; coincide con Jueves Santo", source: ar_c101352}
+      - {date: 2026-04-03, name: "Viernes Santo", source: ar_c101352}
+      - {date: 2026-05-01, name: "Día del Trabajador", source: ar_c101352}
+      - {date: 2026-05-25, name: "Día de la Revolución de Mayo", source: ar_c101352}
+      - {date: 2026-06-15, name: "Paso a la Inmortalidad del Gral. Güemes (trasladado desde 2026-06-17)", source: ar_c101352}
+      - {date: 2026-06-20, name: "Paso a la Inmortalidad del Gral. Manuel Belgrano (inamovible, cae en sábado)", source: ar_l27399}
+      - {date: 2026-07-09, name: "Día de la Independencia", source: ar_c101352}
+      - {date: 2026-07-10, name: "Día no laborable con fines turísticos (Resolución JGM 164/2025)", source: ar_c101352}
+      - {date: 2026-08-17, name: "Paso a la Inmortalidad del Gral. San Martín", source: ar_c101352}
+      - {date: 2026-10-12, name: "Día del Respeto a la Diversidad Cultural", source: ar_c101352}
+      - {date: 2026-11-06, name: "Día del Bancario (CCT 18/75 art. 50)", source: ar_cct}
+      - {date: 2026-11-23, name: "Día de la Soberanía Nacional (trasladado desde 2026-11-20)", source: ar_c101352}
+      - {date: 2026-12-07, name: "Día no laborable con fines turísticos (Resolución JGM 164/2025)", source: ar_c101352}
+      - {date: 2026-12-08, name: "Inmaculada Concepción de María", source: ar_c101352}
+      - {date: 2026-12-25, name: "Navidad", source: ar_c101352}
+    # Not used by the business-day count until confirmed. See the reason of each one.
+    unconfirmed:
+      - {date: 2024-12-24, name: "Asueto de Nochebuena (sin atención al público)", source: ar_prensa_2024, reason: "el BCRA solo invitó a las entidades a dar asueto; la adhesión de ABA, ABAPPRA, ABE y ADEBA consta solo en prensa"}
+      - {date: 2024-12-31, name: "Asueto de fin de año (sin atención al público)", source: ar_prensa_2024, reason: "el BCRA solo invitó a las entidades a dar asueto; la adhesión de ABA, ABAPPRA, ABE y ADEBA consta solo en prensa"}
+      - {date: 2025-12-24, name: "Asueto de Nochebuena (sin atención al público)", source: ar_p51199, reason: "el Comunicado BCRA 51199 solo invita a las entidades a dar asueto; la adhesión consta en prensa"}
+      - {date: 2025-12-31, name: "Asueto de fin de año (sin atención al público)", source: ar_p51199, reason: "el Comunicado BCRA 51199 solo invita a las entidades a dar asueto; la adhesión consta en prensa"}
