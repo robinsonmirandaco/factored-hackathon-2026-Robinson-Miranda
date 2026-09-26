@@ -29,10 +29,6 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
 ]
-panel = [
-    "streamlit>=1.38",
-    "pandas>=2.2",
-]
 
 [build-system]
 requires = ["hatchling"]

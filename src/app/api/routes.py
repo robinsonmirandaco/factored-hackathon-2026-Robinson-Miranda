@@ -91,5 +91,5 @@ def human_decision(case_id: str, body: HumanDecisionIn, session: SessionDep) -> 
 
 @router.get("/metrics", response_model=MetricsOut)
 def metrics(session: SessionDep) -> MetricsOut:
-    """Returns operational counters for the panel."""
+    """Returns operational counters from the cases table and the audit log."""
     return cases.get_metrics(session)

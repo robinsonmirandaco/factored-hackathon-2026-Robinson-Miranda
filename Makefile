@@ -1,7 +1,7 @@
-.PHONY: install dev test lint up down ingest eval panel
+.PHONY: install dev test lint up down ingest eval
 
 install:
-	uv pip install -e ".[dev,panel]" || pip install -e ".[dev,panel]"
+	uv pip install -e ".[dev]" || pip install -e ".[dev]"
 
 dev:
 	uvicorn app.main:create_app --factory --reload --port 8000
@@ -10,7 +10,7 @@ test:
 	LLM_ENABLED=false pytest -m "not integration" --cov=app --cov-report=term-missing
 
 lint:
-	ruff check src tests panel && ruff format --check src tests panel
+	ruff check src tests && ruff format --check src tests
 
 up:
 	docker compose up --build
@@ -24,6 +24,3 @@ ingest:
 
 eval:
 	LLM_ENABLED=false python -m app.cli.eval eval/cases --out eval/reports
-
-panel:
-	streamlit run panel/app.py

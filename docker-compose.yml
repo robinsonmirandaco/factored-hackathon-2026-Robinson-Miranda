@@ -15,7 +15,6 @@ services:
 
   api:
     build: .
-    # Same tag as panel so the image is built and stored once.
     image: bankagent:local
     # Optional so a fresh clone starts without a .env (LLM falls back to rules).
     env_file:
@@ -36,22 +35,6 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
-
-  panel:
-    # Reuses the image built by api. A second build: entry makes compose build it twice
-    # in parallel, which doubles disk use during the build.
-    image: bankagent:local
-    pull_policy: never
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      DATABASE_URL: postgresql+psycopg://bank:bank@postgres:5432/bankagent
-      API_URL: http://api:8000
-    ports: ["8501:8501"]
-    depends_on:
-      api: { condition: service_healthy }
-    command: streamlit run panel/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
 
 volumes:
   pgdata:

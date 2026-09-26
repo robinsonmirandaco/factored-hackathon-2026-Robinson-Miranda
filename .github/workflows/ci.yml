@@ -9,9 +9,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install uv && uv pip install --system -e ".[dev,panel]"
-      - run: ruff check src tests panel
-      - run: ruff format --check src tests panel
+      - run: pip install uv && uv pip install --system -e ".[dev]"
+      - run: ruff check src tests
+      - run: ruff format --check src tests
       - run: LLM_ENABLED=false pytest --cov=app --cov-report=xml
       - run: LLM_ENABLED=false python -m app.cli.ingest synthetic --seed 42 --db sqlite:///ci.db
       # Each golden case seeds its own throwaway DB, so no DATABASE_URL here.
