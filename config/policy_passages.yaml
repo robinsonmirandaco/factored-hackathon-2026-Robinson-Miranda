@@ -1,0 +1,51 @@
+# Demo policy passages. The dataset has no policy documents, so these passages were written for
+# the prototype and are not the bank's policy; every citation carries the label below.
+# A deadline or rule that is not backed by a passage here must not be stated to the customer.
+#
+# Fields per passage:
+#   id              citation shown to the customer
+#   rule            key the code looks the passage up by
+#   business_days   deadline counted in business days of the customer's country (optional)
+#   calendar_days   deadline counted in calendar days (optional)
+#   text            passage in Spanish (es) and Portuguese (pt)
+
+version: "2026.09.1"
+
+label:
+  es: "política de demostración, no del banco"
+  pt: "política de demonstração, não do banco"
+
+passages:
+  - id: "§1.1"
+    rule: dispute_window
+    calendar_days: 120
+    text:
+      es: >-
+        Puedes presentar una aclaración por un cargo que no reconoces o que consideras
+        incorrecto dentro de los 120 días naturales siguientes a la fecha del cargo.
+      pt: >-
+        Você pode contestar uma cobrança que não reconhece ou que considera incorreta em até
+        120 dias corridos a partir da data da cobrança.
+
+  - id: "§2.1"
+    rule: response_deadline
+    business_days: 15
+    text:
+      es: >-
+        El banco responde cada aclaración registrada en un plazo de 15 días hábiles, contados
+        a partir del día hábil siguiente a su registro. No cuentan los sábados, los domingos
+        ni los días inhábiles bancarios del país del cliente.
+      pt: >-
+        O banco responde a cada contestação registrada em até 15 dias úteis, contados a partir
+        do dia útil seguinte ao registro. Não contam sábados, domingos nem os feriados
+        bancários do país do cliente.
+
+  - id: "§3.1"
+    rule: card_block
+    text:
+      es: >-
+        El bloqueo de la tarjeta es inmediato y se puede revertir. Bloquear la tarjeta no
+        cancela ni devuelve ningún cargo: la aclaración sigue su propio trámite.
+      pt: >-
+        O bloqueio do cartão é imediato e pode ser revertido. Bloquear o cartão não cancela
+        nem estorna nenhuma cobrança: a contestação segue seu próprio trâmite.
