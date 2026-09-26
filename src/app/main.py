@@ -56,9 +56,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         runtime.db.create_all()
         log.info(
             "startup",
-            env=settings.env,
+            app_env=settings.app_env,
             llm_provider=settings.llm_provider,
-            llm_model=settings.llm_model,
+            llm_model=settings.llm_model_primary,
             llm_available=runtime.agent.llm.available,
         )
         yield

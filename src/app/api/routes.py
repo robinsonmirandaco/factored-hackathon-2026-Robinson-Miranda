@@ -32,7 +32,7 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
     s = runtime.settings
     return HealthOut(
         status="ok",
-        env=s.env,
+        app_env=s.app_env,
         db="ok",
         llm_provider=s.llm_provider,
         llm_available=runtime.agent.llm.available,

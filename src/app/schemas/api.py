@@ -15,7 +15,7 @@ class HealthOut(BaseModel):
     """
 
     status: str
-    env: str
+    app_env: str
     db: str
     llm_provider: str
     llm_available: bool

@@ -276,7 +276,7 @@ def write_report(results: list[CaseResult], summary: dict[str, Any], out_dir: st
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
         "llm_enabled": os.getenv("LLM_ENABLED", "true"),
         "llm_provider": settings.llm_provider,
-        "llm_model": settings.llm_model,
+        "llm_model": settings.llm_model_primary,
     }
     payload = {"meta": meta, "summary": summary, "cases": [asdict(r) for r in results]}
     (out / "golden_report.json").write_text(json.dumps(payload, indent=2, default=str))

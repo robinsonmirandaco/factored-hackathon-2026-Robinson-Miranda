@@ -23,7 +23,7 @@ def _settings(**overrides: object) -> Settings:
         "llm_enabled": True,
         "llm_provider": "local",
         "llm_base_url": BASE_URL,
-        "llm_model": "test-model",
+        "llm_model_primary": "test-model",
         "llm_max_retries": 1,
         "anthropic_api_key": "",
     }
