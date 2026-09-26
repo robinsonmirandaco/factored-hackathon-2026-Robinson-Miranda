@@ -1,0 +1,15 @@
+description: Customer with risk_tier=restricted -> hard rule restricted_customer even for a low-risk, small purchase
+tags: [golden, blocked_purchase, escalation]
+# Risk: 0.6*0.167 + 0 + 0.15*(30/800)/3 = 0.102 -> low, 30 USD. Only the restricted tier forces L3.
+fixtures:
+  customer: {id: EVC07, country: US, avg_monthly_spend: 800, tenure_months: 6, risk_tier: restricted}
+  transactions:
+    - {id: EVTX027, amount: 30.0, merchant: Shell, merchant_category: fuel, country: US, channel: pos, status: blocked, hours_ago: 1}
+turns:
+  - message: "My purchase of $30 at Shell was declined but it was me, please unblock it"
+    expect:
+      intent: blocked_purchase
+      outcome: escalated
+      autonomy_level: L3
+      actions_taken: []
+      escalation_reason_contains: restricted_customer

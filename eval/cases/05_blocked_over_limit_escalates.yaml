@@ -1,0 +1,16 @@
+description: Low risk but amount over l2_max (2000) -> hard rule over_l2_amount, human only
+tags: [golden, blocked_purchase, escalation, amount_limit]
+# Risk: 0.6*0.051 + 0 + 0.15*(2500/3000)/3 = 0.072 -> low, so high_risk does NOT fire first.
+# 2500 > l2_max 2000 -> hard rule over_l2_amount -> L3.
+fixtures:
+  customer: {id: EVC05, country: US, avg_monthly_spend: 3000, tenure_months: 90}
+  transactions:
+    - {id: EVTX017, amount: 2500.0, merchant: Delta Airlines, merchant_category: travel, country: US, channel: online, status: blocked, hours_ago: 2}
+turns:
+  - message: "My purchase of $2500 at Delta Airlines was declined but it was me, please unblock it"
+    expect:
+      intent: blocked_purchase
+      outcome: escalated
+      autonomy_level: L3
+      actions_taken: []
+      escalation_reason_contains: over_l2_amount

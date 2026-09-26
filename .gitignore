@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Local data and model artifacts
+*.db
+data/raw/
+data/models/
+eval/reports/
+
+# OS
+.DS_Store

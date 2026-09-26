@@ -1,0 +1,11 @@
+description: Balance question -> inform only (L0), no action
+tags: [golden, general_inquiry]
+fixtures:
+  customer: {id: EVC10, country: CO, avg_monthly_spend: 500, tenure_months: 14}
+turns:
+  - message: "What is my current balance?"
+    expect:
+      intent: general_inquiry
+      outcome: inform
+      autonomy_level: L0
+      actions_taken: []

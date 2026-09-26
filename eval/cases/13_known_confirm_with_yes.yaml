@@ -1,0 +1,20 @@
+description: Customer confirms by replying "YES", as the template reply tells them to
+tags: [golden, blocked_purchase, confirmation, multi_turn]
+known_failure: >-
+  the orchestrator re-extracts intent from every message; "YES" becomes intent=unknown and is
+  routed to the general inquiry sub-agent instead of continuing the open case
+fixtures:
+  customer: {id: EVC13, country: US, avg_monthly_spend: 800, tenure_months: 60}
+  transactions:
+    - {id: EVTX001, amount: 60.0, merchant: Walmart, merchant_category: grocery, country: US, channel: pos, status: blocked, hours_ago: 1}
+turns:
+  - message: "Why was my card blocked? I tried to pay $60 at Walmart an hour ago"
+    expect:
+      outcome: awaiting_customer
+      autonomy_level: L2
+  - message: "YES"
+    confirm: true
+    expect:
+      intent: blocked_purchase
+      outcome: auto_resolved
+      actions_taken: [unblock_transaction]

@@ -1,0 +1,23 @@
+description: Two identical Uber Eats charges -> reverse the newest one, only after the customer confirms
+tags: [golden, duplicate_charge, confirmation, multi_turn]
+# Newest match is EVTX035 (3h ago). Risk: 0.6*0.123 + 0 + 0.15*(23/800)/3 = 0.075 -> low.
+# ceiling(duplicate_charge)=2 -> reverse_charge is class 2 -> needs confirmation -> L2.
+fixtures:
+  customer: {id: EVC08, country: US, avg_monthly_spend: 800, tenure_months: 30}
+  transactions:
+    - {id: EVTX035, amount: 23.0, merchant: Uber Eats, merchant_category: restaurant, country: US, channel: online, status: approved, hours_ago: 3}
+    - {id: EVTX039, amount: 23.0, merchant: Uber Eats, merchant_category: restaurant, country: US, channel: online, status: approved, hours_ago: 3.1}
+turns:
+  - message: "I was charged twice by Uber Eats, $23 each time"
+    expect:
+      intent: duplicate_charge
+      outcome: awaiting_customer
+      autonomy_level: L2
+      actions_taken: []
+  - message: "I was charged twice by Uber Eats, $23 each time"
+    confirm: true
+    expect:
+      intent: duplicate_charge
+      outcome: auto_resolved
+      autonomy_level: L2
+      actions_taken: [reverse_charge]

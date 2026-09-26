@@ -1,0 +1,14 @@
+description: Same as 01 in Spanish, amount written as "300 dolares" -> L1 unblock
+tags: [golden, blocked_purchase, spanish]
+# Risk: 0.6*0.059 + 0 + 0.15*(300/800)/3 = 0.054 -> low. 300 <= 500 -> L1.
+fixtures:
+  customer: {id: EVC02, country: US, avg_monthly_spend: 800, tenure_months: 24}
+  transactions:
+    - {id: EVTX004, amount: 300.0, merchant: Amazon, merchant_category: electronics, country: US, channel: online, status: blocked, hours_ago: 1}
+turns:
+  - message: "Me bloquearon una compra de 300 dolares en Amazon y si fui yo"
+    expect:
+      intent: blocked_purchase
+      outcome: auto_resolved
+      autonomy_level: L1
+      actions_taken: [unblock_transaction]

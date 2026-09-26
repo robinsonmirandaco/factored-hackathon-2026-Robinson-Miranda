@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bank
+      POSTGRES_PASSWORD: bank
+      POSTGRES_DB: bankagent
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bank -d bankagent"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  api:
+    build: .
+    # Same tag as panel so the image is built and stored once.
+    image: bankagent:local
+    # Optional so a fresh clone starts without a .env (LLM falls back to rules).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://bank:bank@postgres:5432/bankagent
+      REDIS_URL: redis://redis:6379/0
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    command: >
+      sh -c "python -m app.cli.ingest synthetic --seed 42 &&
+             uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # python:slim has no curl.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  panel:
+    # Reuses the image built by api. A second build: entry makes compose build it twice
+    # in parallel, which doubles disk use during the build.
+    image: bankagent:local
+    pull_policy: never
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://bank:bank@postgres:5432/bankagent
+      API_URL: http://api:8000
+    ports: ["8501:8501"]
+    depends_on:
+      api: { condition: service_healthy }
+    command: streamlit run panel/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+
+volumes:
+  pgdata:

@@ -1,0 +1,22 @@
+description: Medium risk -> agent asks the customer to confirm (L2); after confirming it unblocks
+tags: [golden, blocked_purchase, confirmation, multi_turn]
+# Risk: 0.6*0.535 + 0 + 0.15*(60/800)/3 = 0.325 -> medium band -> clearance min(1,1)=1 + confirmation -> L2.
+# Turn 2 re-sends the original message with confirm=true on the same case (see known failure 13).
+fixtures:
+  customer: {id: EVC03, country: US, avg_monthly_spend: 800, tenure_months: 60}
+  transactions:
+    - {id: EVTX001, amount: 60.0, merchant: Walmart, merchant_category: grocery, country: US, channel: pos, status: blocked, hours_ago: 1}
+turns:
+  - message: "Why was my card blocked? I tried to pay $60 at Walmart an hour ago"
+    expect:
+      intent: blocked_purchase
+      outcome: awaiting_customer
+      autonomy_level: L2
+      actions_taken: []
+  - message: "Why was my card blocked? I tried to pay $60 at Walmart an hour ago"
+    confirm: true
+    expect:
+      intent: blocked_purchase
+      outcome: auto_resolved
+      autonomy_level: L2
+      actions_taken: [unblock_transaction]

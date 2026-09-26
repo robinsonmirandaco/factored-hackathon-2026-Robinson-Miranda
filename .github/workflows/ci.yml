@@ -1,0 +1,29 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install uv && uv pip install --system -e ".[dev,panel]"
+      - run: ruff check src tests panel
+      - run: ruff format --check src tests panel
+      - run: LLM_ENABLED=false pytest --cov=app --cov-report=xml
+      - run: LLM_ENABLED=false python -m app.cli.ingest synthetic --seed 42 --db sqlite:///ci.db
+      # Each golden case seeds its own throwaway DB, so no DATABASE_URL here.
+      - run: LLM_ENABLED=false python -m app.cli.eval eval/cases --out eval/reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval/reports/
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No .env on purpose: this is what a fresh clone sees.
+      - run: docker compose config -q
+      - run: docker build -t bankagent:ci .

@@ -1,0 +1,23 @@
+description: Unrecognized charge, low risk -> freeze card and open dispute alone, provisional credit only after confirmation
+tags: [golden, unrecognized_charge, confirmation, multi_turn]
+# Risk: 0.6*0.081 + 0 + 0.15*(45/800)/3 = 0.051 -> low. ceiling(unrecognized_charge)=2 -> class 2 always
+# needs confirmation -> L2. freeze_card and open_dispute are class 1 (run now); provisional credit is class 2.
+# Turn 2: freeze/dispute are idempotent per case, then the credit runs.
+fixtures:
+  customer: {id: EVC06, country: US, avg_monthly_spend: 800, tenure_months: 48}
+  transactions:
+    - {id: EVTX024, amount: 45.0, merchant: Netflix, merchant_category: subscription, country: US, channel: online, status: approved, hours_ago: 20}
+turns:
+  - message: "There is a charge of $45 from Netflix that I never made"
+    expect:
+      intent: unrecognized_charge
+      outcome: awaiting_customer
+      autonomy_level: L2
+      actions_taken: [freeze_card, open_dispute]
+  - message: "There is a charge of $45 from Netflix that I never made"
+    confirm: true
+    expect:
+      intent: unrecognized_charge
+      outcome: auto_resolved
+      autonomy_level: L2
+      actions_taken: [freeze_card, open_dispute, issue_provisional_credit]

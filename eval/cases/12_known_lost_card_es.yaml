@@ -1,0 +1,14 @@
+description: Stolen card in Spanish should freeze the card
+tags: [golden, lost_or_stolen_card, spanish]
+known_failure: >-
+  heuristic_extract checks the blocked_purchase keyword "bloque" before "roba", so
+  "bloquearla" wins and the message is routed as blocked_purchase
+fixtures:
+  customer: {id: EVC12, country: CO, avg_monthly_spend: 600, tenure_months: 40}
+turns:
+  - message: "Me robaron la tarjeta, necesito bloquearla ya"
+    expect:
+      intent: lost_or_stolen_card
+      outcome: auto_resolved
+      autonomy_level: L1
+      actions_taken: [freeze_card]

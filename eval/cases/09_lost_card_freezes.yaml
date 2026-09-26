@@ -1,0 +1,11 @@
+description: Lost card -> freeze is always safe and reversible, done alone (L1)
+tags: [golden, lost_or_stolen_card]
+fixtures:
+  customer: {id: EVC09, country: US, avg_monthly_spend: 800, tenure_months: 100}
+turns:
+  - message: "I lost my card yesterday, please block it"
+    expect:
+      intent: lost_or_stolen_card
+      outcome: auto_resolved
+      autonomy_level: L1
+      actions_taken: [freeze_card]
