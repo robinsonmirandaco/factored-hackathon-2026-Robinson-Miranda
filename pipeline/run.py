@@ -17,6 +17,7 @@ from app.core.time import utcnow
 from pipeline.contracts import CONTRACTS
 from pipeline.gold import build_gold
 from pipeline.manifest import scan_bronze
+from pipeline.report import render
 from pipeline.settings import PipelineSettings
 from pipeline.silver import (
     TableResult,
@@ -66,13 +67,23 @@ def hash_outputs(data_dir: Path) -> dict[str, str]:
     return hashes
 
 
-def run(data_dir: Path, normalization_path: Path, now: datetime) -> RunResult:
-    """Runs bronze, silver and gold over the data directory.
+def run(
+    data_dir: Path,
+    normalization_path: Path,
+    now: datetime,
+    report_path: Path,
+    trazo_now: datetime,
+    seed: int,
+) -> RunResult:
+    """Runs bronze, silver and gold over the data directory and writes the quality report.
 
     Args:
         data_dir: Root data directory with `raw/`.
         normalization_path: Versioned normalization mapping.
         now: Run time, naive UTC; only used to date newly registered bronze files.
+        report_path: Where the quality report is written.
+        trazo_now: Simulated clock, shown in the time zone section of the report.
+        seed: Recorded in the report; no pipeline step is random.
 
     Returns:
         Row counts and output hashes.
@@ -94,6 +105,10 @@ def run(data_dir: Path, normalization_path: Path, now: datetime) -> RunResult:
         )
         tables.append(build_table(con, data_dir, contract, files))
     gold = build_gold(con, data_dir)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        render(con, data_dir, tables, manifest, norm, [f"- Seed: {seed}"], trazo_now)
+    )
     return RunResult(tables=tables, gold=gold, outputs=hash_outputs(data_dir))
 
 
@@ -102,7 +117,14 @@ def main() -> None:
     settings = PipelineSettings()
     configure_logging(settings.log_level)
     log.info("data_start", data_dir=str(settings.data_dir), seed=settings.seed)
-    result = run(settings.data_dir, settings.normalization_path, utcnow())
+    result = run(
+        settings.data_dir,
+        settings.normalization_path,
+        utcnow(),
+        settings.quality_report_path,
+        settings.trazo_now,
+        settings.seed,
+    )
     digest = hashlib.sha256(json.dumps(result.outputs, sort_keys=True).encode()).hexdigest()
     log.info("data_done", outputs=len(result.outputs), outputs_sha256=digest, gold=result.gold)
 

@@ -10,8 +10,7 @@ import pytest
 
 from pipeline.extract import extract
 from pipeline.manifest import load_manifest
-from pipeline.run import run
-from tests.pipeline_data import build_dataset, write_dataset
+from tests.pipeline_data import build_dataset, run_pipeline, write_dataset
 
 BUCKET = "bucket"
 PREFIX = "data/"
@@ -149,7 +148,7 @@ def test_data_starts_from_an_empty_folder(bucket: FakeS3, tmp_path: Path) -> Non
     data_dir = tmp_path / "empty"
 
     extract(bucket, BUCKET, PREFIX, data_dir, NOW)
-    result = run(data_dir, Path("config/normalization.yaml"), NOW)
+    result = run_pipeline(data_dir, NOW)
 
     assert sum(t.bronze_rows for t in result.tables) > 0
     assert all(t.quarantine_rows == 0 for t in result.tables)

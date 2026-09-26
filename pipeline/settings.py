@@ -1,5 +1,6 @@
 """Pipeline settings, read from environment variables and an optional .env file."""
 
+from datetime import datetime
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,9 +16,12 @@ class PipelineSettings(BaseSettings):
 
     data_dir: Path = Path("data")
     seed: int = 42
+    # Simulated clock (TRZ-24); the quality report counts events that fall after it.
+    trazo_now: datetime = datetime(2026, 6, 17, 23, 59)
     aws_profile: str = "factored"
     aws_region: str = "us-east-2"
     s3_bucket: str = "factored-datathon-2026-s3-157725502942-us-east-2-an"
     s3_prefix: str = "data/"
     normalization_path: Path = Path("config/normalization.yaml")
+    quality_report_path: Path = Path("docs/reports/calidad.md")
     log_level: str = "INFO"

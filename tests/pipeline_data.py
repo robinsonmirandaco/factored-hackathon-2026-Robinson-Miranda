@@ -6,13 +6,16 @@ break exactly one rule by editing one field.
 
 import csv
 from collections.abc import Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from pipeline.contracts import BY_TABLE
+from pipeline.run import RunResult, run
 
 Rows = dict[str, list[dict[str, str]]]
 PARTITION = "_partition"
+NOW = datetime(2026, 9, 26, 12, 0)
+TRAZO_NOW = datetime(2026, 6, 17, 23, 59)
 
 CUSTOMERS = (("CUS-1", "Argentina", "DNI"), ("CUS-2", "Colombia", "CC"), ("CUS-3", "México", "DNI"))
 CURRENCY = {"Argentina": "ARS", "Colombia": "COP", "México": "USD"}
@@ -360,3 +363,23 @@ def write_dataset(data_dir: Path, rows: Rows) -> None:
             write_csv(
                 partition_path(raw, table, date.fromisoformat(day)), contract.header, day_rows
             )
+
+
+def run_pipeline(data_dir: Path, now: datetime = NOW) -> RunResult:
+    """Runs the pipeline on a test data directory, with the report inside that directory.
+
+    Args:
+        data_dir: Root data directory.
+        now: Registration time for new bronze files.
+
+    Returns:
+        The run result.
+    """
+    return run(
+        data_dir,
+        Path("config/normalization.yaml"),
+        now,
+        data_dir / "calidad.md",
+        TRAZO_NOW,
+        seed=42,
+    )
