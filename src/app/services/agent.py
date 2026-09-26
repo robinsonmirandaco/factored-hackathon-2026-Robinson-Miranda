@@ -4,7 +4,7 @@
   2. LLM extracts intent and entities (heuristic fallback if the LLM is down)
   3. open or continue a Case
   4. route to the sub-agent for that intent; the sub-agent calls tools
-  5. scorer and policy decide autonomy; the sub-agent only executes what policy allows
+  5. policy decides autonomy; the sub-agent only executes what policy allows
   6. LLM composes the reply from facts; a second LLM call validates it (template fallback)
   7. everything lands in the audit log under one trace_id
 
@@ -25,7 +25,6 @@ from app.core.errors import AppError
 from app.core.logging import trace_id_var
 from app.domain.pii import redact
 from app.domain.policy import PolicyContext, PolicyDecision, PolicyEngine
-from app.domain.risk import Scorer
 from app.schemas.extraction import IntentExtraction
 from app.services import tools as T
 
@@ -39,12 +38,10 @@ class AgentDeps:
     Attributes:
         policy: Autonomy policy engine.
         llm: LLM client with fallbacks.
-        scorer: Risk scorer backend.
     """
 
     policy: PolicyEngine
     llm: LLMClient
-    scorer: Scorer
 
 
 @dataclass
@@ -57,7 +54,6 @@ class AgentResponse:
     reply: str
     outcome: str  # auto_resolved | awaiting_customer | escalated | inform
     autonomy_level: str
-    risk_score: float | None
     actions_taken: list[str] = field(default_factory=list)
     llm_fallback: bool = False
     tokens: int = 0
@@ -77,7 +73,7 @@ def handle_message(
 
     Args:
         session: Open database session.
-        deps: Policy, LLM and scorer.
+        deps: Policy and LLM.
         customer_id: Customer sending the message.
         text: Raw customer message.
         confirm: True when the customer confirms a pending action.
@@ -161,7 +157,6 @@ def handle_message(
         reply=reply,
         outcome=facts.get("outcome", "inform"),
         autonomy_level=case.autonomy_level,
-        risk_score=case.risk_score,
         actions_taken=facts.get("actions_taken", []),
         llm_fallback=xstats.fallback or cstats.fallback,
         tokens=tokens,
@@ -182,34 +177,20 @@ def _find_tx(session: Session, case: Case, ex: IntentExtraction) -> dict[str, An
     return tx
 
 
-def _score_and_decide(
+def _decide(
     session: Session,
     deps: AgentDeps,
     case: Case,
     ex: IntentExtraction,
     tx: dict[str, Any] | None,
     profile: dict[str, Any],
-) -> tuple[PolicyDecision, dict[str, Any]]:
-    risk = None
-    explanation: dict[str, Any] = {}
-    if tx:
-        rr = T.score_transaction(session, deps.scorer, tx["tx_id"], case.id)
-        risk = rr.score
-        explanation = {
-            "backend": rr.backend,
-            "top_factors": rr.top_factors[:3],
-            "text": rr.explanation_text(),
-        }
+) -> PolicyDecision:
     ctx = PolicyContext(
         intent=ex.intent,
-        risk=risk,
         amount=tx["amount"] if tx else ex.amount,
-        risk_tier=profile.get("risk_tier", "standard"),
         disputes_last_30d=profile.get("disputes_last_30d", 0),
     )
     decision = deps.policy.decide(ctx)
-    case.risk_score = risk
-    case.risk_explanation = explanation
     case.autonomy_level = decision.level
     write_audit(
         session,
@@ -225,7 +206,7 @@ def _score_and_decide(
             "confirm": decision.require_confirmation,
         },
     )
-    return decision, explanation
+    return decision
 
 
 def _escalate(
@@ -275,9 +256,8 @@ def handle_blocked_purchase(
         return _escalate(
             session, case, "transaction not found for blocked_purchase", "manual lookup", facts
         )
-    decision, expl = _score_and_decide(session, deps, case, ex, tx, profile)
+    decision = _decide(session, deps, case, ex, tx, profile)
     facts = _base_facts(ex, tx, decision)
-    facts["risk_explanation"] = expl.get("text")
 
     if decision.escalate:
         return _escalate(session, case, decision.reason, "review and unblock if legitimate", facts)
@@ -324,9 +304,8 @@ def handle_unrecognized_charge(
         return _escalate(
             session, case, "transaction not found for unrecognized_charge", "manual lookup", facts
         )
-    decision, expl = _score_and_decide(session, deps, case, ex, tx, profile)
+    decision = _decide(session, deps, case, ex, tx, profile)
     facts = _base_facts(ex, tx, decision)
-    facts["risk_explanation"] = expl.get("text")
     pol = deps.policy
 
     # Freezing the card is reversible and protective: do it whenever allowed,
@@ -393,7 +372,7 @@ def handle_duplicate_charge(
         )
     tx = matches[0]
     case.transaction_id = tx["tx_id"]
-    decision, expl = _score_and_decide(session, deps, case, ex, tx, profile)
+    decision = _decide(session, deps, case, ex, tx, profile)
     facts = _base_facts(ex, tx, decision)
     facts["duplicate_of"] = matches[1]["tx_id"]
     if decision.escalate:
@@ -430,8 +409,8 @@ def handle_lost_or_stolen(
     Returns:
         Facts with at least intent, outcome, autonomy_level and actions_taken.
     """
-    decision, _ = _score_and_decide(session, deps, case, ex, None, profile)
-    # No transaction to score; unknown risk forces L3 in policy, but freezing is always safe.
+    decision = _decide(session, deps, case, ex, None, profile)
+    # Freezing is reversible and protective, so it runs even when a hard rule would escalate.
     facts = _base_facts(ex, None, decision)
     T.freeze_card(session, case.customer_id, case.id)
     facts["actions_taken"].append("freeze_card")

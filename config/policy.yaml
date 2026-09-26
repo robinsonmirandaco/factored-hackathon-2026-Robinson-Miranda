@@ -13,15 +13,11 @@
 
 version: 1
 
-risk_bands:
-  low: 0.30      # score < low  -> low risk
-  high: 0.70     # score >= high -> high risk (hard escalation)
-
 amount_limits_usd:
   l1_max: 500      # above this, any action needs customer confirmation
   l2_max: 2000     # above this, everything goes to a human
 
-# Intent -> highest action class the agent may run for it, before risk/amount adjustments.
+# Intent -> highest action class the agent may run for it, before amount adjustments.
 intent_ceiling:
   blocked_purchase: 1
   unrecognized_charge: 2
@@ -46,7 +42,5 @@ action_class:
 
 # Hard rules evaluated first. Any match forces escalation with clearance 0.
 hard_escalation_rules:
-  - name: high_risk
   - name: over_l2_amount
   - name: repeat_dispute_30d
-  - name: restricted_customer

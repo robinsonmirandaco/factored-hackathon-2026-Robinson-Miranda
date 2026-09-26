@@ -25,16 +25,12 @@ class PolicyContext:
 
     Attributes:
         intent: Detected customer intent.
-        risk: Calibrated fraud probability, or None when there is no transaction to score.
         amount: Transaction amount in USD, or None when unknown.
-        risk_tier: Customer tier from the profile ("standard", "elevated", "restricted").
         disputes_last_30d: Disputes opened by the customer in the last 30 days.
     """
 
     intent: str
-    risk: float | None
     amount: float | None
-    risk_tier: str = "standard"
     disputes_last_30d: int = 0
 
 
@@ -48,7 +44,6 @@ class PolicyDecision:
         escalate: Whether the case goes to a human.
         rule: Name of the rule that decided.
         reason: Human-readable explanation, stored in the audit log.
-        band: Risk band ("low", "medium", "high", "unknown").
         allowed_actions: Actions whose class is within the clearance.
     """
 
@@ -57,7 +52,6 @@ class PolicyDecision:
     escalate: bool
     rule: str
     reason: str
-    band: str
     allowed_actions: list[str] = field(default_factory=list)
 
     @property
@@ -81,7 +75,6 @@ class PolicyEngine:
         Args:
             config: Parsed contents of config/policy.yaml.
         """
-        self.bands: dict[str, float] = config["risk_bands"]
         self.limits: dict[str, float] = config["amount_limits_usd"]
         self.ceiling: dict[str, int] = config["intent_ceiling"]
         self.action_class: dict[str, int] = config["action_class"]
@@ -100,32 +93,11 @@ class PolicyEngine:
         with open(path, encoding="utf-8") as f:
             return cls(yaml.safe_load(f))
 
-    def risk_band(self, risk: float | None) -> str:
-        """Maps a risk score to its band.
-
-        Args:
-            risk: Calibrated fraud probability, or None.
-
-        Returns:
-            "low", "medium", "high" or "unknown".
-        """
-        if risk is None:
-            return "unknown"
-        if risk < self.bands["low"]:
-            return "low"
-        if risk >= self.bands["high"]:
-            return "high"
-        return "medium"
-
     def _hard_rule_hit(self, ctx: PolicyContext) -> str | None:
-        # Unknown risk is treated as maximum risk: no score, no autonomy.
-        r = ctx.risk if ctx.risk is not None else 1.0
         amt = ctx.amount or 0.0
         checks = {
-            "high_risk": r >= self.bands["high"],
             "over_l2_amount": amt > self.limits["l2_max"],
             "repeat_dispute_30d": ctx.disputes_last_30d >= 2,
-            "restricted_customer": ctx.risk_tier == "restricted",
         }
         for rule in self.hard_rules:
             if checks.get(rule["name"], False):
@@ -143,7 +115,6 @@ class PolicyEngine:
         Returns:
             The policy decision.
         """
-        band = self.risk_band(ctx.risk)
         amt = ctx.amount or 0.0
 
         hit = self._hard_rule_hit(ctx)
@@ -153,8 +124,7 @@ class PolicyEngine:
                 require_confirmation=False,
                 escalate=True,
                 rule=hit,
-                reason=f"hard rule '{hit}' fired (risk={ctx.risk}, amount={amt:.2f})",
-                band=band,
+                reason=f"hard rule '{hit}' fired (amount={amt:.2f})",
                 allowed_actions=self.actions_for(0),
             )
 
@@ -162,26 +132,21 @@ class PolicyEngine:
         require_confirmation = False
         notes: list[str] = []
 
-        if band == "medium":
-            clearance = min(clearance, 1)
-            require_confirmation = True
-            notes.append("medium risk -> confirmation required")
         if amt > self.limits["l1_max"]:
             require_confirmation = True
             notes.append(f"amount {amt:.2f} > l1_max -> confirmation required")
         if clearance >= 2:
             require_confirmation = True
 
-        reason = f"intent={ctx.intent} band={band} amount={amt:.2f} clearance={clearance}"
+        reason = f"intent={ctx.intent} amount={amt:.2f} clearance={clearance}"
         if notes:
             reason += " | " + "; ".join(notes)
         return PolicyDecision(
             clearance=clearance,
             require_confirmation=require_confirmation,
             escalate=False,
-            rule="ceiling_risk_amount",
+            rule="ceiling_amount",
             reason=reason,
-            band=band,
             allowed_actions=self.actions_for(clearance),
         )
 

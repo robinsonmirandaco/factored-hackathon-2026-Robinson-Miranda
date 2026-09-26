@@ -1,5 +1,6 @@
 description: High risk (foreign country, crypto) -> hard rule high_risk, goes to a human, nothing executed
 tags: [golden, blocked_purchase, escalation]
+skip: reescrito en TRZ-17
 # Risk: 0.6*0.977 + 0.25 (RU vs US) + 0.15*(400/800)/3 = 0.861 -> >= 0.70 -> hard rule high_risk -> L3.
 fixtures:
   customer: {id: EVC04, country: US, avg_monthly_spend: 800, tenure_months: 12}

@@ -84,9 +84,6 @@ def generate(
                 "country": home,
                 "tenure_months": rng.randint(1, 180),
                 "avg_monthly_spend": avg,
-                "risk_tier": rng.choices(["standard", "elevated", "restricted"], [0.9, 0.08, 0.02])[
-                    0
-                ],
                 "card_status": "active",
             }
         )
@@ -116,7 +113,6 @@ def generate(
                     "channel": channel,
                     "timestamp": ts,
                     "status": "blocked" if blocked else "approved",
-                    "is_fraud": is_fraud,
                     "source": "synthetic",
                 }
             )

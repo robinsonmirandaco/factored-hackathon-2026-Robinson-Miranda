@@ -1,5 +1,6 @@
 description: Medium risk -> agent asks the customer to confirm (L2); after confirming it unblocks
 tags: [golden, blocked_purchase, confirmation, multi_turn]
+skip: reescrito en TRZ-17
 # Risk: 0.6*0.535 + 0 + 0.15*(60/800)/3 = 0.325 -> medium band -> clearance min(1,1)=1 + confirmation -> L2.
 # Turn 2 re-sends the original message with confirm=true on the same case (see known failure 13).
 fixtures:

@@ -17,11 +17,6 @@ from sqlalchemy.orm import Session
 from app.adapters.db.audit import timed, write_audit
 from app.adapters.db.models import AuditRecord, Case, Customer, Transaction
 from app.core.time import utcnow
-from app.domain.risk import RiskResult, Scorer, TxFeatures
-
-
-class ToolError(Exception):
-    """A tool was called with a target that does not exist."""
 
 
 @dataclass
@@ -82,7 +77,6 @@ def get_customer_profile(
                     "country": c.country,
                     "tenure_months": c.tenure_months,
                     "avg_monthly_spend": c.avg_monthly_spend,
-                    "risk_tier": c.risk_tier,
                     "card_status": c.card_status,
                     "disputes_last_30d": int(disputes),
                 },
@@ -180,59 +174,6 @@ def lookup_transaction(
         t["ms"],
     )
     return res
-
-
-def score_transaction(
-    session: Session, scorer: Scorer, tx_id: str, case_id: str | None = None
-) -> RiskResult:
-    """Builds the features of a transaction and scores it.
-
-    Args:
-        session: Open database session.
-        scorer: Risk scorer backend.
-        tx_id: Transaction to score.
-        case_id: Case for the audit row.
-
-    Returns:
-        The risk result.
-
-    Raises:
-        ToolError: If the transaction does not exist.
-    """
-    with timed() as t:
-        tx = session.get(Transaction, tx_id)
-        if not tx:
-            raise ToolError(f"transaction {tx_id} not found")
-        c = session.get(Customer, tx.customer_id)
-        since = tx.timestamp - timedelta(hours=24)
-        n24 = session.execute(
-            select(func.count(Transaction.id)).where(
-                Transaction.customer_id == tx.customer_id,
-                Transaction.timestamp.between(since, tx.timestamp),
-            )
-        ).scalar_one()
-        feats = TxFeatures(
-            amount=tx.amount,
-            customer_avg_monthly_spend=c.avg_monthly_spend if c else 0.0,
-            timestamp=tx.timestamp,
-            country=tx.country,
-            customer_country=c.country if c else "US",
-            channel=tx.channel,
-            merchant_category=tx.merchant_category,
-            tenure_months=c.tenure_months if c else 0,
-            tx_last_24h=int(n24),
-        )
-        result = scorer.score(tx_id, feats)
-    write_audit(
-        session,
-        "scorer",
-        "score_transaction",
-        case_id,
-        {"tx_id": tx_id},
-        {"score": result.score, "backend": result.backend, "top_factors": result.top_factors[:3]},
-        t["ms"],
-    )
-    return result
 
 
 # ---- state-changing tools (class 1, 2) --------------------------------------------------

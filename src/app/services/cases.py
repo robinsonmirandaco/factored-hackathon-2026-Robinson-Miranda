@@ -174,8 +174,6 @@ def _to_out(c: Case) -> CaseOut:
         intent=c.intent,
         status=c.status,
         autonomy_level=c.autonomy_level,
-        risk_score=c.risk_score,
-        risk_explanation=c.risk_explanation,
         recommended_action=c.recommended_action,
         escalation_reason=c.escalation_reason,
         human_decision=c.human_decision,

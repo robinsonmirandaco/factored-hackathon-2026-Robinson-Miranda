@@ -19,7 +19,7 @@ class Runtime:
     Attributes:
         settings: Application settings.
         db: Database engine and session factory.
-        agent: Policy, LLM and scorer used by the agent.
+        agent: Policy and LLM used by the agent.
     """
 
     settings: Settings

@@ -1,8 +1,6 @@
 description: Customer confirms by replying "YES", as the template reply tells them to
 tags: [golden, blocked_purchase, confirmation, multi_turn]
-known_failure: >-
-  the orchestrator re-extracts intent from every message; "YES" becomes intent=unknown and is
-  routed to the general inquiry sub-agent instead of continuing the open case
+skip: reescrito en TRZ-17
 fixtures:
   customer: {id: EVC13, country: US, avg_monthly_spend: 800, tenure_months: 60}
   transactions:

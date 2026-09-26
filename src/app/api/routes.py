@@ -34,7 +34,6 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
         status="ok",
         env=s.env,
         db="ok",
-        scorer=s.scorer_backend,
         llm_provider=s.llm_provider,
         llm_available=runtime.agent.llm.available,
     )
@@ -53,7 +52,6 @@ def chat(body: ChatIn, session: SessionDep, runtime: RuntimeDep) -> ChatOut:
         reply=r.reply,
         outcome=r.outcome,
         autonomy_level=r.autonomy_level,
-        risk_score=r.risk_score,
         actions_taken=r.actions_taken,
         llm_fallback=r.llm_fallback,
         tokens=r.tokens,

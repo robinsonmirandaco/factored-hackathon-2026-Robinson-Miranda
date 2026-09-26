@@ -14,6 +14,9 @@ with the expected intent, outcome, autonomy level and actions. The runner:
 A case may declare `known_failure: <why>`. It still runs and shows up in the report, but does
 not fail the run. If it starts passing, the run fails so the case gets promoted to a normal one.
 
+A case may declare `skip: <why>` when its expectations no longer apply and a later story will
+rewrite it. It is not run, and it is listed in the report with its reason.
+
 Exit code: 0 if every non-known-failure case passes, 1 otherwise.
 """
 
@@ -61,8 +64,9 @@ class CaseResult:
     id: str
     description: str
     tags: list[str]
-    status: str  # pass | fail | known_failure | unexpected_pass | error
+    status: str  # pass | fail | known_failure | unexpected_pass | error | skipped
     known_failure: str | None = None
+    skipped: str | None = None
     turns: list[TurnResult] = field(default_factory=list)
     error: str | None = None
 
@@ -181,7 +185,6 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
             k: out.get(k)
             for k in (
                 *TURN_FIELDS,
-                "risk_score",
                 "llm_fallback",
                 "tokens",
                 "latency_ms",
@@ -215,7 +218,7 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
         The summary.
     """
     turns = [t for r in results for t in r.turns]
-    graded = [r for r in results if not r.known_failure]
+    graded = [r for r in results if not r.known_failure and not r.skipped]
     lat = [t.actual["latency_ms"] for t in turns if t.actual.get("latency_ms") is not None]
 
     def escalated(d: dict[str, Any]) -> bool:
@@ -229,6 +232,7 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
         "failed": sum(r.status in ("fail", "error") for r in graded),
         "known_failures": sum(r.status == "known_failure" for r in results),
         "unexpected_passes": sum(r.status == "unexpected_pass" for r in results),
+        "skipped": sum(r.status == "skipped" for r in results),
         "turns": len(turns),
         "escalation": {
             "correct": sum(escalated(t.expected) and escalated(t.actual) for t in with_outcome),
@@ -285,7 +289,7 @@ def write_report(results: list[CaseResult], summary: dict[str, Any], out_dir: st
         "",
         f"**{summary['passed']} / {summary['cases']} passed** · "
         f"{summary['failed']} failed · {summary['known_failures']} known failures · "
-        f"{summary['unexpected_passes']} unexpected passes",
+        f"{summary['unexpected_passes']} unexpected passes · {summary['skipped']} skipped",
         "",
         f"Escalations: {summary['escalation']['correct']} correct, "
         f"{summary['escalation']['missed']} missed, {summary['escalation']['over']} over-escalated",
@@ -301,6 +305,8 @@ def write_report(results: list[CaseResult], summary: dict[str, Any], out_dir: st
         detail = r.error or "; ".join(m for t in r.turns for m in t.mismatches)
         if r.known_failure:
             detail = f"known: {r.known_failure}" + (f" ({detail})" if detail else "")
+        if r.skipped:
+            detail = f"skipped: {r.skipped}"
         lines.append(f"| {r.id} | {r.status} | {', '.join(r.tags)} | {detail} |")
     path = out / "golden_report.md"
     path.write_text("\n".join(lines) + "\n")
@@ -326,6 +332,17 @@ def run(cases_dir: str | Path, out_dir: str | Path) -> tuple[list[CaseResult], d
     results = []
     with tempfile.TemporaryDirectory(prefix="bankagent-eval-") as tmp:
         for case in cases:
+            if case.get("skip"):
+                results.append(
+                    CaseResult(
+                        id=case["id"],
+                        description=case.get("description", ""),
+                        tags=case.get("tags", []),
+                        status="skipped",
+                        skipped=case["skip"],
+                    )
+                )
+                continue
             try:
                 results.append(run_case(case, Path(tmp)))
             except Exception as e:  # a crash in one case must not hide the others

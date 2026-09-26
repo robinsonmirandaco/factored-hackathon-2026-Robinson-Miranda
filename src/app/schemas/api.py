@@ -17,7 +17,6 @@ class HealthOut(BaseModel):
     status: str
     env: str
     db: str
-    scorer: str
     llm_provider: str
     llm_available: bool
 
@@ -47,7 +46,6 @@ class ChatOut(BaseModel):
     reply: str
     outcome: str
     autonomy_level: str
-    risk_score: float | None
     actions_taken: list[str]
     llm_fallback: bool
     tokens: int
@@ -63,8 +61,6 @@ class CaseOut(BaseModel):
     intent: str
     status: str
     autonomy_level: str
-    risk_score: float | None
-    risk_explanation: dict[str, Any] | None
     recommended_action: str | None
     escalation_reason: str | None
     human_decision: str | None

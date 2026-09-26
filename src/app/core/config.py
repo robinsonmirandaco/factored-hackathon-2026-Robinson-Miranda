@@ -31,9 +31,6 @@ class Settings(BaseSettings):
     # False forces the deterministic fallback path (CI and golden cases).
     llm_enabled: bool = True
 
-    scorer_backend: str = "random"  # random | logistic | xgboost
-    model_path: str = "data/models/scorer.joblib"
-
     policy_path: str = "config/policy.yaml"
 
     log_level: str = "INFO"

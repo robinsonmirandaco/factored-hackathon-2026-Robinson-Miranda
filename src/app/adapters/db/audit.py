@@ -29,7 +29,7 @@ def write_audit(
 
     Args:
         session: Open database session.
-        actor: Who acted: agent, tool, scorer, policy, human or system.
+        actor: Who acted: agent, tool, policy, human or system.
         action: What was done.
         case_id: Case the row belongs to, if any.
         payload: Inputs of the action.

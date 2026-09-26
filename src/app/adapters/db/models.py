@@ -7,7 +7,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
-    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -34,13 +33,12 @@ class Customer(Base):
     country: Mapped[str] = mapped_column(String(2), default="US")
     tenure_months: Mapped[int] = mapped_column(Integer, default=0)
     avg_monthly_spend: Mapped[float] = mapped_column(Float, default=0.0)
-    risk_tier: Mapped[str] = mapped_column(String(16), default="standard")
     card_status: Mapped[str] = mapped_column(String(16), default="active")  # active | frozen
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Transaction(Base):
-    """A card transaction. `is_fraud` holds the label when the source provides one."""
+    """A card transaction."""
 
     __tablename__ = "transactions"
 
@@ -55,7 +53,6 @@ class Transaction(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
     # approved | blocked | reversed | disputed
     status: Mapped[str] = mapped_column(String(16), default="approved")
-    is_fraud: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # label when known
     source: Mapped[str] = mapped_column(String(32), default="synthetic")
 
     __table_args__ = (Index("ix_tx_customer_ts", "customer_id", "timestamp"),)
@@ -89,8 +86,6 @@ class Case(Base):
     status: Mapped[str] = mapped_column(String(32), default="open", index=True)
     # open | auto_resolved | awaiting_customer | escalated | approved | rejected | closed
     autonomy_level: Mapped[str] = mapped_column(String(4), default="L0")
-    risk_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    risk_explanation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     recommended_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
     escalation_reason: Mapped[str | None] = mapped_column(String(256), nullable=True)
     human_decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -103,14 +98,14 @@ class Case(Base):
 
 
 class AuditRecord(Base):
-    """Append-only. Every tool call, score, policy decision and human action writes one row."""
+    """Append-only. Every tool call, policy decision and human action writes one row."""
 
     __tablename__ = "audit_log"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trace_id: Mapped[str] = mapped_column(String(32), index=True)
     case_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
-    # agent | tool | scorer | policy | human | system
+    # agent | tool | policy | human | system
     actor: Mapped[str] = mapped_column(String(32))
     action: Mapped[str] = mapped_column(String(64))
     idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
