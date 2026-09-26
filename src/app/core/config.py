@@ -1,5 +1,7 @@
 """Application settings, read from environment variables and an optional .env file."""
 
+from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,6 +18,11 @@ class Settings(BaseSettings):
 
     app_name: str = "bankagent"
     app_env: str = "local"  # local | ci | prod
+
+    # The dataset ends on 2026-06-17, so every data window is anchored to this date, not today.
+    trazo_now: datetime = datetime(2026, 6, 17, 23, 59)
+    seed: int = 42
+    data_dir: Path = Path("data")
 
     # Required: postgresql+psycopg://... There is no default, so a missing value fails at startup.
     database_url: str
