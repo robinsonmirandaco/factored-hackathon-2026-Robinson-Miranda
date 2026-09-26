@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.adapters.db.audit import timed, write_audit
 from app.adapters.db.models import AuditRecord, Case, Customer, Transaction
 from app.core.time import utcnow
+from app.domain.clock import SimulatedClock
 
 
 @dataclass
@@ -133,6 +134,7 @@ def list_recent_transactions(
 
 def lookup_transaction(
     session: Session,
+    clock: SimulatedClock,
     customer_id: str,
     amount: float | None = None,
     merchant: str | None = None,
@@ -141,8 +143,11 @@ def lookup_transaction(
 ) -> ToolResult:
     """Finds the transaction the customer is talking about. Fuzzy on amount (+-2%) and merchant.
 
+    The search covers the `days` before the simulated `now`, never after it.
+
     Args:
         session: Open database session.
+        clock: Simulated clock the search window ends at.
         customer_id: Owner of the transaction.
         amount: Amount mentioned by the customer, if any.
         merchant: Merchant mentioned by the customer, if any.
@@ -153,9 +158,11 @@ def lookup_transaction(
         Up to five matches, newest first; ok is False when there are none.
     """
     with timed() as t:
-        since = utcnow() - timedelta(days=days)
+        # The upper bound matters when an evaluation case sets its own "now": later
+        # transactions had not happened yet when the customer wrote.
         q = select(Transaction).where(
-            Transaction.customer_id == customer_id, Transaction.timestamp >= since
+            Transaction.customer_id == customer_id,
+            Transaction.timestamp.between(clock.days_ago(days), clock.now),
         )
         if amount is not None:
             q = q.where(Transaction.amount.between(amount * 0.98, amount * 1.02))

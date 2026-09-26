@@ -13,6 +13,7 @@ from app.core.config import Settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import install_trace_middleware
+from app.domain.clock import SimulatedClock
 from app.domain.policy import PolicyEngine
 from app.services.agent import AgentDeps
 
@@ -26,7 +27,7 @@ def build_runtime(settings: Settings) -> Runtime:
         settings: Application settings.
 
     Returns:
-        The runtime: database, policy and LLM client.
+        The runtime: database, policy, LLM client and simulated clock.
     """
     return Runtime(
         settings=settings,
@@ -34,6 +35,7 @@ def build_runtime(settings: Settings) -> Runtime:
         agent=AgentDeps(
             policy=PolicyEngine.from_file(settings.policy_path),
             llm=LLMClient(settings),
+            clock=SimulatedClock(settings.trazo_now),
         ),
     )
 
