@@ -1,0 +1,2 @@
+﻿complaint_id,creation_date,process_date,customer_id,case_type,category,subcategory,reception_channel,affected_product_id,related_branch_id,origin_interaction_id,description,claimed_amount,currency,priority,status,assigned_agent_id,assignment_date,first_response_date,resolution_date,closing_date,sla_breached,resolution_days,resolution,compensation_granted,resolution_satisfaction,is_repeat_complainer,escalation_level
+CMP-20240112,2024-01-13 07:00:00,2024-01-12,CUS-1,Claim,Transactions,,Call Center,PRD-1,,,Text,25.50,ARS,Medium,Open,,,,,,False,,,,,False,2

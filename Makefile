@@ -1,4 +1,4 @@
-.PHONY: install dev test lint up down ingest eval density
+.PHONY: install dev test lint up down ingest eval density extract data
 
 install:
 	uv sync --frozen
@@ -28,3 +28,12 @@ eval:
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:
 	uv run --frozen python -m pipeline.density
+
+# Downloads the in-scope tables from S3 (read-only, AWS profile from .env) into $(DATA_DIR)/raw.
+# Incremental: a partition already on disk with the same size and hash is skipped.
+extract:
+	uv run --frozen --group pipeline python -m pipeline.extract
+
+# Bronze manifest, silver with quarantine, and gold under $(DATA_DIR). Starts from an empty folder.
+data: extract
+	uv run --frozen python -m pipeline.run

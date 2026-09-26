@@ -1,0 +1,4 @@
+﻿transaction_id,transaction_date,process_date,product_id,customer_id,transaction_type,transaction_category,amount,currency,amount_usd,channel,branch_id,merchant_name,merchant_category,transaction_country,transaction_city,transaction_status,response_code,is_fraud,fraud_score,latitude,longitude
+TRX-20240105-1,2024-01-05 10:00:00,2024-01-05,PRD-1,CUS-1,Purchase,Food,25.50,ARS,,POS,,Store,Food,Argentina,City,Approved,00,False,1.5,,
+TRX-20240105-2,2024-01-05 10:00:00,2024-01-05,PRD-2,CUS-2,Purchase,Food,25.50,COP,,POS,,Store,Food,Colombia,City,Approved,00,False,1.5,,
+TRX-20240105-3,2024-01-05 10:00:00,2024-01-05,PRD-3,CUS-3,Purchase,Food,25.50,USD,,POS,,Store,Food,México,City,Approved,00,False,1.5,,

@@ -1,0 +1,43 @@
+# Versioned reference data for the silver layer. Bump `version` on any change: the pipeline
+# records it with every run, so a change is traceable in the quality report.
+version: 1
+
+# Country names as they appear in the source, mapped to ISO 3166-1 alpha-2. Transactions abroad
+# name the country in English ("Mexico", "USA"); home countries use the Spanish name.
+countries:
+  Argentina: AR
+  Brazil: BR
+  Colombia: CO
+  México: MX
+  Mexico: MX
+  Spain: ES
+  USA: US
+
+# Customer home countries. Source timestamps carry no zone; silver reads them as local
+# wall-clock time of the customer's country (assumption, see docs/reports/calidad.md).
+# `documents` lists the identity documents that are coherent with the country; any other type
+# is flagged in alert_document_country, not rejected.
+home_countries:
+  AR:
+    zone: America/Argentina/Buenos_Aires
+    currency: ARS
+    documents: [DNI, Pasaporte]
+  CO:
+    zone: America/Bogota
+    currency: COP
+    documents: [CC, CE, Pasaporte]
+  MX:
+    zone: America/Mexico_City
+    currency: MXN
+    documents: [CURP, INE, Pasaporte]
+
+# product_type arrives in Spanish, while the data dictionary uses English names.
+product_types:
+  Cuenta Ahorro: savings_account
+  Cuenta Corriente: checking_account
+  Tarjeta Crédito: credit_card
+  Tarjeta Débito: debit_card
+  Préstamo Personal: personal_loan
+  Préstamo Hipotecario: mortgage
+  Inversión: investment
+  Seguro: insurance

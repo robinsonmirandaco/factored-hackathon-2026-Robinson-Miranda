@@ -71,6 +71,46 @@ Integration tests and golden cases need the Postgres service (`docker compose up
 
 CI (`.github/workflows/ci.yml`) runs lint, unit and integration tests against a Postgres service, ingestion, the golden cases and the Docker build on every push and pull request, and publishes `eval/reports/` as an artifact.
 
+## Data pipeline
+
+`make data` prepares the LATAM Bank data in three layers under `DATA_DIR` (outside git). It first runs `make extract`, so it can start from an empty folder.
+
+- **Bronze**: the CSV files downloaded from S3, kept exactly as delivered. `manifest/bronze.json` records the path, partition, size, SHA-256, load time and header of every file.
+- **Silver**: typed Parquet per table and partition. Every row is checked against its table's contract (`pipeline/contracts.py`); a row that breaks a rule goes to `quarantine/` with the rule, column, value, source file and partition, never silently dropped. For every table, bronze rows equal silver rows plus quarantine rows, or the run fails.
+- **Gold**: demand marts, the case generator input and the serving tables.
+
+`docs/reports/calidad.md` is regenerated on each run with counts per rule, alerts, duplicates, nulls, schema evolution and the time rule. Running `make data` twice gives the same output hashes (`manifest/outputs.json`).
+
+### Time in the data
+
+Timestamps carry no time zone. Each partition is an operational day with a fixed cut-off per table (transactions run from 06:00 to 06:00 of the next day; complaints and interactions from 08:00 to 08:00), the same in all three countries. Timestamps are read as local time of the customer's country; this is an assumption, since the data does not say. The partition date is kept as lineage.
+
+### Tables left out
+
+Three of the thirteen tables are never downloaded or processed: `digital_events`, `campaign_sends` and `marketing_campaigns`. TRAZO handles the intake of disputed card and account charges; marketing campaigns say nothing about a charge, a customer's products or how a complaint was handled. `digital_events` could add fraud signals, such as the country of the IP address against the country of the transaction, but that belongs to a later investigation step, not to intake.
+
+### Freshness policy
+
+The source is a static export of daily partitions, so the pipeline is built as if new days kept arriving:
+
+- **Incremental by partition.** `state/partitions.json` records, for every bronze file, a fingerprint of its content and of what it depends on. A partition already loaded is not read again unless its file, a snapshot table (customers, products, branches, agents, exchange rates), the interactions of the same day, or the pipeline version changed.
+- **Reprocessing window.** The partitions of the last 7 days before the latest one are always read again, to take in late corrections. The window is set with `PIPELINE_REPROCESS_DAYS`.
+- **Idempotent.** Reading a partition replaces its output folder, so it never duplicates rows. An id that already exists in another partition goes to quarantine as a duplicate. A full load and an incremental run over the same input produce identical files.
+- **Late partitions** (an old day delivered after newer ones) are loaded on the next run because they are new, even outside the window.
+- **Schema changes.** A partition whose header differs from the contract goes whole to quarantine as `schema_mismatch`, and the rest of the load continues.
+- **Lineage.** Every silver and gold row carries `source_file`, `partition_date`, `batch_id`, `ingested_at` and `pipeline_version`.
+
+Because the data never changes, `tests/fixtures/update/` (test data, not real data) simulates a late partition and a partition with a new column; `tests/integration/test_update_fixture.py` checks both.
+
+### Commands
+
+```bash
+make extract   # S3 -> DATA_DIR/raw, read-only, AWS profile from .env; skips unchanged files
+make data      # extract, then bronze manifest, silver, quarantine, gold and the quality report
+```
+
+On the full dataset, a full load takes 3 to 4 minutes and a run that only reads the window about 1.5 minutes. Silver and gold take about 0.75 GB next to the 1.2 GB of bronze.
+
 ## Synthetic data
 
 The synthetic generator creates customers, transactions and messages, including deliberately invalid rows, to exercise validation and quarantine. It is a fixture for CI and Compose, not the challenge dataset. The challenge data is never stored in this repository.

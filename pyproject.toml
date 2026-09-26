@@ -24,6 +24,10 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
 ]
+# S3 extraction only (make extract). Not installed in the Docker image.
+pipeline = [
+    "boto3>=1.35",
+]
 
 [build-system]
 requires = ["hatchling"]
