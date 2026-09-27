@@ -1,7 +1,7 @@
 description: Balance question -> inform only (L0), no action
 tags: [golden, general_inquiry]
 fixtures:
-  customer: {id: EVC10, country: CO, avg_monthly_spend: 500, tenure_months: 14}
+  customer: {customer_id: EVC10, document_type: CC, document_number: "EVC10-DOC", first_name: Eval, country: Colombia, country_code: CO, timezone: America/Bogota, segment: Basic}
 turns:
   - message: "What is my current balance?"
     expect:

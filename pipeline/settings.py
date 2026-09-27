@@ -25,6 +25,9 @@ class PipelineSettings(BaseSettings):
     s3_prefix: str = "data/"
     normalization_path: Path = Path("config/normalization.yaml")
     quality_report_path: Path = Path("docs/reports/calidad.md")
+    # Serving cohort (TRZ-07): 5,000 customers, the size TRZ-01 kept (plan A).
+    cohort_size: int = Field(default=5000, gt=0)
+    cohort_report_path: Path = Path("docs/reports/cohorte.md")
     # Partitions of the last N days before the latest one are read again on every run.
     pipeline_reprocess_days: int = Field(default=7, ge=0)
     log_level: str = "INFO"

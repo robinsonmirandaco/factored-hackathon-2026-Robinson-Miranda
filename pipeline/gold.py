@@ -2,7 +2,7 @@
 
 Gold is rebuilt in full on every run from the `silver_<table>` views; each file is written in a
 fixed order so the same silver gives byte-identical gold. The serving tables cover the whole
-population; picking the serving cohort is a separate step (TRZ-07).
+population; the serving cohort is picked from them in `pipeline.cohort` (TRZ-07).
 
 Row-level tables carry the lineage of their silver row. Demand marts aggregate many rows, so each
 group carries its silver table as `source_file`, its latest partition and ingestion time, and the
@@ -114,6 +114,19 @@ def gold_queries(lineage: Lineage) -> dict[str, str]:
             SELECT * EXCLUDE (latitude, longitude)
             FROM silver_transactions
             ORDER BY transaction_id
+        """,
+        # affected_product_id points at another customer's product (design 9.3), so only whether
+        # the customer named a product leaves silver. Free text and agent ids stay behind.
+        "service_complaints": f"""
+            SELECT complaint_id, customer_id, creation_date, process_date, case_type, category,
+                   subcategory, reception_channel,
+                   affected_product_id IS NOT NULL AS has_affected_product,
+                   claimed_amount, currency, priority, status, assignment_date,
+                   first_response_date, resolution_date, closing_date, sla_breached,
+                   resolution_days, is_repeat_complainer, country_code, timezone,
+                   event_date_local, alert_amount_currency_mismatch, {ROW_LINEAGE}
+            FROM silver_complaints
+            ORDER BY complaint_id
         """,
         "service_exchange_rates": """
             SELECT * FROM silver_daily_exchange_rates

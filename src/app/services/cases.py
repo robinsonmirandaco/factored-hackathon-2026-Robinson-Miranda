@@ -125,6 +125,7 @@ def record_decision(session: Session, case_id: str, body: HumanDecisionIn) -> Ca
         case_id,
         {"decision": body.decision, "note": note, "agent_id": body.agent_id},
         {"status": case.status, "system_recommended": case.recommended_action},
+        customer_id=case.customer_id,
     )
     return _to_out(case)
 

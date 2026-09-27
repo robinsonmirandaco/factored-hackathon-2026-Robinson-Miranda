@@ -18,7 +18,12 @@ jobs:
           --health-cmd "pg_isready -U ci -d ci" --health-interval 3s --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      # The service user ci is the owner; the API and the tests connect as trazo_app, whose
+      # password the migration sets from DATABASE_URL.
+      ADMIN_DATABASE_URL: postgresql+psycopg://ci:ci@localhost:5432/ci
+      DATABASE_URL: postgresql+psycopg://trazo_app:ci-app@localhost:5432/ci
+      # Test-only key; CI holds no real document.
+      DOCUMENT_HASH_KEY: ci-only-document-hash-key
       LLM_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
@@ -28,9 +33,10 @@ jobs:
       - run: uv sync --frozen
       - run: uv run --frozen ruff check src pipeline tests
       - run: uv run --frozen ruff format --check src pipeline tests
+      - run: uv run --frozen python -m app.cli.migrate
       - run: uv run --frozen pytest --cov=app --cov-report=xml
       # The synthetic generator is the CI fixture: it exercises validation and quarantine.
-      - run: uv run --frozen python -m app.cli.ingest synthetic --seed 42
+      - run: uv run --frozen python -m app.cli.seed synthetic --seed 42
       # Each golden case runs on its own throwaway schema.
       - run: uv run --frozen python -m app.cli.eval eval/cases --out eval/reports
       - uses: actions/upload-artifact@v4

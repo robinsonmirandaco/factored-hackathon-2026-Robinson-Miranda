@@ -8,11 +8,11 @@ import yaml
 from sqlalchemy import select
 
 from app.adapters.db.models import AuditRecord
-from app.adapters.db.session import Database
+from app.adapters.db.session import Database, SchemaUrls
 from app.cli.eval import run
 from app.domain.clock import SimulatedClock
-from app.services.ingestion import ingest_rows
 from app.services.tools import lookup_transaction
+from tests.serving_data import card, customer, load, transaction
 
 CASES = Path(__file__).resolve().parents[2] / "eval" / "cases"
 TRAZO_NOW = datetime(2026, 6, 17, 23, 59)
@@ -21,32 +21,20 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def db(database_url: str):
-    database = Database(database_url)
-    database.create_all()
-    with database.session() as s:
-        ingest_rows(
-            s,
-            "test",
-            [{"id": "C1"}],
-            [
-                {
-                    "id": "TX1",
-                    "customer_id": "C1",
-                    "amount": 120.0,
-                    "merchant": "Oxxo",
-                    "timestamp": datetime(2026, 6, 10, 14, 0),
-                    "status": "approved",
-                }
-            ],
-            [],
-        )
+def db(schema: SchemaUrls):
+    load(
+        schema.admin,
+        [customer("C1")],
+        [card("P1", "C1")],
+        [transaction("TX1", "C1", "P1", datetime(2026, 6, 10, 14, 0), amount=120.0)],
+    )
+    database = Database(schema.app)
     yield database
     database.dispose()
 
 
 def test_lookup_window_ends_at_simulated_now(db):
-    with db.session() as s:
+    with db.session(customer_id="C1") as s:
         found = lookup_transaction(s, SimulatedClock(TRAZO_NOW), "C1", amount=120.0)
         # With the wall clock the June charge would be outside a 14-day window.
         too_late = lookup_transaction(s, SimulatedClock(datetime(2026, 9, 26, 12, 0)), "C1")
@@ -58,9 +46,9 @@ def test_lookup_window_ends_at_simulated_now(db):
 
 
 def test_audit_timestamps_use_the_real_clock(db):
-    with db.session() as s:
+    with db.session(customer_id="C1") as s:
         lookup_transaction(s, SimulatedClock(TRAZO_NOW), "C1", case_id="K1")
-    with db.session() as s:
+    with db.session(customer_id="C1") as s:
         created = s.execute(select(AuditRecord.created_at)).scalars().all()
     assert created
     # Audit rows are operations, not bank data: they are stamped after the simulated date.

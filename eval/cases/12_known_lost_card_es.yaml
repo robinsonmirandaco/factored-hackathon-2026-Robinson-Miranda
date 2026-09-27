@@ -4,7 +4,9 @@ known_failure: >-
   heuristic_extract checks the blocked_purchase keyword "bloque" before "roba", so
   "bloquearla" wins and the message is routed as blocked_purchase
 fixtures:
-  customer: {id: EVC12, country: CO, avg_monthly_spend: 600, tenure_months: 40}
+  customer: {customer_id: EVC12, document_type: CC, document_number: "EVC12-DOC", first_name: Eval, country: Colombia, country_code: CO, timezone: America/Bogota, segment: Basic}
+  products:
+    - {product_id: EVP12, product_type: credit_card, currency: COP, product_status: Active}
 turns:
   - message: "Me robaron la tarjeta, necesito bloquearla ya"
     expect:

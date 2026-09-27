@@ -17,6 +17,7 @@ COPY --chown=appuser src ./src
 RUN uv sync --frozen --no-dev --no-editable --no-cache
 
 # The API writes the ingestion report under eval/reports, so app files belong to appuser.
+COPY --chown=appuser db ./db
 COPY --chown=appuser config ./config
 COPY --chown=appuser eval ./eval
 RUN mkdir -p data/seed && chown -R appuser data

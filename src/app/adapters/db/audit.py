@@ -22,10 +22,13 @@ def write_audit(
     result: dict[str, Any] | None = None,
     latency_ms: int | None = None,
     idempotency_key: str | None = None,
+    customer_id: str | None = None,
 ) -> AuditRecord:
     """Appends one row to the audit log under the current trace_id.
 
-    Callers must pass PII-redacted payloads; this function stores what it receives.
+    Callers must pass PII-redacted payloads; this function stores what it receives. The row
+    belongs to the customer of the session unless another one is given, so row level security
+    lets that customer's later requests find it (idempotency lookups read the audit log).
 
     Args:
         session: Open database session.
@@ -36,6 +39,7 @@ def write_audit(
         result: Outputs of the action.
         latency_ms: Duration of the action.
         idempotency_key: Unique key for state-changing actions.
+        customer_id: Customer the row is about; defaults to the customer of the session.
 
     Returns:
         The stored audit record.
@@ -43,6 +47,7 @@ def write_audit(
     rec = AuditRecord(
         trace_id=trace_id_var.get(),
         case_id=case_id,
+        customer_id=customer_id or session.info.get("customer_id"),
         actor=actor,
         action=action,
         payload=payload,

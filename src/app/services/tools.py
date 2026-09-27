@@ -2,7 +2,7 @@
   - takes an open Session and typed arguments,
   - writes one audit row,
   - is idempotent when it changes state (keyed by case_id + action + target),
-  - never exposes PII (the customers table has none).
+  - never exposes PII: no name, document or product number leaves these tools.
 
 Which tools may run is decided by the policy engine before the call, never here.
 """
@@ -15,9 +15,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
-from app.adapters.db.models import AuditRecord, Case, Customer, Transaction
+from app.adapters.db.models import (
+    AuditRecord,
+    CardBlock,
+    Case,
+    Customer,
+    Dispute,
+    Product,
+    Transaction,
+)
 from app.core.time import utcnow
 from app.domain.clock import SimulatedClock
+
+CARD_TYPES = ("credit_card", "debit_card")
 
 
 @dataclass
@@ -47,7 +57,7 @@ def _existing(session: Session, key: str) -> AuditRecord | None:
 def get_customer_profile(
     session: Session, customer_id: str, case_id: str | None = None
 ) -> ToolResult:
-    """Reads the PII-free profile and recent dispute count of a customer.
+    """Reads the segment, status and recent dispute count of a customer.
 
     Args:
         session: Open database session.
@@ -73,12 +83,10 @@ def get_customer_profile(
             res = ToolResult(
                 True,
                 {
-                    "customer_id": c.id,
+                    "customer_id": c.customer_id,
                     "segment": c.segment,
-                    "country": c.country,
-                    "tenure_months": c.tenure_months,
-                    "avg_monthly_spend": c.avg_monthly_spend,
-                    "card_status": c.card_status,
+                    "country_code": c.country_code,
+                    "customer_status": c.customer_status,
                     "disputes_last_30d": int(disputes),
                 },
             )
@@ -113,7 +121,7 @@ def list_recent_transactions(
             session.execute(
                 select(Transaction)
                 .where(Transaction.customer_id == customer_id)
-                .order_by(Transaction.timestamp.desc())
+                .order_by(Transaction.transaction_date.desc())
                 .limit(limit)
             )
             .scalars()
@@ -162,13 +170,17 @@ def lookup_transaction(
         # transactions had not happened yet when the customer wrote.
         q = select(Transaction).where(
             Transaction.customer_id == customer_id,
-            Transaction.timestamp.between(clock.days_ago(days), clock.now),
+            Transaction.transaction_date.between(clock.days_ago(days), clock.now),
         )
         if amount is not None:
             q = q.where(Transaction.amount.between(amount * 0.98, amount * 1.02))
         if merchant:
-            q = q.where(func.lower(Transaction.merchant).like(f"%{merchant.lower()}%"))
-        rows = session.execute(q.order_by(Transaction.timestamp.desc()).limit(5)).scalars().all()
+            q = q.where(func.lower(Transaction.merchant_name).like(f"%{merchant.lower()}%"))
+        rows = (
+            session.execute(q.order_by(Transaction.transaction_date.desc()).limit(5))
+            .scalars()
+            .all()
+        )
         data = {"matches": [_tx_dict(r) for r in rows], "count": len(rows)}
         res = ToolResult(len(rows) > 0, data, "" if rows else "no matching transaction")
     write_audit(
@@ -186,35 +198,66 @@ def lookup_transaction(
 # ---- state-changing tools (class 1) -----------------------------------------------------
 
 
-def freeze_card(session: Session, customer_id: str, case_id: str) -> ToolResult:
-    """Freezes the customer's card.
+def freeze_card(session: Session, customer_id: str, case_id: str, reason: str) -> ToolResult:
+    """Blocks every active card of the customer and records each block in card_blocks.
+
+    Every active card is blocked because the customer has not said which card yet; choosing
+    the card and the folio come with TRZ-18.
 
     Args:
         session: Open database session.
         customer_id: Card owner.
         case_id: Case that owns the action; part of the idempotency key.
+        reason: Why the cards are blocked, such as the case intent.
 
     Returns:
-        Card status before and after, or the stored result on a replay.
+        The blocked products and their status before, or the stored result on a replay; ok
+        is False when the customer has no active card.
     """
     key = f"{case_id}:freeze_card:{customer_id}"
     if prev := _existing(session, key):
         return ToolResult(True, prev.result or {}, "already applied (idempotent)")
     with timed() as t:
-        c = session.get(Customer, customer_id)
-        if not c:
-            return ToolResult(False, {}, "customer not found")
-        before = c.card_status
-        c.card_status = "frozen"
+        cards = (
+            session.execute(
+                select(Product)
+                .where(
+                    Product.customer_id == customer_id,
+                    Product.product_type.in_(CARD_TYPES),
+                    Product.product_status == "Active",
+                )
+                .order_by(Product.product_id)
+            )
+            .scalars()
+            .all()
+        )
+        if not cards:
+            return ToolResult(False, {}, "no active card")
+        for p in cards:
+            session.add(
+                CardBlock(
+                    customer_id=customer_id,
+                    product_id=p.product_id,
+                    case_id=case_id,
+                    reason=reason[:200],
+                    status_before=p.product_status,
+                )
+            )
+            p.product_status = "Blocked"
         res = ToolResult(
-            True, {"customer_id": customer_id, "card_before": before, "card_after": "frozen"}
+            True,
+            {
+                "customer_id": customer_id,
+                "blocked_products": [p.product_id for p in cards],
+                "status_after": "Blocked",
+            },
         )
     write_audit(
         session,
         "tool",
         "freeze_card",
         case_id,
-        {"customer_id": customer_id},
+        {"customer_id": customer_id, "reason": reason[:200]},
         res.data,
         t["ms"],
         idempotency_key=key,
@@ -222,13 +265,18 @@ def freeze_card(session: Session, customer_id: str, case_id: str) -> ToolResult:
     return res
 
 
-def open_dispute(session: Session, tx_id: str, case_id: str, reason: str) -> ToolResult:
-    """Opens a dispute on a transaction.
+def open_dispute(
+    session: Session, tx_id: str, case_id: str, dispute_type: str, reason: str
+) -> ToolResult:
+    """Registers a dispute on a transaction as a row of disputes; the transaction is untouched.
+
+    The folio and the deadline come with TRZ-18.
 
     Args:
         session: Open database session.
         tx_id: Disputed transaction.
         case_id: Case that owns the action; part of the idempotency key.
+        dispute_type: Kind of dispute, such as the case intent.
         reason: Why the dispute was opened, truncated to 200 characters.
 
     Returns:
@@ -241,7 +289,17 @@ def open_dispute(session: Session, tx_id: str, case_id: str, reason: str) -> Too
         tx = session.get(Transaction, tx_id)
         if not tx:
             return ToolResult(False, {}, "transaction not found")
-        tx.status = "disputed"
+        session.add(
+            Dispute(
+                customer_id=tx.customer_id,
+                case_id=case_id,
+                transaction_id=tx_id,
+                dispute_type=dispute_type,
+                reason=reason[:200],
+                amount=tx.amount,
+                currency=tx.currency,
+            )
+        )
         res = ToolResult(True, {"tx_id": tx_id, "dispute_status": "opened", "reason": reason[:200]})
     write_audit(
         session,
@@ -300,13 +358,13 @@ def escalate_to_human(
 
 def _tx_dict(r: Transaction) -> dict[str, Any]:
     return {
-        "tx_id": r.id,
+        "tx_id": r.transaction_id,
         "amount": r.amount,
         "currency": r.currency,
-        "merchant": r.merchant,
+        "merchant": r.merchant_name,
         "merchant_category": r.merchant_category,
-        "country": r.country,
+        "country": r.transaction_country,
         "channel": r.channel,
-        "timestamp": r.timestamp.isoformat(),
-        "status": r.status,
+        "timestamp": r.transaction_date.isoformat(),
+        "status": r.transaction_status,
     }

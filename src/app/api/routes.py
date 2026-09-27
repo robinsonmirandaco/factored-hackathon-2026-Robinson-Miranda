@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.api.deps import RuntimeDep, SessionDep
+from app.adapters.db.session import bind_context
+from app.api.deps import AnalystSessionDep, RuntimeDep, SessionDep
 from app.schemas.api import (
     CaseOut,
     ChatIn,
@@ -42,6 +43,10 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
 @router.post("/chat", response_model=ChatOut, responses={404: _ERRORS[404], 422: _ERRORS[422]})
 def chat(body: ChatIn, session: SessionDep, runtime: RuntimeDep) -> ChatOut:
     """Handles one customer turn: understand, decide, act or escalate, reply."""
+    # TODO(TRZ-09): take the customer from the session JWT. Until then the body names the
+    # customer, so row level security confines the request to that customer's rows but does not
+    # stop a caller from naming another customer (IDOR).
+    bind_context(session, customer_id=body.customer_id)
     r = handle_message(
         session, runtime.agent, body.customer_id, body.message, body.confirm, body.case_id
     )
@@ -60,19 +65,19 @@ def chat(body: ChatIn, session: SessionDep, runtime: RuntimeDep) -> ChatOut:
 
 
 @router.get("/cases/{case_id}", response_model=CaseOut, responses={404: _ERRORS[404]})
-def get_case(case_id: str, session: SessionDep) -> CaseOut:
+def get_case(case_id: str, session: AnalystSessionDep) -> CaseOut:
     """Returns one case."""
     return cases.get_case(session, case_id)
 
 
 @router.get("/cases/{case_id}/trace", response_model=list[TraceEventOut])
-def get_trace(case_id: str, session: SessionDep) -> list[TraceEventOut]:
+def get_trace(case_id: str, session: AnalystSessionDep) -> list[TraceEventOut]:
     """Returns every audit row of a case in write order."""
     return cases.get_trace(session, case_id)
 
 
 @router.get("/queue", response_model=list[CaseOut])
-def queue(session: SessionDep) -> list[CaseOut]:
+def queue(session: AnalystSessionDep) -> list[CaseOut]:
     """Returns the escalated cases waiting for a human, oldest first."""
     return cases.list_queue(session)
 
@@ -82,12 +87,12 @@ def queue(session: SessionDep) -> list[CaseOut]:
     response_model=CaseOut,
     responses={404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422]},
 )
-def human_decision(case_id: str, body: HumanDecisionIn, session: SessionDep) -> CaseOut:
+def human_decision(case_id: str, body: HumanDecisionIn, session: AnalystSessionDep) -> CaseOut:
     """Records an operator decision on an escalated case."""
     return cases.record_decision(session, case_id, body)
 
 
 @router.get("/metrics", response_model=MetricsOut)
-def metrics(session: SessionDep) -> MetricsOut:
+def metrics(session: AnalystSessionDep) -> MetricsOut:
     """Returns operational counters from the cases table and the audit log."""
     return cases.get_metrics(session)

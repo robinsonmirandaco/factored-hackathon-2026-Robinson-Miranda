@@ -381,6 +381,7 @@ def run_pipeline(data_dir: Path, now: datetime = NOW, reprocess_days: int = 7) -
         data_dir=data_dir,
         normalization_path=Path("config/normalization.yaml"),
         quality_report_path=data_dir / "calidad.md",
+        cohort_report_path=data_dir / "cohorte.md",
         trazo_now=TRAZO_NOW,
         seed=42,
         pipeline_reprocess_days=reprocess_days,

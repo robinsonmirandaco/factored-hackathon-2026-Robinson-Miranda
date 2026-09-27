@@ -24,8 +24,13 @@ class Settings(BaseSettings):
     seed: int = 42
     data_dir: Path = Path("data")
 
-    # Required: postgresql+psycopg://... There is no default, so a missing value fails at startup.
+    # Required: postgresql+psycopg://trazo_app:... There is no default, so a missing value fails
+    # at startup. The API connects only as trazo_app, the role row level security applies to.
     database_url: str
+    # Owner of the schema. Only migrations, seeds and test fixtures use it, never the API.
+    admin_database_url: str | None = None
+    # Key of the HMAC that replaces identity document numbers; required to load customers.
+    document_hash_key: str = ""
 
     # anthropic: Claude through the official SDK. local: an OpenAI-compatible server such as
     # Docker Model Runner or Ollama, so the agent can run without a paid key.

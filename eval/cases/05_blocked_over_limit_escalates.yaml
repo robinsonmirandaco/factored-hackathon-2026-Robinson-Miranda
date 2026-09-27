@@ -3,9 +3,11 @@ tags: [golden, blocked_purchase, escalation, amount_limit]
 # Risk: 0.6*0.051 + 0 + 0.15*(2500/3000)/3 = 0.072 -> low, so high_risk does NOT fire first.
 # 2500 > l2_max 2000 -> hard rule over_l2_amount -> L3.
 fixtures:
-  customer: {id: EVC05, country: US, avg_monthly_spend: 3000, tenure_months: 90}
+  customer: {customer_id: EVC05, document_type: Pasaporte, document_number: "EVC05-DOC", first_name: Eval, country: México, country_code: MX, timezone: America/Mexico_City, segment: Basic}
+  products:
+    - {product_id: EVP05, product_type: credit_card, currency: USD, product_status: Active}
   transactions:
-    - {id: EVTX017, amount: 2500.0, merchant: Delta Airlines, merchant_category: travel, country: US, channel: online, status: blocked, hours_ago: 2}
+    - {transaction_id: EVTX017, transaction_type: Purchase, amount: 2500.0, currency: USD, merchant_name: Delta Airlines, merchant_category: Transport, transaction_country: MX, channel: Web, transaction_status: Declined, hours_ago: 2}
 turns:
   - message: "My purchase of $2500 at Delta Airlines was declined but it was me, please unblock it"
     expect:
