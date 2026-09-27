@@ -23,9 +23,12 @@ class PipelineSettings(BaseSettings):
     aws_region: str = "us-east-2"
     s3_bucket: str = "factored-datathon-2026-s3-157725502942-us-east-2-an"
     s3_prefix: str = "data/"
+    # Earlier copy of the data in the same bucket, compared by make diff-backup (TRZ-08).
+    s3_backup_prefix: str = "data_backup_20260831/"
     normalization_path: Path = Path("config/normalization.yaml")
     quality_report_path: Path = Path("docs/reports/calidad.md")
     demand_report_path: Path = Path("docs/reports/demanda.md")
+    versions_report_path: Path = Path("docs/reports/diferencias_versiones.md")
     # Serving cohort (TRZ-07): 5,000 customers, the size TRZ-01 kept (plan A).
     cohort_size: int = Field(default=5000, gt=0)
     cohort_report_path: Path = Path("docs/reports/cohorte.md")
