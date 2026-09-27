@@ -6,7 +6,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from pipeline.demand import category_rows, dispute_figures
+from pipeline.demand import category_rows, dispute_figures, hour_finding
 from pipeline.report import cutoff_holds
 from pipeline.reports import write_reports
 from pipeline.settings import PipelineSettings
@@ -145,3 +145,17 @@ def test_cutoff_holds_when_events_stay_inside_the_operational_day() -> None:
 )
 def test_cutoff_does_not_hold_when_an_event_leaves_the_operational_day(offset: tuple) -> None:
     assert not cutoff_holds([offset])
+
+
+def _hours(peak: int = 0) -> list[tuple]:
+    return [(f"{h:02d}", 100 + (peak if 9 <= h <= 17 else 0)) for h in range(24)]
+
+
+def test_flat_hourly_demand_is_reported_as_a_generator_artifact() -> None:
+    assert "artifact of the synthetic generator" in hour_finding(_hours(), _hours(10))
+
+
+def test_business_hours_peak_is_not_reported_as_flat() -> None:
+    finding = hour_finding(_hours(), _hours(100))
+
+    assert finding.startswith("Hourly demand is not flat")

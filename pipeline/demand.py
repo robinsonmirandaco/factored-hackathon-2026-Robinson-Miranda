@@ -18,6 +18,8 @@ from pipeline.silver import sql_str
 # Complaint subcategories that are transaction disputes (design §2.1).
 DISPUTE_SUBCATEGORIES = ("Cargo no reconocido", "Cobro indebido")
 COMPLAINT_CATEGORY = "Queja"
+# Largest over smallest hourly share for demand to count as flat over the day.
+FLAT_HOUR_RATIO = 1.25
 # Gold marts the report reads.
 MARTS = ("demand_interactions",)
 WEEKDAYS = {1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun"}
@@ -206,6 +208,47 @@ def _merge(*series: list[tuple]) -> list[list[object]]:
     ]
 
 
+def hour_spread(rows: list[tuple]) -> tuple[float, float]:
+    """Smallest and largest share of a day's demand that falls in one hour.
+
+    Args:
+        rows: (hour, count) over the 24 hours; a missing hour counts as zero.
+
+    Returns:
+        (minimum share, maximum share), as fractions.
+    """
+    counts = dict(rows)
+    total = sum(counts.values())
+    shares = [counts.get(f"{h:02d}", 0) / total for h in range(24)] if total else [0.0]
+    return min(shares), max(shares)
+
+
+def hour_finding(contacts: list[tuple], disputes: list[tuple]) -> str:
+    """States whether demand is flat over the 24 hours of the day.
+
+    Args:
+        contacts: (hour, complaint contacts).
+        disputes: (hour, dispute complaints).
+
+    Returns:
+        One paragraph with the range of hourly shares of both series.
+    """
+    spreads = [hour_spread(contacts), hour_spread(disputes)]
+    flat = all(hi <= FLAT_HOUR_RATIO * lo for lo, hi in spreads)
+    ranges = (
+        f"complaint contacts {100 * spreads[0][0]:.2f}% to {100 * spreads[0][1]:.2f}% per "
+        f"hour, dispute complaints {100 * spreads[1][0]:.2f}% to {100 * spreads[1][1]:.2f}%"
+        f"; a flat day is {100 / 24:.2f}%"
+    )
+    if flat:
+        return (
+            f"**Finding: demand is spread evenly over the 24 hours** ({ranges}), night hours "
+            "included. A bank's contact demand peaks in business hours; this flat profile is an "
+            "artifact of the synthetic generator."
+        )
+    return f"Hourly demand is not flat: {ranges}."
+
+
 def _patterns(con: duckdb.DuckDBPyConnection, data_dir: Path) -> list[str]:
     mart = _mart(data_dir, "demand_interactions")
     where = f"reason_category = {sql_str(COMPLAINT_CATEGORY)}"
@@ -227,6 +270,8 @@ def _patterns(con: duckdb.DuckDBPyConnection, data_dir: Path) -> list[str]:
         return [(f"{h:02d}", n) for h, n in rows]
 
     header = ["", "Complaint contacts", "Dispute complaints"]
+    by_hour_contacts = hour(contacts("hour"))
+    by_hour_disputes = hour(disputes("hour(timezone(timezone, creation_date))"))
     first, last = con.execute(
         "SELECT min(partition_date), max(partition_date) FROM silver_complaints"
     ).fetchone() or (None, None)
@@ -258,12 +303,9 @@ def _patterns(con: duckdb.DuckDBPyConnection, data_dir: Path) -> list[str]:
         "",
         "### By hour of the day",
         "",
-        *_table(
-            ["Hour", *header[1:]],
-            _merge(
-                hour(contacts("hour")), hour(disputes("hour(timezone(timezone, creation_date))"))
-            ),
-        ),
+        *_table(["Hour", *header[1:]], _merge(by_hour_contacts, by_hour_disputes)),
+        "",
+        hour_finding(by_hour_contacts, by_hour_disputes),
         "",
         "### By country",
         "",

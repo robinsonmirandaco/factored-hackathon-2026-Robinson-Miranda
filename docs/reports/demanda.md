@@ -131,6 +131,8 @@ Partitions run from 2023-06-17 to 2026-06-17, so the first and last months are p
 | 22 | 4,803 (4.10%) | 978 (3.99%) |
 | 23 | 4,933 (4.22%) | 1,068 (4.36%) |
 
+**Finding: demand is spread evenly over the 24 hours** (complaint contacts 4.04% to 4.25% per hour, dispute complaints 3.97% to 4.40%; a flat day is 4.17%), night hours included. A bank's contact demand peaks in business hours; this flat profile is an artifact of the synthetic generator.
+
 ### By country
 
 | Country | Complaint contacts | Dispute complaints |
