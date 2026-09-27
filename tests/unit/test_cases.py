@@ -618,13 +618,19 @@ def test_check_blocks_missing_messages_and_personal_data(written: Written) -> No
     assert errors == []
 
 
-def test_handwritten_records_mark_non_native_variants(written: Written) -> None:
+def test_handwritten_records_mark_assisted_and_non_native_variants(written: Written) -> None:
     bases, folder = written
     _fill(folder, "No reconozco un cargo")
     cases = handwritten.records(bases, handwritten.load_messages(folder), {})
     flags = {c.variant: c.non_native_writer for c in cases}
     assert flags == {"es-MX": False, "es-CO": False, "es-AR": True, "pt-BR": True}
-    assert {c.message_source for c in cases} == {"handwritten"}
+    sources = {c.variant: c.message_source for c in cases}
+    assert sources == {
+        "es-MX": "assisted",
+        "es-CO": "handwritten",
+        "es-AR": "assisted",
+        "pt-BR": "assisted",
+    }
 
 
 def _answer(folder: Path, n: int, when: str, bases: list[BaseCase], flip: int = 0) -> None:
