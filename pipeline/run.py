@@ -21,6 +21,7 @@ from pipeline.contracts import CONTRACTS, PIPELINE_VERSION
 from pipeline.gold import build_gold
 from pipeline.manifest import scan_bronze
 from pipeline.report import render
+from pipeline.reports import run_header, table_result
 from pipeline.settings import PipelineSettings
 from pipeline.silver import (
     Lineage,
@@ -121,25 +122,12 @@ def run(settings: PipelineSettings, now: datetime) -> RunResult:
             record(state, read, counts, contract, inputs, lineage.batch_id)
         else:
             register_silver_view(con, data_dir, contract)
-        entries = [state[f.path] for f in files]
-        result = TableResult(
-            table=contract.table,
-            files=len(files),
-            files_read=len(read),
-            bronze_rows=sum(e.bronze_rows for e in entries),
-            silver_rows=sum(e.silver_rows for e in entries),
-            quarantine_rows=sum(e.quarantine_rows for e in entries),
-        )
+        result = table_result(contract, files, state, len(read))
         log.info("silver_table", **result.__dict__)
         tables.append(result)
     save_state(data_dir, state)
     gold = build_gold(con, data_dir, lineage)
-    header = [
-        f"- Pipeline version: {lineage.pipeline_version}",
-        f"- Batch id: {lineage.batch_id}",
-        f"- Reprocessing window: {settings.pipeline_reprocess_days} days",
-        f"- Seed: {settings.seed}",
-    ]
+    header = run_header(lineage, settings)
     settings.quality_report_path.parent.mkdir(parents=True, exist_ok=True)
     settings.quality_report_path.write_text(
         render(con, data_dir, tables, manifest, norm, header, settings.trazo_now)

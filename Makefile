@@ -1,4 +1,4 @@
-.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup
 
 install:
 	uv sync --frozen
@@ -54,3 +54,14 @@ extract:
 # docs/reports/calidad.md and cohorte.md. Starts from an empty folder.
 data: extract
 	uv run --frozen python -m pipeline.run
+
+# docs/reports/calidad.md and demanda.md from the silver and gold of the last make data; writes
+# nothing under $(DATA_DIR).
+report-data:
+	uv run --frozen python -m pipeline.reports
+
+# Downloads the in-scope tables of the backup prefix (read-only, incremental) into
+# $(DATA_DIR)/backup, apart from raw/, and compares them with the current version:
+# docs/reports/diferencias_versiones.md.
+diff-backup:
+	uv run --frozen --group pipeline python -m pipeline.diff_backup

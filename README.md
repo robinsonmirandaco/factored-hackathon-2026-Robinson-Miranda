@@ -67,6 +67,8 @@ The response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and
 | `uv run pytest -m integration` | Integration tests against Postgres | Terminal |
 | `make eval` | Runs the golden conversation cases in `eval/cases/` | `eval/reports/golden_report.md` |
 | `uv run python -m app.cli.seed synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
+| `make report-data` | Rebuilds the quality and demand reports from silver and gold | `docs/reports/calidad.md`, `docs/reports/demanda.md` |
+| `make diff-backup` | Compares the current data against the organizers' earlier backup | `docs/reports/diferencias_versiones.md` |
 
 Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` and `ADMIN_DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
 
@@ -81,6 +83,9 @@ CI (`.github/workflows/ci.yml`) runs lint, unit and integration tests against a 
 - **Gold**: demand marts, the case generator input and the serving tables.
 
 `docs/reports/calidad.md` is regenerated on each run with counts per rule, alerts, duplicates, nulls, schema evolution and the time rule. Running `make data` twice gives the same output hashes (`manifest/outputs.json`).
+
+`make report-data`   # quality and demand reports from silver and gold
+`make diff-backup`   # partitions, row counts and shared ids against data_backup_20260831
 
 ### Time in the data
 
