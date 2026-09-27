@@ -195,7 +195,17 @@ def test_complete_sends_the_temperature_to_both_providers() -> None:
     class Messages:
         def create(self, **kwargs: object) -> object:
             sent.update(kwargs)
-            usage = type("Usage", (), {"input_tokens": 3, "output_tokens": 2})()
+            # The SDK's Usage carries the cache fields, None when nothing was cached.
+            usage = type(
+                "Usage",
+                (),
+                {
+                    "input_tokens": 3,
+                    "output_tokens": 2,
+                    "cache_creation_input_tokens": None,
+                    "cache_read_input_tokens": None,
+                },
+            )()
             block = type("Block", (), {"type": "text", "text": "ok"})()
             return type("Message", (), {"content": [block], "usage": usage})()
 
