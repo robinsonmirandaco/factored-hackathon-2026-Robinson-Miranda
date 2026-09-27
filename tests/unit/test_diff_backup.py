@@ -39,6 +39,8 @@ def test_compare_finds_added_missing_and_changed_partitions(tmp_path: Path) -> N
     assert tx.changed == [("2024-01-11", PER_DAY + 1, PER_DAY)]
     assert diffs["complaints"].changed == []
     assert diffs["customers"].current_rows == diffs["customers"].backup_rows == {"snapshot": 3}
+    assert tx.shared_ids == (2 * PER_DAY, 1, 0)
+    assert diffs["customers"].shared_ids == (3, 0, 0)
 
 
 def test_report_lists_each_kind_of_difference(tmp_path: Path) -> None:
@@ -53,6 +55,18 @@ def test_report_lists_each_kind_of_difference(tmp_path: Path) -> None:
     assert "| transactions | 2024-01-11 |" in report
     assert "## Missing partitions\n\nNone." in report
     assert f"| transactions | 2024-01-10 | {PER_DAY + 1} | {PER_DAY} | +1 |" in report
+    assert "<details>" in report
+    assert "same records**: in daily_exchange_rates, transactions, the" in report
+
+
+def test_same_ids_in_both_versions_give_the_same_records_conclusion(tmp_path: Path) -> None:
+    current = _version(tmp_path / "current", [date(2024, 1, 10)])
+    backup = _version(tmp_path / "backup", [date(2024, 1, 10)])
+
+    report = render(compare(current, backup), "s3://b/data/", "s3://b/backup/")
+
+    assert "the partitions present in both versions hold the same ids" in report
+    assert "None: every partition present in both versions has the same number" in report
 
 
 def test_a_table_absent_from_the_backup_counts_every_partition_as_added(tmp_path: Path) -> None:

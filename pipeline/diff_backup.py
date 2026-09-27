@@ -17,9 +17,9 @@ from app.core.time import utcnow
 from pipeline.contracts import CONTRACTS
 from pipeline.extract import extract, make_client
 from pipeline.manifest import BronzeFile, load_manifest
-from pipeline.report import _n, _table
+from pipeline.report import _n, _pct, _table
 from pipeline.settings import PipelineSettings
-from pipeline.silver import sql_str
+from pipeline.silver import q, sql_str
 
 log = get_logger("pipeline.diff_backup")
 
@@ -34,11 +34,16 @@ class TableDiff:
         table: Table name.
         current_rows: Rows per partition in the current version; snapshots use `snapshot`.
         backup_rows: Rows per partition in the backup.
+        key: Primary key columns of the table.
+        shared_ids: (ids in both, ids only in current, ids only in backup) over the partitions
+            present in both versions; None when no partition is in both.
     """
 
     table: str
     current_rows: dict[str, int]
     backup_rows: dict[str, int]
+    key: tuple[str, ...] = ()
+    shared_ids: tuple[int, int, int] | None = None
 
     @property
     def added(self) -> list[str]:
@@ -72,6 +77,50 @@ def backup_dir(settings: PipelineSettings) -> Path:
     return settings.data_dir / "backup" / settings.s3_backup_prefix.strip("/")
 
 
+def _read(root: Path, files: list[BronzeFile]) -> str:
+    paths = "[" + ", ".join(sql_str(str((root / f.path).resolve())) for f in files) + "]"
+    return (
+        f"read_csv({paths}, header = true, delim = ',', quote = '\"', escape = '\"', "
+        "all_varchar = true, union_by_name = true, filename = true, hive_partitioning = false)"
+    )
+
+
+def id_overlap(
+    current_root: Path,
+    current_files: list[BronzeFile],
+    backup_root: Path,
+    backup_files: list[BronzeFile],
+    key: tuple[str, ...],
+) -> tuple[int, int, int]:
+    """Compares the primary key values of two sets of files. Only counts leave DuckDB.
+
+    Args:
+        current_root: Directory the current manifest paths are relative to.
+        current_files: Files of the current version.
+        backup_root: Directory the backup manifest paths are relative to.
+        backup_files: Files of the backup.
+        key: Primary key columns.
+
+    Returns:
+        (distinct ids in both, only in the current files, only in the backup files).
+    """
+    id_expr = "concat_ws('|', " + ", ".join(q(c) for c in key) + ")"
+    row = (
+        duckdb.connect()
+        .execute(
+            f"""
+            WITH c AS (SELECT DISTINCT {id_expr} AS id FROM {_read(current_root, current_files)}),
+                 b AS (SELECT DISTINCT {id_expr} AS id FROM {_read(backup_root, backup_files)})
+            SELECT (SELECT count(*) FROM c SEMI JOIN b USING (id)),
+                   (SELECT count(*) FROM c ANTI JOIN b USING (id)),
+                   (SELECT count(*) FROM b ANTI JOIN c USING (id))
+            """
+        )
+        .fetchone()
+    )
+    return (row[0], row[1], row[2]) if row else (0, 0, 0)
+
+
 def count_rows(root: Path, files: list[BronzeFile]) -> dict[str, int]:
     """Counts the data rows of each CSV file, header excluded.
 
@@ -88,20 +137,9 @@ def count_rows(root: Path, files: list[BronzeFile]) -> dict[str, int]:
     if not files:
         return {}
     by_path = {str((root / f.path).resolve()): f.partition_date or SNAPSHOT for f in files}
-    paths = "[" + ", ".join(sql_str(p) for p in sorted(by_path)) + "]"
     rows = (
-        duckdb.connect()
-        .execute(
-            f"""
-        SELECT filename, count(*)
-        FROM read_csv({paths}, header = true, delim = ',', quote = '"', escape = '"',
-                      all_varchar = true, union_by_name = true, filename = true,
-                      hive_partitioning = false)
-        GROUP BY 1
-        """
-        )
-        .fetchall()
-    )
+        duckdb.connect().execute(f"SELECT filename, count(*) FROM {_read(root, files)} GROUP BY 1")
+    ).fetchall()
     counts = dict.fromkeys(by_path.values(), 0)
     for filename, n in rows:
         counts[by_path[str(Path(filename).resolve())]] += n
@@ -121,15 +159,27 @@ def compare(current_root: Path, backup_root: Path) -> list[TableDiff]:
     current, backup = load_manifest(current_root), load_manifest(backup_root)
     diffs = []
     for contract in CONTRACTS:
+        cur = [f for f in current.values() if f.table == contract.table]
+        bak = [f for f in backup.values() if f.table == contract.table]
+        both = {f.partition_date for f in cur} & {f.partition_date for f in bak}
+        shared = (
+            id_overlap(
+                current_root,
+                [f for f in cur if f.partition_date in both],
+                backup_root,
+                [f for f in bak if f.partition_date in both],
+                contract.primary_key,
+            )
+            if both
+            else None
+        )
         diffs.append(
             TableDiff(
                 table=contract.table,
-                current_rows=count_rows(
-                    current_root, [f for f in current.values() if f.table == contract.table]
-                ),
-                backup_rows=count_rows(
-                    backup_root, [f for f in backup.values() if f.table == contract.table]
-                ),
+                current_rows=count_rows(current_root, cur),
+                backup_rows=count_rows(backup_root, bak),
+                key=contract.primary_key,
+                shared_ids=shared,
             )
         )
     return diffs
@@ -158,6 +208,51 @@ def ranges(partitions: list[str]) -> str:
 
 def _listing(rows: list[list[object]]) -> list[str]:
     return _table(["Table", "Partitions"], rows) if rows else ["None."]
+
+
+def _shared(diffs: list[TableDiff]) -> list[str]:
+    rows, different = [], []
+    for d in diffs:
+        if d.shared_ids is None:
+            continue
+        both, only_current, only_backup = d.shared_ids
+        rows.append(
+            [
+                d.table,
+                ", ".join(d.key),
+                _n(len(d.current_rows.keys() & d.backup_rows.keys())),
+                _n(both),
+                _n(only_current),
+                _n(only_backup),
+                _pct(both, both + only_backup),
+            ]
+        )
+        if only_current or only_backup:
+            different.append(d.table)
+    header = [
+        "Table",
+        "Key",
+        "Partitions in both",
+        "Ids in both",
+        "Only current",
+        "Only backup",
+        "Backup ids also in current",
+    ]
+    conclusion = (
+        "**Conclusion: the backup is not an earlier version of the same records**: in "
+        + ", ".join(different)
+        + ", the partitions present in both versions hold different ids."
+        if different
+        else "**Conclusion:** the partitions present in both versions hold the same ids."
+    )
+    return [
+        *_table(header, rows),
+        "",
+        "Source: the CSV files of the partitions present in both versions, distinct values of the "
+        "primary key of the table contract. Ids are counted, never shown.",
+        "",
+        conclusion,
+    ]
 
 
 def render(diffs: list[TableDiff], current_source: str, backup_source: str) -> str:
@@ -215,6 +310,10 @@ def render(diffs: list[TableDiff], current_source: str, backup_source: str) -> s
             summary,
         ),
         "",
+        "## Shared ids in the partitions of both versions",
+        "",
+        *_shared(diffs),
+        "",
         "## Added partitions",
         "",
         *_listing([[d.table, ranges(d.added)] for d in diffs if d.added]),
@@ -231,11 +330,20 @@ def render(diffs: list[TableDiff], current_source: str, backup_source: str) -> s
         for d in diffs
         for p, cur, bak in d.changed
     ]
-    lines += (
-        _table(["Table", "Partition", "Rows current", "Rows backup", "Difference"], changed)
-        if changed
-        else ["None: every partition present in both versions has the same number of rows."]
-    )
+    if not changed:
+        lines.append("None: every partition present in both versions has the same number of rows.")
+    else:
+        per_table = ", ".join(f"{d.table} {_n(len(d.changed))}" for d in diffs if d.changed)
+        lines += [
+            f"{_n(len(changed))} partitions present in both versions differ in rows: {per_table}.",
+            "",
+            "<details>",
+            f"<summary>All {_n(len(changed))} partitions</summary>",
+            "",
+            *_table(["Table", "Partition", "Rows current", "Rows backup", "Difference"], changed),
+            "",
+            "</details>",
+        ]
     return "\n".join(lines) + "\n"
 
 
