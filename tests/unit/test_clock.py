@@ -62,3 +62,46 @@ def test_each_case_can_fix_its_own_now():
     late = SimulatedClock(TRAZO_NOW)
     assert early.resolve_relative_date("ayer") == date(2024, 2, 29)
     assert late.resolve_relative_date("ayer") == date(2026, 6, 16)
+
+
+@pytest.mark.parametrize(
+    ("key", "count", "expected"),
+    [
+        ("today", 1, (0, 0)),
+        ("day_before_yesterday", 1, (2, 2)),
+        # TRAZO_NOW is a Wednesday.
+        ("monday", 1, (2, 2)),
+        ("wednesday", 1, (7, 7)),
+        ("last_friday", 1, (5, 12)),
+        ("this_week", 1, (0, 2)),
+        ("last_week", 1, (3, 9)),
+        ("weekend", 1, (3, 4)),
+        ("last_month", 1, (17, 47)),
+        ("early_this_month", 1, (7, 16)),
+        ("days_ago", 3, (2, 4)),
+        ("weeks_ago", 2, (11, 17)),
+        ("months_ago", 1, (20, 40)),
+    ],
+)
+def test_relative_window_in_days_back(key, count, expected):
+    assert SimulatedClock(TRAZO_NOW).relative_window(key, count) == expected
+
+
+@pytest.mark.parametrize(("key", "count"), [("next_week", 1), ("days_ago", 0)])
+def test_unknown_window_is_not_guessed(key, count):
+    assert SimulatedClock(TRAZO_NOW).relative_window(key, count) is None
+
+
+@pytest.mark.parametrize(
+    ("day", "month", "year", "expected"),
+    [
+        (19, 3, None, date(2026, 3, 19)),
+        (17, 6, None, date(2026, 6, 17)),
+        (20, 12, None, date(2025, 12, 20)),
+        (20, 12, 2024, date(2024, 12, 20)),
+        (1, 7, 2026, None),
+        (31, 2, None, None),
+    ],
+)
+def test_calendar_date_is_the_latest_one_not_after_today(day, month, year, expected):
+    assert SimulatedClock(TRAZO_NOW).resolve_calendar_date(day, month, year) == expected

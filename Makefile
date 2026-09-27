@@ -1,4 +1,4 @@
-.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension
 
 install:
 	uv sync --frozen
@@ -87,3 +87,8 @@ cases-review:
 # Agreement between the two reviews, written to eval/splits/manifest.json.
 cases-agreement:
 	uv run --frozen python -m pipeline.cases.run agreement
+
+# Comprehension metrics (TRZ-13, TRZ-12) of the rules baseline on the development split, from the
+# frozen split files under $(DATA_DIR)/eval: docs/reports/comprension_desarrollo.md.
+eval-comprehension:
+	uv run --frozen python -m pipeline.comprehension_eval

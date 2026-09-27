@@ -20,6 +20,9 @@ _DAYS_BACK = {
     "anteontem": 2,
 }
 
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+_EXACT_DAYS = {"today": 0, "yesterday": 1, "day_before_yesterday": 2}
+
 
 @dataclass(frozen=True)
 class SimulatedClock:
@@ -69,3 +72,76 @@ class SimulatedClock:
         if days_back is None:
             return None
         return self.today() - timedelta(days=days_back)
+
+    def resolve_calendar_date(self, day: int, month: int, year: int | None = None) -> date | None:
+        """Resolves a calendar date the customer wrote, such as "19 de marzo" or "19/03".
+
+        A customer disputes a past charge, so a date without a year is the latest one on or
+        before today, and a date after today is not a valid answer.
+
+        Args:
+            day: Day of the month.
+            month: Month number.
+            year: Four-digit year, when the customer wrote one.
+
+        Returns:
+            The date, or None when it does not exist or falls after today.
+        """
+        today = self.today()
+        for candidate_year in [year] if year is not None else [today.year, today.year - 1]:
+            try:
+                candidate = date(candidate_year, month, day)
+            except ValueError:
+                continue
+            if candidate <= today:
+                return candidate
+        return None
+
+    def relative_window(self, key: str, count: int = 1) -> tuple[int, int] | None:
+        """Resolves a language-neutral relative expression to a window of days back.
+
+        Customers are vague about dates, so every window covers each day the expression can
+        honestly mean: "el viernes pasado" may be the latest Friday or the one before it, and
+        "hace 3 días" is one day either side of three days ago.
+
+        Args:
+            key: today, yesterday, day_before_yesterday, a weekday name ("friday"), a weekday
+                with "last" ("last_friday"), this_week, last_week, weekend, last_month,
+                early_this_month, few_days, recently, days_ago, weeks_ago or months_ago.
+            count: How many units back, for days_ago, weeks_ago and months_ago.
+
+        Returns:
+            Fewest and most days back from `today()`, both inclusive, or None for an unknown key
+            or a window that would end in the future.
+        """
+        today = self.today()
+        weekday = today.weekday()
+        if key in _EXACT_DAYS:
+            return _EXACT_DAYS[key], _EXACT_DAYS[key]
+        day_name = key.removeprefix("last_")
+        if day_name in WEEKDAYS:
+            # The latest such weekday strictly before today; "last" also admits the week before.
+            back = (weekday - WEEKDAYS.index(day_name)) % 7 or 7
+            return (back, back + 7) if key.startswith("last_") else (back, back)
+        if key == "this_week":
+            return 0, weekday
+        if key == "last_week":
+            return weekday + 1, weekday + 7
+        if key == "weekend":
+            sunday_back = (weekday - 6) % 7 or 7
+            return sunday_back, sunday_back + 1
+        if key == "last_month":
+            last_of_previous = today.replace(day=1) - timedelta(days=1)
+            return today.day, (today - last_of_previous.replace(day=1)).days
+        if key == "early_this_month":
+            return max(0, today.day - 10), today.day - 1
+        if key == "few_days":
+            return 2, 7
+        if key == "recently":
+            return 0, 14
+        # A month back is vaguer than a week back, so its slack is wider.
+        spans = {"days_ago": (1, 1), "weeks_ago": (7, 3), "months_ago": (30, 10)}
+        if key in spans and count > 0:
+            unit, slack = spans[key]
+            return max(0, unit * count - slack), unit * count + slack
+        return None
