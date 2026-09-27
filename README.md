@@ -39,6 +39,7 @@ The API runs on your machine against the Postgres service from Compose. `--wait`
 cp .env.example .env
 uv sync
 docker compose up -d --wait db
+make migrate
 uv run python -m app.cli.seed synthetic --seed 42
 uv run uvicorn app.main:create_app --factory --port 8000
 ```
