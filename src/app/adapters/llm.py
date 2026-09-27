@@ -440,9 +440,8 @@ class LLMClient:
     ) -> tuple[Comprehension | None, LLMCallStats]:
         """Reads intent and clues with the LLM, before the faithfulness check.
 
-        The output is constrained to the reading schema and validated by Pydantic; an invalid
-        one gets a single stricter retry. The date is resolved with the simulated clock. The
-        evaluation harness scores this reading, so unfaithful clues count against the model.
+        The date is resolved with the simulated clock. The evaluation harness scores this
+        reading, so unfaithful clues count against the model.
 
         Args:
             redacted_text: Customer message with PII already replaced.
@@ -451,6 +450,26 @@ class LLMClient:
         Returns:
             The comprehension, or None when the LLM failed or answered invalid output twice,
             and the call stats.
+        """
+        reading, stats = self.read_raw(redacted_text, context)
+        return (None if reading is None else resolve_reading(reading, context)), stats
+
+    def read_raw(
+        self, redacted_text: str, context: ComprehensionContext
+    ) -> tuple[ComprehensionReading | None, LLMCallStats]:
+        """Reads intent and clues as the model states them, with the date still unresolved.
+
+        The output is constrained to the reading schema and validated by Pydantic; an invalid
+        one gets a single stricter retry. The evaluation cache keeps this form, so a change to
+        the window table applies to cached answers without calling the model again.
+
+        Args:
+            redacted_text: Customer message with PII already replaced.
+            context: Simulated "now" and the customer's country and currency.
+
+        Returns:
+            The reading, or None when the LLM failed or answered invalid output twice, and the
+            call stats.
         """
         prompt = self.comprehension_prompt
         user = comprehension_user(redacted_text, context.country_code, context.local_currency)
@@ -477,7 +496,7 @@ class LLMClient:
                 system = prompt.system + "\nYour previous output was not valid. Output JSON only."
                 continue
             stats.error = None
-            return resolve_reading(reading, context), stats
+            return reading, stats
         return None, stats
 
     def comprehend(

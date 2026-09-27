@@ -1,4 +1,4 @@
-.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension fit-identification eval-identification
 
 install:
 	uv sync --frozen
@@ -95,3 +95,15 @@ cases-agreement:
 eval-comprehension:
 	uv run --frozen python -m pipeline.comprehension_eval --systems rules llm \
 		$(if $(BASES),--bases $(BASES)) $(if $(OUT),--out $(OUT))
+
+# Fits the identification weights and temperature on the development split and q-hat on the
+# calibration split, for the rules and the LLM comprehension (TRZ-15), into
+# config/identification.yaml. LLM readings come from the cache in $(DATA_DIR)/eval; new ones may
+# spend at most BUDGET USD (default 3).
+fit-identification:
+	uv run --frozen python -m pipeline.identification_eval fit $(if $(BUDGET),--budget-usd $(BUDGET))
+
+# Coverage, set size, Brier, ECE and reliability of identification from
+# config/identification.yaml: docs/reports/identificacion.md. The test split is not loaded.
+eval-identification:
+	uv run --frozen python -m pipeline.identification_eval report $(if $(BUDGET),--budget-usd $(BUDGET))

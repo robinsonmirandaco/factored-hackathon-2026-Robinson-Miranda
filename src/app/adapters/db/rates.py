@@ -26,6 +26,22 @@ def rates_near(session: Session, on: date, pairs: set[tuple[str, str]]) -> Rates
         Rates of the pairs from MAX_STALE_DAYS before `on` up to `on`, keyed by
         (date, source, target).
     """
+    return rates_between(session, on, on, pairs)
+
+
+def rates_between(session: Session, first: date, last: date, pairs: set[tuple[str, str]]) -> Rates:
+    """Loads the rates `convert` may use for any transaction date in a range.
+
+    Args:
+        session: Open database session.
+        first: Earliest transaction date.
+        last: Latest transaction date.
+        pairs: (source, target) currency pairs needed; pairs of one currency are skipped.
+
+    Returns:
+        Rates of the pairs from MAX_STALE_DAYS before `first` up to `last`, keyed by
+        (date, source, target).
+    """
     rates: dict[tuple[date, str, str], float] = {}
     for source, target in sorted(pairs):
         if source == target:
@@ -35,8 +51,8 @@ def rates_near(session: Session, on: date, pairs: set[tuple[str, str]]) -> Rates
             {
                 "source": source,
                 "target": target,
-                "first": on - timedelta(days=MAX_STALE_DAYS),
-                "last": on,
+                "first": first - timedelta(days=MAX_STALE_DAYS),
+                "last": last,
             },
         ).all()
         rates.update({(d, s, t): float(r) for d, s, t, r in rows})

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from app.adapters.llm import LLMCallStats, load_comprehension_prompt
-from app.schemas.comprehension import Comprehension, ComprehensionContext
+from app.schemas.comprehension import ComprehensionContext, ComprehensionReading
 from pipeline.comprehension_eval import evaluate
 from pipeline.comprehension_llm import (
     BudgetExceeded,
@@ -23,20 +23,35 @@ from tests.unit.test_comprehension_eval import MESSAGE, _case, _output
 PROMPT = load_comprehension_prompt(Path("config/prompts/comprehension.yaml"))
 
 
+def _raw(**overrides: object) -> ComprehensionReading:
+    data = _output().model_dump(mode="json", exclude={"date"})
+    data["date"] = {
+        "expression": "ayer",
+        "kind": "yesterday",
+        "count": None,
+        "day": None,
+        "month": None,
+        "year": None,
+        "evidence": "ayer",
+    }
+    data.update(overrides)
+    return ComprehensionReading.model_validate(data)
+
+
 @dataclass
 class FakeClient:
     """Stands in for LLMClient: counts calls and answers a fixed reading or nothing."""
 
-    answer: Comprehension | None = field(default_factory=_output)
+    answer: ComprehensionReading | None = field(default_factory=_raw)
     cost: float = 0.001
     available: bool = True
     model: str = "test-model"
     comprehension_prompt: object = PROMPT
     seen: list[str] = field(default_factory=list)
 
-    def read_clues(
+    def read_raw(
         self, message: str, context: ComprehensionContext
-    ) -> tuple[Comprehension | None, LLMCallStats]:
+    ) -> tuple[ComprehensionReading | None, LLMCallStats]:
         self.seen.append(message)
         stats = LLMCallStats(
             input_tokens=40,
@@ -70,6 +85,29 @@ def test_a_cached_request_is_not_paid_twice_and_reports_the_first_figures(tmp_pa
     # Another run number is another request: variability is measured, not read from the cache.
     LLMRuns(client, ReadingCache(cache_path), 1.0).run(cases, 1)
     assert len(client.seen) == 6
+
+
+def test_a_cached_raw_date_is_resolved_again_with_the_current_window_table(tmp_path):
+    cache_path = tmp_path / "cache.jsonl"
+    case = _cases(1)[0]
+    weeks = _raw(
+        date={
+            "expression": "hace dos semanas",
+            "kind": "weeks_ago",
+            "count": 2,
+            "day": None,
+            "month": None,
+            "year": None,
+            "evidence": "ayer",
+        }
+    )
+    LLMRuns(FakeClient(answer=weeks), ReadingCache(cache_path), 1.0).run([case], 0)
+    cache = ReadingCache(cache_path)
+    entry = next(iter(cache.entries.values()))
+    # A stale resolved window in the cache is ignored when the raw reading is there.
+    entry["reading"]["date"]["window_days"] = [11, 17]
+    outcome = LLMRuns(FakeClient(), cache, 1.0).run([case], 0)[case.case_id]
+    assert outcome.reading.date is not None and outcome.reading.date.window_days == (10, 18)
 
 
 def test_the_run_stops_at_the_budget(tmp_path):

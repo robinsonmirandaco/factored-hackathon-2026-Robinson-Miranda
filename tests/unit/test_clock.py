@@ -79,7 +79,7 @@ def test_each_case_can_fix_its_own_now():
         ("last_month", 1, (17, 47)),
         ("early_this_month", 1, (7, 16)),
         ("days_ago", 3, (2, 4)),
-        ("weeks_ago", 2, (11, 17)),
+        ("weeks_ago", 2, (10, 18)),
         ("months_ago", 1, (20, 40)),
     ],
 )

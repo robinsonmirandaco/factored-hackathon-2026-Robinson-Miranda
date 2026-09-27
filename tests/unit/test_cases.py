@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from app.adapters.llm import LLMCallStats
+from app.domain.clock import SimulatedClock
 from pipeline.cases import handwritten
 from pipeline.cases.labels import LabelRules, expected_action
 from pipeline.cases.noise import (
@@ -692,3 +693,13 @@ def test_injection_text_skips_the_llm_and_always_reaches_the_message(ctx: Contex
         assert any(a in c.message for a in attacks) and "{INJECTION}" not in c.message
     dropped = draft(base, "es-MX", gen, 42).replace("{INJECTION}", "")
     assert check_paraphrase(dropped, draft(base, "es-MX", gen, 42), base, ctx.merchants)
+
+
+def test_generator_windows_are_the_service_windows() -> None:
+    # One table for both: a case is labelled with the window the service resolves.
+    for offset in range(60):
+        today = date(2026, 4, 1) + timedelta(days=offset)
+        clock = SimulatedClock(datetime(today.year, today.month, today.day, 23, 59))
+        for key, (first, last) in relative_windows(today).items():
+            args = ("weeks_ago", 2) if key == "two_weeks_ago" else (key,)
+            assert clock.relative_window(*args) == ((today - last).days, (today - first).days)
