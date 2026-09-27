@@ -73,6 +73,30 @@ class SimulatedClock:
             return None
         return self.today() - timedelta(days=days_back)
 
+    def resolve_calendar_date(self, day: int, month: int, year: int | None = None) -> date | None:
+        """Resolves a calendar date the customer wrote, such as "19 de marzo" or "19/03".
+
+        A customer disputes a past charge, so a date without a year is the latest one on or
+        before today, and a date after today is not a valid answer.
+
+        Args:
+            day: Day of the month.
+            month: Month number.
+            year: Four-digit year, when the customer wrote one.
+
+        Returns:
+            The date, or None when it does not exist or falls after today.
+        """
+        today = self.today()
+        for candidate_year in [year] if year is not None else [today.year, today.year - 1]:
+            try:
+                candidate = date(candidate_year, month, day)
+            except ValueError:
+                continue
+            if candidate <= today:
+                return candidate
+        return None
+
     def relative_window(self, key: str, count: int = 1) -> tuple[int, int] | None:
         """Resolves a language-neutral relative expression to a window of days back.
 

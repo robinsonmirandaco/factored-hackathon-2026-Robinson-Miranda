@@ -10,6 +10,7 @@ of the original, so every match is cut from the original message and its evidenc
 
 import re
 import unicodedata
+from datetime import date
 
 from app.domain.clock import SimulatedClock
 from app.schemas.comprehension import (
@@ -335,6 +336,41 @@ _MONTHS = (
     "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre"
     "|diciembre|janeiro|fevereiro|marco|maio|junho|julho|setembro|outubro|novembro|dezembro"
 )
+_MONTH_NUMBERS = {
+    "enero": 1,
+    "janeiro": 1,
+    "febrero": 2,
+    "fevereiro": 2,
+    "marzo": 3,
+    "marco": 3,
+    "abril": 4,
+    "mayo": 5,
+    "maio": 5,
+    "junio": 6,
+    "junho": 6,
+    "julio": 7,
+    "julho": 7,
+    "agosto": 8,
+    "septiembre": 9,
+    "setiembre": 9,
+    "setembro": 9,
+    "octubre": 10,
+    "outubro": 10,
+    "noviembre": 11,
+    "novembro": 11,
+    "diciembre": 12,
+    "dezembro": 12,
+}
+# Calendar dates: "19 de marzo (de 2026)", "19 de março", "19/03(/2026)" (day first, as written in
+# Latin America and Brazil) and "2026-03-19".
+_EXACT_DATES = (
+    re.compile(
+        r"\b(?P<d>\d{1,2})(?:o|º)?\s+de\s+(?P<m>" + _MONTHS + r")\b"
+        r"(?:\s+(?:de|del)\s+(?P<y>\d{4})\b)?"
+    ),
+    re.compile(r"(?<![\d/.-])(?P<d>\d{1,2})/(?P<m>\d{1,2})(?:/(?P<y>\d{4}|\d{2}))?(?![\d/])"),
+    re.compile(r"(?<![\d-])(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?![\d-])"),
+)
 # A bare number followed by a time unit, a month or a count noun is not an amount.
 _NOT_AMOUNT_AFTER = re.compile(
     r"\s*(?:%|/|:|dias?\b|semanas?\b|mes(?:es)?\b|anos?\b|horas?\b|hs\b|h\b|veces\b|vez(?:es)?\b"
@@ -554,11 +590,12 @@ def comprehend_rules(message: str, context: ComprehensionContext) -> Comprehensi
     """
     folded = _fold(message)
     possession = _card_possession(message, folded)
-    amount = _amount(message, folded, context)
+    amounts = _amount_candidates(folded)
     merchant = _merchant(message)
+    intent = _intent(folded, has_charge=bool(amounts) or merchant is not None)
     return Comprehension(
-        intent=_intent(folded, has_charge=amount is not None or merchant is not None),
-        amount=amount,
+        intent=intent,
+        amount=_amount(message, folded, context, amounts),
         date=_date(message, folded, context),
         merchant_hint=merchant,
         channel_hint=_channel(message, folded),
@@ -614,22 +651,34 @@ def _parse_number(text: str) -> float:
     return float(re.sub(r"[.,]", "", text))
 
 
-def _amount(message: str, folded: str, context: ComprehensionContext) -> AmountClue | None:
+def _amount_candidates(folded: str) -> list[re.Match[str]]:
+    date_spans = [m.span() for p in _EXACT_DATES for m in p.finditer(folded)]
     marked, bare = [], []
     for match in _AMOUNT.finditer(folded):
-        approx, pre, mult, suf = (match.group(g) for g in ("approx", "pre", "mult", "suf"))
-        num = match.group("num")
-        if pre or mult or suf:
+        start, end = match.span("num")
+        if any(start < d_end and d_start < end for d_start, d_end in date_spans):
+            continue
+        if match.group("pre") or match.group("mult") or match.group("suf"):
             marked.append(match)
         elif not (
             _NOT_AMOUNT_AFTER.match(folded, match.end())
-            or _NOT_AMOUNT_BEFORE.search(folded, 0, match.start("num"))
-            or re.fullmatch(r"20[0-3]\d", num)
+            or _NOT_AMOUNT_BEFORE.search(folded, 0, start)
+            or re.fullmatch(r"20[0-3]\d", match.group("num"))
         ):
             bare.append(match)
-    match = (marked or bare or [None])[0]
-    if match is None:
+    # A number with a currency or a multiplier is more likely the amount than a bare one.
+    return marked + bare
+
+
+def _amount(
+    message: str,
+    folded: str,
+    context: ComprehensionContext,
+    candidates: list[re.Match[str]],
+) -> AmountClue | None:
+    if not candidates:
         return None
+    match = candidates[0]
     value = _parse_number(match.group("num")) * _MULTIPLIERS.get(match.group("mult") or "", 1)
     if value <= 0:
         return None
@@ -657,6 +706,19 @@ def _currency(match: re.Match[str], context: ComprehensionContext) -> str | None
 
 def _date(message: str, folded: str, context: ComprehensionContext) -> DateClue | None:
     clock = SimulatedClock(context.now)
+    # A calendar date is more precise than any relative expression in the same message.
+    for pattern in _EXACT_DATES:
+        for match in pattern.finditer(folded):
+            day = _exact_date(clock, match)
+            if day is not None:
+                back = (clock.today() - day).days
+                evidence = _cut(message, match)
+                return DateClue(
+                    expression=evidence,
+                    resolved_from=clock.today(),
+                    window_days=(back, back),
+                    evidence=evidence,
+                )
     for kind, pattern in _DATE_PATTERNS:
         for match in pattern.finditer(folded):
             window = _window(clock, kind, match)
@@ -669,6 +731,17 @@ def _date(message: str, folded: str, context: ComprehensionContext) -> DateClue 
                     evidence=evidence,
                 )
     return None
+
+
+def _exact_date(clock: SimulatedClock, match: re.Match[str]) -> date | None:
+    month = match.group("m")
+    month_number = int(month) if month.isdigit() else _MONTH_NUMBERS[month]
+    year = match.group("y")
+    if year is not None and len(year) == 2:
+        year = "20" + year
+    return clock.resolve_calendar_date(
+        int(match.group("d")), month_number, int(year) if year else None
+    )
 
 
 def _window(clock: SimulatedClock, kind: str, match: re.Match[str]) -> tuple[int, int] | None:

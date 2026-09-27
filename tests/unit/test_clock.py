@@ -90,3 +90,18 @@ def test_relative_window_in_days_back(key, count, expected):
 @pytest.mark.parametrize(("key", "count"), [("next_week", 1), ("days_ago", 0)])
 def test_unknown_window_is_not_guessed(key, count):
     assert SimulatedClock(TRAZO_NOW).relative_window(key, count) is None
+
+
+@pytest.mark.parametrize(
+    ("day", "month", "year", "expected"),
+    [
+        (19, 3, None, date(2026, 3, 19)),
+        (17, 6, None, date(2026, 6, 17)),
+        (20, 12, None, date(2025, 12, 20)),
+        (20, 12, 2024, date(2024, 12, 20)),
+        (1, 7, 2026, None),
+        (31, 2, None, None),
+    ],
+)
+def test_calendar_date_is_the_latest_one_not_after_today(day, month, year, expected):
+    assert SimulatedClock(TRAZO_NOW).resolve_calendar_date(day, month, year) == expected

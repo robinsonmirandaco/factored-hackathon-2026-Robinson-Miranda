@@ -216,3 +216,58 @@ def test_design_example_reads_every_clue():
 def test_same_message_gives_the_same_output():
     message = "Me cobraron dos veces unos 1.500 pesos en Farmacia Sol el martes pasado"
     assert _read(message) == _read(message)
+
+
+@pytest.mark.parametrize(
+    ("message", "day"),
+    [
+        ("un cargo del 19 de marzo que no hice", date(2026, 3, 19)),
+        ("uma compra de 19 de março que não fiz", date(2026, 3, 19)),
+        ("el cargo del 19/03 no lo reconozco", date(2026, 3, 19)),
+        ("uma compra em 19/03/2026 que não fiz", date(2026, 3, 19)),
+        ("un cargo del 19/03/26 que no hice", date(2026, 3, 19)),
+        ("un cargo con fecha 2026-03-19 que no hice", date(2026, 3, 19)),
+        ("no dia 5 de junho de 2026 apareceu uma cobrança", date(2026, 6, 5)),
+        ("uma compra de 1º de maio que não reconheço", date(2026, 5, 1)),
+        # Without a year, a date after today is last year's.
+        ("el 20 de diciembre me cobraron algo raro", date(2025, 12, 20)),
+        # A calendar date is more precise than a relative expression.
+        ("ayer vi un cargo del 10 de junio que no hice", date(2026, 6, 10)),
+    ],
+)
+def test_calendar_dates_resolve_to_one_day(message, day):
+    clue = _read(message).date
+    assert clue is not None
+    assert clue.resolved_from == NOW.date()
+    assert clue.window() == (day, day)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "un cargo del 31/02 que no hice",
+        "uma compra de 2026-12-01 que não fiz",
+    ],
+)
+def test_impossible_or_future_calendar_dates_are_dropped(message):
+    assert _read(message).date is None
+
+
+def test_calendar_date_without_year_resolves_against_each_case_own_now():
+    earlier = ComprehensionContext(
+        now=datetime(2024, 3, 1, 9, 0), country_code="MX", local_currency="MXN"
+    )
+    clue = _read("el 20 de diciembre me cobraron algo raro", earlier).date
+    assert clue is not None and clue.window() == (date(2023, 12, 20), date(2023, 12, 20))
+
+
+@pytest.mark.parametrize(
+    ("message", "value"),
+    [
+        ("un cargo del 19/03 de 500 pesos que no hice", 500),
+        ("un cargo con fecha 2026-03-19 que no hice", None),
+    ],
+)
+def test_calendar_dates_are_not_amounts(message, value):
+    amount = _read(message).amount
+    assert (amount.value if amount else None) == value
