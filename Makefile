@@ -88,7 +88,10 @@ cases-review:
 cases-agreement:
 	uv run --frozen python -m pipeline.cases.run agreement
 
-# Comprehension metrics (TRZ-13, TRZ-12) of the rules baseline on the development split, from the
-# frozen split files under $(DATA_DIR)/eval: docs/reports/comprension_desarrollo.md.
+# Comprehension metrics (TRZ-13, TRZ-12) of the rules baseline and the LLM (3 runs) on the
+# development split, from the frozen split files under $(DATA_DIR)/eval:
+# docs/reports/comprension_desarrollo.md. LLM answers are cached in $(DATA_DIR)/eval, so a rerun
+# costs nothing; BASES=N evaluates N base cases only (prompt iterations, with OUT=<path>).
 eval-comprehension:
-	uv run --frozen python -m pipeline.comprehension_eval
+	uv run --frozen python -m pipeline.comprehension_eval --systems rules llm \
+		$(if $(BASES),--bases $(BASES)) $(if $(OUT),--out $(OUT))

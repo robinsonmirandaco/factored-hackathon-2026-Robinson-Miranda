@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     # False forces the deterministic fallback path (CI and golden cases).
     llm_enabled: bool = True
+    # Versioned prompt of the comprehension step (TRZ-12); its `version` goes into every call log.
+    llm_comprehension_prompt_path: Path = Path("config/prompts/comprehension.yaml")
+    # USD per million tokens of the primary model, for the cost of each call (Haiku 4.5 list price).
+    llm_price_input_per_mtok: float = 1.0
+    llm_price_output_per_mtok: float = 5.0
 
     policy_path: str = "config/policy.yaml"
 

@@ -179,6 +179,89 @@ class Comprehension(BaseModel):
         return self.model_copy(update=dict.fromkeys(dropped)), dropped
 
 
+DateKind = Literal[
+    "calendar",
+    "today",
+    "yesterday",
+    "day_before_yesterday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+    "last_monday",
+    "last_tuesday",
+    "last_wednesday",
+    "last_thursday",
+    "last_friday",
+    "last_saturday",
+    "last_sunday",
+    "this_week",
+    "last_week",
+    "weekend",
+    "last_month",
+    "early_this_month",
+    "few_days",
+    "recently",
+    "days_ago",
+    "weeks_ago",
+    "months_ago",
+]
+
+
+class DateReading(_Clue):
+    """Date as the LLM reads it: the words and their meaning, never a computed date.
+
+    Calendar arithmetic stays in code: the adapter turns `kind` into a window with the simulated
+    clock (TRZ-24), the same one the rules baseline uses.
+
+    Attributes:
+        expression: The words the customer used.
+        kind: "calendar" for a day and month, else a key of `SimulatedClock.relative_window`.
+        count: Units back for days_ago, weeks_ago and months_ago; else None.
+        day: Day of the month for "calendar"; else None.
+        month: Month number for "calendar"; else None.
+        year: Four-digit year for "calendar" when written; else None.
+        evidence: Literal fragment of the message.
+    """
+
+    expression: str
+    kind: DateKind
+    count: int | None
+    day: int | None
+    month: int | None
+    year: int | None
+
+
+class ComprehensionReading(BaseModel):
+    """What the LLM returns; `Comprehension` once the date is resolved by code.
+
+    Every field is required, nullable where the clue can be absent, so the model states each
+    one instead of leaving it out.
+
+    Attributes:
+        intent: One of INTENTS.
+        amount: Amount clue or None.
+        date: Date reading or None.
+        merchant_hint: Merchant clue or None.
+        channel_hint: Channel clue or None.
+        card_in_possession: Card possession clue or None.
+        language: Language variant of the message.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    intent: Intent
+    amount: AmountClue | None
+    date: DateReading | None
+    merchant_hint: TextClue | None
+    channel_hint: ChannelClue | None
+    card_in_possession: PossessionClue | None
+    language: LanguageVariant
+
+
 def _squash(text: str) -> str:
     return " ".join(text.split()).casefold()
 

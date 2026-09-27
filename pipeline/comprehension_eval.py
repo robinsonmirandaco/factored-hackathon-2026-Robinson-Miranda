@@ -9,10 +9,14 @@ A system is any function from a redacted message and its context to a `Comprehen
 rules baseline and the LLM go through the same code. Clues whose evidence is not in the message
 count against the faithful rate and are dropped before the fields are scored, as in production.
 
+The LLM (TRZ-12) runs several times through `pipeline.comprehension_llm`; its rows show the
+mean with the range across runs, next to its tokens, cost and latency.
+
 The report holds counts and rates only, never a message or a row.
 """
 
 import argparse
+import hashlib
 import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -22,11 +26,22 @@ from typing import Any
 
 import yaml
 
+from app.adapters.llm import LLMClient
+from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger
 from app.domain.comprehension_rules import RULES_VERSION, comprehend_rules
 from app.schemas.comprehension import INTENTS, Comprehension, ComprehensionContext
 from pipeline.cases.schema import CaseRecord, Split
 from pipeline.cases.splits import load_split, read_manifest
+from pipeline.comprehension_llm import (
+    CACHE_FILE,
+    LLMRuns,
+    ReadingCache,
+    as_system,
+    check_prompt_sources,
+    combine_runs,
+    usage_summary,
+)
 from pipeline.settings import PipelineSettings
 
 log = get_logger("pipeline.comprehension_eval")
@@ -45,13 +60,15 @@ class SystemSpec:
         name: Row label in the report.
         model: Model id, or "none" for rules.
         prompt_version: Prompt version, or the rules version.
-        run: The system itself.
+        run: The system itself; None for the LLM, which the runner reads case by case.
+        runs: Repeated runs behind its rows.
     """
 
     name: str
     model: str
     prompt_version: str
-    run: System
+    run: System | None
+    runs: int = 1
 
 
 SYSTEMS: dict[str, SystemSpec] = {
@@ -272,18 +289,25 @@ def evaluate(cases: Iterable[CaseRecord], system: System) -> dict[str, Any]:
 
 
 def _pct(metric: dict[str, Any]) -> str:
-    return "n/a" if metric["rate"] is None else f"{metric['rate']:.1%} ({metric['n']})"
+    if metric["rate"] is None:
+        return "n/a"
+    spread = f" [{metric['min']:.1%}, {metric['max']:.1%}]" if "min" in metric else ""
+    return f"{metric['rate']:.1%}{spread} ({metric['n']})"
 
 
-def _num(value: float | None) -> str:
-    return "n/a" if value is None else f"{value:.3f}"
+def _num(value: float | dict[str, float] | None) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, dict):
+        return f"{value['mean']:.3f} [{value['min']:.3f}, {value['max']:.3f}]"
+    return f"{value:.3f}"
 
 
 _DEV_LABEL = (
     "> **Development split.** These numbers come from the development split, the same cases the "
-    "rules were tuned on (and the LLM prompt will be tuned on), so they are optimistic. They are "
-    "for error analysis only. The valid comparison between the rules and the LLM is on the "
-    "frozen held-out test split."
+    "rules were tuned on and the LLM prompt was tuned on, so they are optimistic. They are for "
+    "error analysis only. The valid comparison between the rules and the LLM is on the frozen "
+    "held-out test split."
 )
 
 
@@ -312,10 +336,12 @@ def write_report(
         f"- Case generator seed: {meta['seed']}; cases config version: {meta['config_version']}",
         f"- Policy version: {meta['policy_version']}",
         "",
-        "| System | Model | Prompt or rules version |",
-        "| --- | --- | --- |",
+        "| System | Model | Prompt or rules version | Runs |",
+        "| --- | --- | --- | --- |",
     ]
-    lines += [f"| {s.name} | {s.model} | {s.prompt_version} |" for s in specs]
+    lines += [f"| {s.name} | {s.model} | {s.prompt_version} | {s.runs} |" for s in specs]
+    for note in meta.get("notes", []):
+        lines += ["", note]
     lines += [
         "",
         "## How each metric is scored",
@@ -333,6 +359,8 @@ def write_report(
         "- **Faithful** is the share of produced clues whose evidence is a literal part of the "
         "message (case and repeated spaces ignored). Unfaithful clues are dropped before the "
         "fields are scored.",
+        "- A system with more than one run shows the mean, the range across runs in brackets "
+        "and the mean number of cases or clues in parentheses.",
         "",
     ]
 
@@ -376,26 +404,85 @@ def write_report(
         lines.append(f"| {spec.name} | " + " | ".join(_num(f1.get(i)) for i in INTENTS) + " |")
     category = results[specs[0].name]["overall"]["merchant_by_category"]
     lines += ["", f"Merchants named only by category, not scored: {category} cases.", ""]
+    if meta.get("usage"):
+        lines += _usage_lines(meta["usage"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _usage_lines(usage: dict[str, list[dict[str, Any]]]) -> list[str]:
+    lines = [
+        "## Tokens, cost and latency",
+        "",
+        "Per run, as first paid (a cached rerun reports the same figures). Latency is the wall "
+        "time of the calls of a case, retries included. Cost is at the list price of the model, "
+        "prompt cache writes at 1.25 and reads at 0.1 times the input price.",
+        "",
+        "| System | Run | Cases | Calls | Fallbacks | Input tokens not from cache "
+        "| Cache read tokens | Output tokens | Cost USD | Cost per case USD "
+        "| Latency p50 ms | Latency p95 ms |",
+        "| --- " * 12 + "|",
+    ]
+    for name, runs in usage.items():
+        for i, u in enumerate(runs, start=1):
+            lines.append(
+                f"| {name} | {i} | {u['cases']} | {u['calls']} | {u['fallbacks']} "
+                f"| {u['input_tokens'] + u['cache_write_tokens']} | {u['cache_read_tokens']} "
+                f"| {u['output_tokens']} | {u['cost_usd']:.4f} | {u['cost_per_case']:.5f} "
+                f"| {u['latency_p50_ms']:.0f} | {u['latency_p95_ms']:.0f} |"
+            )
+    return lines + [""]
+
+
+def sample_bases(cases: list[CaseRecord], bases: int | None) -> list[CaseRecord]:
+    """Keeps every variant of a fixed subset of base cases, for cheap prompt iterations.
+
+    Args:
+        cases: Cases of the split.
+        bases: Base cases to keep; None keeps all.
+
+    Returns:
+        The cases of the first `bases` base ids ordered by the hash of the id.
+    """
+    if bases is None:
+        return cases
+    ids = sorted({c.base_id for c in cases}, key=lambda b: hashlib.sha256(b.encode()).hexdigest())
+    keep = set(ids[:bases])
+    return [c for c in cases if c.base_id in keep]
+
+
+def _llm_client() -> LLMClient:
+    # The harness reads the key and the model from the environment like the service does.
+    return LLMClient(Settings())
+
+
 def run(
-    settings: PipelineSettings, split: Split, names: list[str], out: Path
+    settings: PipelineSettings,
+    split: Split,
+    names: list[str],
+    out: Path,
+    runs: int = 3,
+    bases: int | None = None,
+    max_cost_usd: float = 8.0,
 ) -> dict[str, dict[str, Any]]:
     """Evaluates the named systems on a frozen split and writes the report.
 
     Args:
         settings: Pipeline settings (DATA_DIR and the manifest path).
         split: dev, calibration or test; the test split loads only once frozen.
-        names: Keys of SYSTEMS.
+        names: Keys of SYSTEMS, or "llm".
         out: Report path.
+        runs: Repeated runs of the LLM.
+        bases: Evaluate only this many base cases (all variants), for prompt iterations.
+        max_cost_usd: Most total LLM spend recorded in the cache.
 
     Returns:
         Results per system name.
     """
     manifest = read_manifest(settings.cases_manifest_path)
     cases = load_split(settings.data_dir / "eval", split, settings.cases_manifest_path)
+    split_cases = len(cases)
+    cases = sample_bases(cases, bases)
     parts = ("test_generated", "test_handwritten") if split == "test" else (split,)
     policy = yaml.safe_load(POLICY_PATH.read_text(encoding="utf-8"))
     meta = {
@@ -406,8 +493,36 @@ def run(
         "config_version": manifest["config_version"],
         "policy_version": policy["version"],
     }
-    specs = [SYSTEMS[n] for n in names]
-    results = {s.name: evaluate(cases, s.run) for s in specs}
+    if bases is not None:
+        meta["notes"] = [
+            f"Sample: {len(cases)} of the {split_cases} cases ({bases} base cases, every variant)."
+        ]
+    specs = [SYSTEMS[n] for n in names if n != "llm"]
+    results = {s.name: evaluate(cases, s.run) for s in specs if s.run is not None}
+    if "llm" in names:
+        client = _llm_client()
+        eval_dir = settings.data_dir / "eval"
+        dev = load_split(eval_dir, "dev", settings.cases_manifest_path)
+        check_prompt_sources(
+            client, dev, load_split(eval_dir, "calibration", settings.cases_manifest_path)
+        )
+        runner = LLMRuns(client, ReadingCache(eval_dir / CACHE_FILE), max_cost_usd)
+        per_run, usage = [], []
+        for r in range(runs):
+            outcomes = runner.run(cases, r)
+            per_run.append(evaluate(cases, as_system(cases, outcomes)))
+            usage.append(usage_summary(outcomes))
+            log.info("comprehension_llm_run", run=r, **usage[-1])
+        results["llm"] = combine_runs(per_run)
+        specs.append(
+            SystemSpec("llm", client.model, client.comprehension_prompt.version, None, runs)
+        )
+        meta["usage"] = {"llm": usage}
+        meta["notes"] = meta.get("notes", []) + [
+            f"LLM: temperature 0, {runs} runs; prompt examples checked against the development "
+            "and calibration splits (none cited or contained). LLM spend recorded in the cache, "
+            f"prompt iterations included: {runner.cache.spent():.4f} USD."
+        ]
     write_report(results, meta, specs, out)
     for spec in specs:
         overall = results[spec.name]["overall"]
@@ -416,10 +531,14 @@ def run(
             system=spec.name,
             split=split,
             cases=overall["cases"],
-            intent_macro_f1=overall["intent_macro_f1"],
+            intent_macro_f1=_num(overall["intent_macro_f1"]),
             **{f: overall["fields"][f]["accuracy"]["rate"] for f in FIELDS},
         )
-    log.info("comprehension_report_written", path=str(out), **meta)
+    log.info(
+        "comprehension_report_written",
+        path=str(out),
+        **{k: v for k, v in meta.items() if k not in {"usage", "notes"}},
+    )
     return results
 
 
@@ -434,12 +553,17 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--split", choices=["dev", "calibration", "test"], default="dev")
-    parser.add_argument("--systems", nargs="+", choices=sorted(SYSTEMS), default=["rules"])
+    parser.add_argument(
+        "--systems", nargs="+", choices=[*sorted(SYSTEMS), "llm"], default=["rules"]
+    )
     parser.add_argument("--out", type=Path, default=REPORT_PATH)
+    parser.add_argument("--runs", type=int, default=3, help="repeated runs of the LLM")
+    parser.add_argument("--bases", type=int, default=None, help="only this many base cases")
+    parser.add_argument("--max-cost-usd", type=float, default=8.0, help="total LLM spend cap")
     args = parser.parse_args(argv)
     settings = PipelineSettings()
     configure_logging(settings.log_level)
-    run(settings, args.split, args.systems, args.out)
+    run(settings, args.split, args.systems, args.out, args.runs, args.bases, args.max_cost_usd)
     return 0
 
 
