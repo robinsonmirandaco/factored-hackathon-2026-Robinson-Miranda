@@ -271,3 +271,27 @@ def test_calendar_date_without_year_resolves_against_each_case_own_now():
 def test_calendar_dates_are_not_amounts(message, value):
     amount = _read(message).amount
     assert (amount.value if amount else None) == value
+
+
+@pytest.mark.parametrize(
+    ("message", "charged"),
+    [
+        ("La compra era de 300 pero me cobraron 450", 450),
+        ("El precio acordado era 1.500 pesos y me cobraron en la tienda 2.000 pesos", 2000),
+        ("Me cobraron 244.43 dólares pero yo había pagado 200 dólares", 244.43),
+        ("Debía ser 80 dólares, el monto cobrado 120 dólares está mal", 120),
+        ("O valor certo era 90 reais, mas cobraram 120 reais", 120),
+        ("Fui cobrado errado: o valor certo era 50 reais e me cobraram 75 reais", 75),
+        ("O preço combinado era 40 reais e o valor cobrado 60 reais", 60),
+    ],
+)
+def test_billing_error_takes_the_charged_amount(message, charged):
+    result = _read(message)
+    assert result.intent == "billing_error_amount"
+    assert result.amount is not None and result.amount.value == pytest.approx(charged)
+
+
+def test_other_intents_keep_the_first_amount():
+    result = _read("No reconozco un cargo de 100 pesos, y ayer me cobraron 200 pesos")
+    assert result.intent == "unrecognized_charge"
+    assert result.amount is not None and result.amount.value == 100

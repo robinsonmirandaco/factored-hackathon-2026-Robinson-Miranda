@@ -376,6 +376,9 @@ _NOT_AMOUNT_AFTER = re.compile(
     r"\s*(?:%|/|:|dias?\b|semanas?\b|mes(?:es)?\b|anos?\b|horas?\b|hs\b|h\b|veces\b|vez(?:es)?\b"
     r"|cargos?\b|cobros?\b|compras?\b|cobrancas?\b|debitos?\b|digitos\b|de\s+(?:" + _MONTHS + r"))"
 )
+# With two amounts in a billing complaint, the one right after the charge verb is what was billed
+# ("era de 300 y me cobraron 450"); up to three words may sit between them.
+_CHARGED_BEFORE = re.compile(r"\b(?:cobraron|cobraram|cobrado)\b(?:\s+[^\s\d$]+){0,3}\s*$")
 _NOT_AMOUNT_BEFORE = re.compile(
     r"(?:\bhace|\bha|\bfaz|\bel|\bdia|\bdel|\bterminad[ao] en|\btermina en|\bfinal|\bterminacao)"
     r"\s*$"
@@ -595,7 +598,7 @@ def comprehend_rules(message: str, context: ComprehensionContext) -> Comprehensi
     intent = _intent(folded, has_charge=bool(amounts) or merchant is not None)
     return Comprehension(
         intent=intent,
-        amount=_amount(message, folded, context, amounts),
+        amount=_amount(message, folded, context, amounts, intent),
         date=_date(message, folded, context),
         merchant_hint=merchant,
         channel_hint=_channel(message, folded),
@@ -675,10 +678,15 @@ def _amount(
     folded: str,
     context: ComprehensionContext,
     candidates: list[re.Match[str]],
+    intent: Intent,
 ) -> AmountClue | None:
     if not candidates:
         return None
     match = candidates[0]
+    if intent == "billing_error_amount" and len(candidates) > 1:
+        charged = [m for m in candidates if _CHARGED_BEFORE.search(folded, 0, m.start())]
+        if charged:
+            match = min(charged, key=lambda m: m.start())
     value = _parse_number(match.group("num")) * _MULTIPLIERS.get(match.group("mult") or "", 1)
     if value <= 0:
         return None
