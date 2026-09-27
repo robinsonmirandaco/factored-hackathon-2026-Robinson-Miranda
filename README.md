@@ -16,7 +16,7 @@ Scaffold. The service runs end to end on synthetic data, aligned with the target
 ## Run with Docker (recommended)
 
 ```bash
-cp .env.example .env
+make init
 docker compose up --build
 ```
 
@@ -36,7 +36,7 @@ The `db` service starts first. The `api` service then loads the synthetic fixtur
 The API runs on your machine against the Postgres service from Compose. `--wait` returns only when Postgres is healthy, so the next commands can connect:
 
 ```bash
-cp .env.example .env
+make init
 uv sync
 docker compose up -d --wait db
 make migrate
