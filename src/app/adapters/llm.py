@@ -120,7 +120,9 @@ class LLMClient:
         """True when real LLM calls can be made."""
         return self._client is not None or self._http is not None
 
-    def _call(self, system: str, user: str, max_tokens: int = 400) -> tuple[str, LLMCallStats]:
+    def _call(
+        self, system: str, user: str, max_tokens: int = 400, temperature: float | None = None
+    ) -> tuple[str, LLMCallStats]:
         stats = LLMCallStats()
         if not self.available:
             stats.fallback = True
@@ -129,7 +131,7 @@ class LLMClient:
         t0 = time.perf_counter()
         complete = self._complete_local if self._http is not None else self._complete_anthropic
         try:
-            future = self._pool.submit(complete, system, user, max_tokens)
+            future = self._pool.submit(complete, system, user, max_tokens, temperature)
             text, stats.input_tokens, stats.output_tokens = future.result(
                 timeout=self._deadline_seconds
             )
@@ -141,20 +143,28 @@ class LLMClient:
         stats.latency_ms = int((time.perf_counter() - t0) * 1000)
         return text, stats
 
-    def _complete_anthropic(self, system: str, user: str, max_tokens: int) -> tuple[str, int, int]:
-        # The SDK applies the timeout and the bounded retry configured in __init__.
+    def _complete_anthropic(
+        self, system: str, user: str, max_tokens: int, temperature: float | None
+    ) -> tuple[str, int, int]:
+        # The SDK applies the timeout and the bounded retry configured in __init__. SDK 1.x
+        # dropped `temperature` from its signature; models before Opus 4.7, such as Haiku 4.5,
+        # still accept it in the request body.
+        extra = {} if temperature is None else {"extra_body": {"temperature": temperature}}
         msg = self._client.messages.create(
             model=self.model,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
+            **extra,
         )
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
         return text, msg.usage.input_tokens, msg.usage.output_tokens
 
-    def _complete_local(self, system: str, user: str, max_tokens: int) -> tuple[str, int, int]:
+    def _complete_local(
+        self, system: str, user: str, max_tokens: int, temperature: float | None
+    ) -> tuple[str, int, int]:
         assert self._http is not None
-        body = {
+        body: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
             "messages": [
@@ -162,6 +172,8 @@ class LLMClient:
                 {"role": "user", "content": user},
             ],
         }
+        if temperature is not None:
+            body["temperature"] = temperature
         for attempt in range(self._max_retries + 1):
             try:
                 response = self._http.post("/chat/completions", json=body)
@@ -178,6 +190,25 @@ class LLMClient:
         usage = data.get("usage") or {}
         text = data["choices"][0]["message"]["content"] or ""
         return text, int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
+
+    def complete(
+        self, system: str, user: str, max_tokens: int, temperature: float
+    ) -> tuple[str, LLMCallStats]:
+        """Free-form completion for offline tools such as the case generator (TRZ-42).
+
+        Same timeout, bounded retry and fallback as the other calls: on failure the text is
+        empty and `stats.fallback` is set.
+
+        Args:
+            system: System prompt.
+            user: User message.
+            max_tokens: Output cap.
+            temperature: Sampling temperature.
+
+        Returns:
+            The text and the call stats.
+        """
+        return self._call(system, user, max_tokens, temperature)
 
     def extract(self, redacted_text: str) -> tuple[IntentExtraction, LLMCallStats]:
         """Extracts intent and entities; one stricter retry on invalid JSON, then heuristics.
