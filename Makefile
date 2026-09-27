@@ -1,4 +1,4 @@
-.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data
 
 install:
 	uv sync --frozen
@@ -54,3 +54,8 @@ extract:
 # docs/reports/calidad.md and cohorte.md. Starts from an empty folder.
 data: extract
 	uv run --frozen python -m pipeline.run
+
+# docs/reports/calidad.md and demanda.md from the silver and gold of the last make data; writes
+# nothing under $(DATA_DIR).
+report-data:
+	uv run --frozen python -m pipeline.reports
