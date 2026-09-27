@@ -34,4 +34,7 @@ class PipelineSettings(BaseSettings):
     cohort_report_path: Path = Path("docs/reports/cohorte.md")
     # Partitions of the last N days before the latest one are read again on every run.
     pipeline_reprocess_days: int = Field(default=7, ge=0)
+    # Evaluation cases (TRZ-42): mix, periods and noise, and the versioned split hashes.
+    cases_config_path: Path = Path("config/cases.yaml")
+    cases_manifest_path: Path = Path("eval/splits/manifest.json")
     log_level: str = "INFO"

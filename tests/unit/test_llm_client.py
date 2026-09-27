@@ -177,3 +177,30 @@ def test_unconfigured_llm_is_not_available(overrides: dict[str, object]) -> None
 
     assert not llm.available
     assert stats.error == "llm_disabled"
+
+
+def test_complete_sends_the_temperature_to_both_providers() -> None:
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return _completion('{"es-MX": "hola"}')
+
+    http = httpx.Client(base_url=BASE_URL, transport=httpx.MockTransport(handler))
+    text, stats = LLMClient(_settings(), http_client=http).complete("s", "u", 50, 0.7)
+    assert (text, stats.fallback, bodies[0]["temperature"]) == ('{"es-MX": "hola"}', False, 0.7)
+
+    sent: dict[str, object] = {}
+
+    class Messages:
+        def create(self, **kwargs: object) -> object:
+            sent.update(kwargs)
+            usage = type("Usage", (), {"input_tokens": 3, "output_tokens": 2})()
+            block = type("Block", (), {"type": "text", "text": "ok"})()
+            return type("Message", (), {"content": [block], "usage": usage})()
+
+    llm = LLMClient(_settings(llm_provider="anthropic", anthropic_api_key="k"))
+    llm._client = type("Client", (), {"messages": Messages()})()
+    text, stats = llm.complete("s", "u", 50, 1.0)
+    # anthropic 1.x has no `temperature` argument; the body still carries it.
+    assert (text, sent["extra_body"], "temperature" in sent) == ("ok", {"temperature": 1.0}, False)

@@ -1,4 +1,4 @@
-.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement
 
 install:
 	uv sync --frozen
@@ -65,3 +65,25 @@ report-data:
 # docs/reports/diferencias_versiones.md.
 diff-backup:
 	uv run --frozen --group pipeline python -m pipeline.diff_backup
+
+# Evaluation cases (TRZ-42) from the gold of the last make data. Case files go to $(DATA_DIR)/eval,
+# outside git; the versioned part is eval/splits/manifest.json. Paraphrases come from the LLM
+# through a local cache: OFFLINE=1 only reads the cache, REFREEZE=1 accepts a new test hash.
+cases:
+	uv run --frozen python -m pipeline.cases.run build $(if $(OFFLINE),--offline) $(if $(REFREEZE),--refreeze)
+
+# Draws the 15 handwritten base cases and writes their template, once; it is never overwritten.
+cases-template:
+	uv run --frozen python -m pipeline.cases.run template
+
+# Checks the handwritten messages: missing ones and personal data block the test split.
+cases-check:
+	uv run --frozen python -m pipeline.cases.run check
+
+# Blank review sheet N (1 or 2) of the handwritten messages; the second one a day after the first.
+cases-review:
+	uv run --frozen python -m pipeline.cases.run review $(N)
+
+# Agreement between the two reviews, written to eval/splits/manifest.json.
+cases-agreement:
+	uv run --frozen python -m pipeline.cases.run agreement
