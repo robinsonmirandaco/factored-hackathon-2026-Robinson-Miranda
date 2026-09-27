@@ -90,10 +90,11 @@ def handle_message(
             another customer.
     """
     # Checked before any LLM call, so an unknown customer costs no tokens.
-    if session.get(Customer, customer_id) is None:
+    customer = session.get(Customer, customer_id)
+    if customer is None:
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
     with timed() as total:
-        redacted, pii_counts = redact(text)
+        redacted, pii_counts = redact(text, name=customer.first_name)
         extraction, xstats = deps.llm.extract(redacted)
         tokens = xstats.input_tokens + xstats.output_tokens
 

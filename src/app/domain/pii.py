@@ -19,18 +19,24 @@ folios from the same text, so the patterns are shaped to leave those alone:
   "(55) 1234-5678" or "300 123 4567", a keyword such as "celular", or the bare shape of a
   Colombian or Brazilian mobile. A bare Mexican or Argentine number without grouping or keyword
   cannot be told apart from a document and is left in the text.
+
+Names cannot be found by pattern. The first name of the customer in session is known, so it is
+replaced wherever it appears, ignoring case and accents; other names are not detected.
 """
 
 import hashlib
 import hmac
 import re
+import unicodedata
 from collections.abc import Callable
 
-CARD = "[TARJETA]"
-EMAIL = "[CORREO]"
-PHONE = "[TELEFONO]"
-DOCUMENT = "[DOCUMENTO]"
-ACCOUNT = "[CUENTA]"
+# In English because the extraction prompt names them ("placeholders like [CARD]").
+CARD = "[CARD]"
+EMAIL = "[EMAIL]"
+PHONE = "[PHONE]"
+DOCUMENT = "[DOCUMENT]"
+ACCOUNT = "[ACCOUNT]"
+NAME = "[NAME]"
 
 _NUMBER_FILLER = (
     r"(?:\s*(?:de\s+(?:ciudadan[íi]a|identidad|ahorros)|corriente|poupan[çc]a|n[úu]mero|number"
@@ -181,13 +187,15 @@ _RULES: list[tuple[str, re.Pattern[str], _Check | None]] = [
 ]
 
 
-def redact(text: str) -> tuple[str, dict[str, int]]:
+def redact(text: str, name: str | None = None) -> tuple[str, dict[str, int]]:
     """Replaces PII with typed placeholders, leaving amounts, dates and last-four digits intact.
 
     A full card number is replaced as a whole: not even its last four digits stay in the text.
 
     Args:
         text: Raw text from a customer or an operator.
+        name: First name of the customer in session, replaced as a whole word regardless of case
+            and accents.
 
     Returns:
         The redacted text and the number of replacements per placeholder.
@@ -198,7 +206,25 @@ def redact(text: str) -> tuple[str, dict[str, int]]:
         out, n = _replace(pat, tag, accept, out)
         if n:
             counts[tag] = counts.get(tag, 0) + n
+    # Last, so a name inside an e-mail address is already gone with the address.
+    if name and name.strip():
+        out, n = _replace_name(out, name.strip())
+        if n:
+            counts[NAME] = n
     return out, counts
+
+
+def _fold(text: str) -> str:
+    # One character out for each character in, so positions in the folded text match the original.
+    return "".join(unicodedata.normalize("NFD", c)[0].lower()[:1] or c for c in text)
+
+
+def _replace_name(text: str, name: str) -> tuple[str, int]:
+    pat = re.compile(r"(?<!\w)" + re.escape(_fold(name)) + r"(?!\w)")
+    spans = [m.span() for m in pat.finditer(_fold(text))]
+    for start, end in reversed(spans):
+        text = text[:start] + NAME + text[end:]
+    return text, len(spans)
 
 
 def _replace(pat: re.Pattern[str], tag: str, accept: _Check | None, text: str) -> tuple[str, int]:

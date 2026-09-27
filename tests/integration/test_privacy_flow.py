@@ -21,7 +21,7 @@ pytestmark = pytest.mark.integration
 FIRST_NAME = "Valentina"
 DOCUMENT_NUMBER = "1023456789"
 MESSAGE = (
-    "Hola, mi cédula es 1.023.456.789. No reconozco el cargo de 5000 en Walmart "
+    "Hola, soy Valentina, mi cédula es 1.023.456.789. No reconozco el cargo de 5000 en Walmart "
     "con la tarjeta 4111 1111 1111 1111. Escríbanme a valentina.r@mail.com o al "
     "+57 300 123 4567."
 )
@@ -118,16 +118,18 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
 
     assert rows
     for row in logged:
+        assert FIRST_NAME not in row
         assert DOCUMENT_NUMBER not in row
         for value in MESSAGE_PII:
             assert value not in row
     assert extract_input["redacted_text"].startswith(
-        "Hola, mi cédula es [DOCUMENTO]. No reconozco el cargo de 5000 en Walmart "
-        "con la tarjeta [TARJETA]. Escríbanme a [CORREO] o al [TELEFONO]."
+        "Hola, soy [NAME], mi cédula es [DOCUMENT]. No reconozco el cargo de 5000 en Walmart "
+        "con la tarjeta [CARD]. Escríbanme a [EMAIL] o al [PHONE]."
     )
     assert extract_input["pii"] == {
-        "[DOCUMENTO]": 1,
-        "[TARJETA]": 1,
-        "[CORREO]": 1,
-        "[TELEFONO]": 1,
+        "[DOCUMENT]": 1,
+        "[CARD]": 1,
+        "[EMAIL]": 1,
+        "[PHONE]": 1,
+        "[NAME]": 1,
     }

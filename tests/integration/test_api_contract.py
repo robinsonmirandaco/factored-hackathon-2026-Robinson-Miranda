@@ -136,7 +136,7 @@ def test_operator_note_is_redacted_in_audit_log(client: TestClient, schema: Sche
         ).scalar_one()
     owner.dispose()
     assert "4111" not in row.payload["note"]
-    assert "[TARJETA]" in row.payload["note"]
+    assert "[CARD]" in row.payload["note"]
     # The analyst's row still belongs to the case customer, so that customer's RLS covers it.
     assert row.customer_id == "C1"
 

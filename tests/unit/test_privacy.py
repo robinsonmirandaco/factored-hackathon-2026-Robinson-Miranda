@@ -8,7 +8,7 @@ import pytest
 
 from app.adapters.llm import EXTRACT_SYSTEM, VALIDATE_SYSTEM, LLMClient
 from app.core.config import Settings
-from app.domain.pii import ACCOUNT, CARD, DOCUMENT, EMAIL, PHONE, redact
+from app.domain.pii import ACCOUNT, CARD, DOCUMENT, EMAIL, NAME, PHONE, redact
 
 # (text, value that must disappear, placeholder that must replace it)
 POSITIVES: list[tuple[str, str, str]] = [
@@ -124,7 +124,7 @@ def test_sixteen_digits_failing_luhn_are_not_a_card(text: str) -> None:
 def test_bare_document_without_keyword_is_left_as_possible_amount() -> None:
     # "12.345.678" is also how an amount is written, so without "DNI" or "cédula" it stays.
     assert redact("fueron 12.345.678") == ("fueron 12.345.678", {})
-    assert redact("DNI 12.345.678")[0] == "DNI [DOCUMENTO]"
+    assert redact("DNI 12.345.678")[0] == "DNI [DOCUMENT]"
 
 
 def test_full_card_keeps_no_digits_and_clues_survive_in_one_message() -> None:
@@ -135,11 +135,47 @@ def test_full_card_keeps_no_digits_and_clues_survive_in_one_message() -> None:
     )
     out, counts = redact(text)
     assert out == (
-        "No reconozco el cargo de 1.800 del 12 de junio en la tarjeta [TARJETA], "
-        "la terminada en 4821, folio DSP-2026-09417. Mi correo es [CORREO] y mi cel "
-        "[TELEFONO]."
+        "No reconozco el cargo de 1.800 del 12 de junio en la tarjeta [CARD], "
+        "la terminada en 4821, folio DSP-2026-09417. Mi correo es [EMAIL] y mi cel "
+        "[PHONE]."
     )
     assert counts == {CARD: 1, EMAIL: 1, PHONE: 1}
+
+
+# (text, first name of the customer in session, expected text)
+NAMES: list[tuple[str, str, str]] = [
+    ("Hola, soy Valentina", "Valentina", "Hola, soy [NAME]"),
+    ("habla VALENTINA de nuevo", "Valentina", "habla [NAME] de nuevo"),
+    ("soy jose, José Pérez", "José", "soy [NAME], [NAME] Pérez"),
+    ("aqui Joao, o titular", "João", "aqui [NAME], o titular"),
+    ("MARÍA y maria", "Maria", "[NAME] y [NAME]"),
+]
+
+
+@pytest.mark.parametrize(("text", "name", "expected"), NAMES)
+def test_customer_first_name_is_replaced_ignoring_case_and_accents(
+    text: str, name: str, expected: str
+) -> None:
+    out, counts = redact(text, name=name)
+    assert out == expected
+    assert counts == {NAME: expected.count(NAME)}
+
+
+def test_name_is_replaced_only_as_a_whole_word() -> None:
+    assert redact("Valentinas y Anastasia", name="Ana") == ("Valentinas y Anastasia", {})
+    assert redact("compré en Tienda Ana", name="Ana")[0] == "compré en Tienda [NAME]"
+
+
+def test_name_inside_an_email_goes_with_the_email() -> None:
+    assert redact("valentina.r@mail.com, Valentina", name="Valentina") == (
+        "[EMAIL], [NAME]",
+        {EMAIL: 1, NAME: 1},
+    )
+
+
+def test_no_name_leaves_text_as_the_patterns_do() -> None:
+    assert redact("soy Valentina", name=None) == ("soy Valentina", {})
+    assert redact("soy Valentina", name="  ") == ("soy Valentina", {})
 
 
 def test_every_type_has_at_least_three_cases() -> None:
