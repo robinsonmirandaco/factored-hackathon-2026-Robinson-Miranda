@@ -46,6 +46,7 @@ from pipeline.cases.schema import (
     Truth,
 )
 from pipeline.cases.splits import (
+    HeldOutNotFrozen,
     SplitMismatch,
     canonical,
     check_separation,
@@ -338,26 +339,47 @@ def _cases(ctx: Context) -> list[CaseRecord]:
     return [c for b in bases for c in render_base(b, gen, para, 42, ctx.merchants, {})]
 
 
-def test_a_changed_test_split_is_refused_unless_refrozen(ctx: Context, tmp_path: Path) -> None:
+def test_a_changed_test_block_is_refused_unless_refrozen(ctx: Context, tmp_path: Path) -> None:
     cases = _cases(ctx)
-    digest = write_split(tmp_path, "test", cases, {})
-    manifest = {"splits": {"test": {"sha256": digest}}}
-    assert write_split(tmp_path, "test", cases, manifest) == digest
+    digest = write_split(tmp_path, "test_generated", cases, {})
+    manifest = {"splits": {"test_generated": {"sha256": digest}}}
+    assert write_split(tmp_path, "test_generated", cases, manifest) == digest
     changed = [cases[0].model_copy(update={"message": "otro"}), *cases[1:]]
     with pytest.raises(SplitMismatch):
-        write_split(tmp_path, "test", changed, manifest)
-    assert write_split(tmp_path, "test", changed, manifest, refreeze=True) != digest
+        write_split(tmp_path, "test_generated", changed, manifest)
+    assert write_split(tmp_path, "test_generated", changed, manifest, refreeze=True) != digest
+    # The handwritten block is written and frozen on its own, later.
+    assert write_split(tmp_path, "test_handwritten", changed[:1], manifest)
 
 
-def test_load_split_checks_the_committed_hash(ctx: Context, tmp_path: Path) -> None:
+def test_held_out_is_refused_until_both_blocks_are_frozen(ctx: Context, tmp_path: Path) -> None:
     cases = _cases(ctx)
-    digest = write_split(tmp_path, "test", cases, {})
+    generated, written_by_hand = cases[:4], cases[4:]
+    hashes = {"test_generated": {"sha256": write_split(tmp_path, "test_generated", generated, {})}}
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({"splits": {"test": {"sha256": digest}}}))
+    manifest.write_text(json.dumps({"splits": hashes}))
+    with pytest.raises(HeldOutNotFrozen, match="test_handwritten"):
+        load_split(tmp_path, "test", manifest)
+
+    hashes["test_handwritten"] = {
+        "sha256": write_split(tmp_path, "test_handwritten", written_by_hand, {})
+    }
+    manifest.write_text(json.dumps({"splits": hashes}))
     assert len(load_split(tmp_path, "test", manifest)) == len(cases)
-    (tmp_path / "test.jsonl").write_bytes((tmp_path / "test.jsonl").read_bytes() + b"\n")
+
+    block = tmp_path / "test_handwritten.jsonl"
+    block.write_bytes(block.read_bytes() + b"\n")
     with pytest.raises(SplitMismatch):
         load_split(tmp_path, "test", manifest)
+
+
+def test_dev_and_calibration_load_without_the_held_out(ctx: Context, tmp_path: Path) -> None:
+    cases = _cases(ctx)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"splits": {"dev": {"sha256": write_split(tmp_path, "dev", cases, {})}}})
+    )
+    assert len(load_split(tmp_path, "dev", manifest)) == len(cases)
 
 
 # --- CA4, CA8 generators and variants ---------------------------------------------------------

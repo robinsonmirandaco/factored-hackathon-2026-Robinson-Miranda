@@ -8,7 +8,9 @@
 
 Reads gold (built by `make data`) and config/cases.yaml. Case files go under DATA_DIR/eval,
 outside git, because they hold dataset values; eval/splits/manifest.json is the versioned part.
-The test split is written only when the 60 handwritten messages pass the check.
+The test split has two blocks with their own hash: the generator B cases (`test_generated`),
+written on every run, and the handwritten ones (`test_handwritten`), written only when the 60
+messages pass the check.
 """
 
 import argparse
@@ -27,7 +29,7 @@ from pipeline.cases import handwritten
 from pipeline.cases.render import GENERATOR_VERSION, Generator, LLMCache, Paraphraser, render_base
 from pipeline.cases.sampling import Context, SplitSample, load_context, sample_split
 from pipeline.cases.schema import CaseRecord, Split
-from pipeline.cases.splits import check_separation, read_manifest, summary, write_split
+from pipeline.cases.splits import Part, check_separation, read_manifest, summary, write_split
 from pipeline.settings import PipelineSettings
 from pipeline.silver import load_normalization, sql_str
 
@@ -184,7 +186,7 @@ def build(settings: PipelineSettings, offline: bool, refreeze: bool) -> None:
     Args:
         settings: Pipeline settings.
         offline: Read LLM answers from the cache only.
-        refreeze: Allow a test split that differs from the frozen hash.
+        refreeze: Allow a test block that differs from its frozen hash.
     """
     ctx, config = context(settings)
     folder = eval_dir(settings)
@@ -213,42 +215,63 @@ def build(settings: PipelineSettings, offline: bool, refreeze: bool) -> None:
             gens["b"],
         ),
     }
-    cases: dict[Split, list[CaseRecord]] = {}
-    tokens: dict[Split, dict[str, Any]] = {}
-    for split, (sample, gen) in plan.items():
+    parts: dict[Part, list[CaseRecord]] = {}
+    sources: dict[Part, Split] = {
+        "dev": "dev",
+        "calibration": "calibration",
+        "test_generated": "test",
+    }
+    tokens: dict[Part, dict[str, Any]] = {}
+    for part, split in sources.items():
+        sample, gen = plan[split]
         versions = gen.versions(para.model, version)
         start = len(para.used)
-        cases[split] = [
+        parts[part] = [
             c
             for b in sample.bases
             for c in render_base(b, gen, para, settings.seed, ctx.merchants, versions)
         ]
-        tokens[split] = para.tokens(para.used[start:])
-        log.info("split_rendered", split=split, cases=len(cases[split]), **tokens[split])
+        tokens[part] = para.tokens(para.used[start:])
+        log.info("split_rendered", part=part, cases=len(parts[part]), **tokens[part])
 
     messages = handwritten.load_messages(hw_folder)
     errors, _ = handwritten.check(hw_bases, messages)
+    hw_versions = {"generator": GENERATOR_VERSION, "config": version, "author": "handwritten"}
     if errors:
-        log.warning("test_split_pending", handwritten_errors=len(errors), messages=len(messages))
-        del cases["test"]
+        log.warning("handwritten_block_pending", errors=len(errors), messages=len(messages))
     else:
-        hw_versions = {"generator": GENERATOR_VERSION, "config": version, "author": "handwritten"}
-        cases["test"] += handwritten.records(hw_bases, messages, hw_versions)
+        parts["test_handwritten"] = handwritten.records(hw_bases, messages, hw_versions)
 
-    check_separation(cases)
+    check_separation(
+        {
+            "dev": parts["dev"],
+            "calibration": parts["calibration"],
+            "test": parts["test_generated"] + parts.get("test_handwritten", []),
+        }
+    )
     manifest = read_manifest(settings.cases_manifest_path)
     splits = manifest.setdefault("splits", {})
-    for split, split_cases in cases.items():
-        digest = write_split(folder, split, split_cases, manifest, refreeze)
-        splits[split] = {
+    for part, part_cases in parts.items():
+        digest = write_split(folder, part, part_cases, manifest, refreeze)
+        entry: dict[str, Any] = {
             "sha256": digest,
-            "file": f"DATA_DIR/eval/{split}.jsonl",
-            **summary(split_cases),
-            "marginals": _marginals(plan[split][0]),
-            "second_pass_categories": plan[split][0].second_pass,
-            "llm": tokens[split],
-            "versions": plan[split][1].versions(para.model, version),
+            "file": f"DATA_DIR/eval/{part}.jsonl",
+            **summary(part_cases),
         }
+        if part == "test_handwritten":
+            entry["versions"] = hw_versions
+        else:
+            sample, gen = plan[sources[part]]
+            entry.update(
+                {
+                    # The marginals of the test split count both blocks: the quotas did.
+                    "marginals": _marginals(sample),
+                    "second_pass_categories": sample.second_pass,
+                    "llm": tokens[part],
+                    "versions": gen.versions(para.model, version),
+                }
+            )
+        splits[part] = entry
     manifest.update(
         {
             "config_version": version,
@@ -267,7 +290,7 @@ def build(settings: PipelineSettings, offline: bool, refreeze: bool) -> None:
     _write_manifest(settings.cases_manifest_path, manifest)
     log.info(
         "cases_built",
-        splits={s: splits[s]["sha256"][:12] for s in cases},
+        splits={p: splits[p]["sha256"][:12] for p in parts},
         llm_calls=para.usage.calls,
         llm_failed_calls=para.usage.failed_calls,
         cache_hits=para.usage.cache_hits,

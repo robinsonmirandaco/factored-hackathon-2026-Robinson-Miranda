@@ -5,9 +5,15 @@ the same cases always give the same bytes and the same SHA-256. The files hold d
 stay under DATA_DIR/eval; only `eval/splits/manifest.json` is versioned, with the hash, counts
 and versions of each split and never a row.
 
-The test hash is frozen by committing the manifest before the first tuning run. From then on
-`make cases` refuses to write a different test split unless told to refreeze, and `load_split`
-refuses a file whose hash is not the committed one.
+The test split has two blocks with their own file and hash: the cases of generator B
+(`test_generated`) and the handwritten ones (`test_handwritten`). Each block is frozen by
+committing the manifest with its hash, before the first tuning run; the generated block can be
+frozen while the handwritten messages are still being written. From then on `make cases` refuses
+to write a block that differs from its frozen hash unless told to refreeze.
+
+`load_split` is the only way into a split. It refuses a file whose hash is not the committed
+one, and it refuses the held-out test split while the handwritten block has no frozen hash, so
+no evaluation can run on half of it.
 """
 
 import hashlib
@@ -15,13 +21,20 @@ import json
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pipeline.cases.schema import CaseRecord, Split
+
+Part = Literal["dev", "calibration", "test_generated", "test_handwritten"]
+TEST_BLOCKS: tuple[Part, ...] = ("test_generated", "test_handwritten")
 
 
 class SplitMismatch(RuntimeError):
     """A split file or a new split does not match the frozen hash."""
+
+
+class HeldOutNotFrozen(RuntimeError):
+    """The test split is requested while one of its blocks has no frozen hash."""
 
 
 def canonical(cases: list[CaseRecord]) -> bytes:
@@ -52,11 +65,11 @@ def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def check_separation(splits: dict[Split, list[CaseRecord]]) -> None:
+def check_separation(splits: dict[str, list[CaseRecord]]) -> None:
     """Checks CA5: no customer in two splits and test later than calibration and dev.
 
     Args:
-        splits: Cases per split.
+        splits: Cases per split (dev, calibration, test with both blocks).
 
     Raises:
         ValueError: When a customer is shared or the periods overlap.
@@ -72,7 +85,7 @@ def check_separation(splits: dict[Split, list[CaseRecord]]) -> None:
     def moments(cases: list[CaseRecord]) -> list[datetime]:
         return [m for c in cases for m in (c.truth.timestamp, c.truth.claim_created, c.now) if m]
 
-    order: list[Split] = [s for s in ("dev", "calibration", "test") if splits.get(s)]
+    order = [s for s in ("dev", "calibration", "test") if splits.get(s)]
     for earlier, later in zip(order, order[1:], strict=False):
         if max(moments(splits[earlier])) >= min(moments(splits[later])):
             raise ValueError(f"{later} is not entirely after {earlier}")
@@ -125,55 +138,68 @@ def read_manifest(path: Path) -> dict[str, Any]:
 
 def write_split(
     folder: Path,
-    split: Split,
+    part: Part,
     cases: list[CaseRecord],
     manifest: dict[str, Any],
     refreeze: bool = False,
 ) -> str:
-    """Writes a split and returns its hash, refusing to change a frozen test split.
+    """Writes a split or test block and returns its hash, refusing to change a frozen block.
 
     Args:
         folder: DATA_DIR/eval.
-        split: Split name.
+        part: dev, calibration, test_generated or test_handwritten.
         cases: Its cases.
-        manifest: Current manifest; its test hash is the frozen one.
-        refreeze: Allow a test split that differs from the frozen hash.
+        manifest: Current manifest; the hash of a test block in it is the frozen one.
+        refreeze: Allow a test block that differs from its frozen hash.
 
     Returns:
         SHA-256 of the written file.
 
     Raises:
-        SplitMismatch: When the test split would change without `refreeze`.
+        SplitMismatch: When a test block would change without `refreeze`.
     """
     data = canonical(cases)
     digest = sha256(data)
-    frozen = manifest.get("splits", {}).get("test", {}).get("sha256")
-    if split == "test" and frozen and frozen != digest and not refreeze:
+    frozen = manifest.get("splits", {}).get(part, {}).get("sha256")
+    if part in TEST_BLOCKS and frozen and frozen != digest and not refreeze:
         raise SplitMismatch(
-            f"test split would change from the frozen {frozen[:12]} to {digest[:12]}; "
+            f"{part} would change from the frozen {frozen[:12]} to {digest[:12]}; "
             "rerun with --refreeze and record the reason in the bitácora"
         )
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{split}.jsonl").write_bytes(data)
+    (folder / f"{part}.jsonl").write_bytes(data)
     return digest
 
 
 def load_split(folder: Path, split: Split, manifest_path: Path) -> list[CaseRecord]:
-    """Reads a split after checking its hash against the versioned manifest.
+    """Reads a split after checking every file against the versioned manifest.
+
+    The test split is the union of its two blocks and is only served when both are frozen.
 
     Args:
         folder: DATA_DIR/eval.
-        split: Split name.
+        split: dev, calibration or test.
         manifest_path: eval/splits/manifest.json.
 
     Returns:
         The cases.
 
     Raises:
-        SplitMismatch: When the file is not the one the manifest names.
+        HeldOutNotFrozen: When the test split is asked for and a block has no frozen hash.
+        SplitMismatch: When a file is not the one the manifest names.
     """
-    data = (folder / f"{split}.jsonl").read_bytes()
-    expected = read_manifest(manifest_path).get("splits", {}).get(split, {}).get("sha256")
-    if expected != sha256(data):
-        raise SplitMismatch(f"{split}.jsonl does not match the manifest hash")
-    return [CaseRecord.model_validate_json(line) for line in data.decode("utf-8").splitlines()]
+    hashes = read_manifest(manifest_path).get("splits", {})
+    parts: tuple[str, ...] = TEST_BLOCKS if split == "test" else (split,)
+    missing = [p for p in parts if not hashes.get(p, {}).get("sha256")]
+    if split == "test" and missing:
+        raise HeldOutNotFrozen(
+            f"the held-out test split is not frozen yet ({', '.join(missing)} has no hash); "
+            "no evaluation may run on it"
+        )
+    cases = []
+    for part in parts:
+        data = (folder / f"{part}.jsonl").read_bytes()
+        if hashes.get(part, {}).get("sha256") != sha256(data):
+            raise SplitMismatch(f"{part}.jsonl does not match the manifest hash")
+        cases += [CaseRecord.model_validate_json(x) for x in data.decode("utf-8").splitlines()]
+    return cases
