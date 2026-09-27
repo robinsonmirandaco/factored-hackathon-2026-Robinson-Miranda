@@ -1,0 +1,53 @@
+# Identification parameters (TRZ-15, design 6.2). Written by `make fit-identification`;
+# do not edit by hand. Weights, temperature and the rejection threshold come from the
+# development split and q-hat from the accepted calibration cases, once per
+# comprehension. A new fit is a new version.
+version: identification-2
+alpha: 0.05
+unit: base case, largest nonconformity of its four variants
+fitted_on:
+  weights_and_temperature: dev
+  reject_below: dev, no_match included
+  max_real_rejection: 0.05
+  qhat: calibration, accepted cases
+  dev_sha256: 15c5f16987d2bfc89020bfdc59a80ea42fe4a307e066937a6fb1239c94773196
+  calibration_sha256: bc9f16e905b58033e3ca02d900dbb91c79da800481e354cbd91be4e24574b420
+  seed: 42
+  weight_step: 0.1
+comprehension:
+  rules:
+    weights:
+      amount: 0.3
+      date: 0.1
+      merchant: 0.4
+      channel: 0.2
+      currency: 0.0
+    temperature: 0.04623128372016089
+    qhat: 0.8
+    reject_below: -0.8285663834709383
+    dev_mean_nll: 0.28203047518511803
+    dev_cases: 496
+    dev_real_rejected: 0
+    dev_no_match_cases: 32
+    dev_no_match_accepted: 0
+    calibration_bases: 100
+    version: rules-1
+  llm:
+    weights:
+      amount: 0.2
+      date: 0.1
+      merchant: 0.5
+      channel: 0.2
+      currency: 0.0
+    temperature: 0.04297300161705705
+    qhat: 0.8
+    reject_below: -0.3613397660312458
+    dev_mean_nll: 0.28886709995870197
+    dev_cases: 496
+    dev_real_rejected: 0
+    dev_no_match_cases: 32
+    dev_no_match_accepted: 0
+    calibration_bases: 100
+    model: claude-haiku-4-5-20251001
+    prompt_version: comprehension-4
+    run: 0

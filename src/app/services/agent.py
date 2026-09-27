@@ -14,16 +14,19 @@ The LLM never picks tools. Tool selection is deterministic per intent and gated 
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
 from app.adapters.db.models import Case, Customer
+from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMClient
 from app.core.errors import AppError
 from app.core.logging import trace_id_var
 from app.domain.clock import SimulatedClock
+from app.domain.fx import display_amount, local_currency, to_usd
 from app.domain.pii import redact
 from app.domain.policy import PolicyContext, PolicyDecision, PolicyEngine
 from app.schemas.extraction import IntentExtraction
@@ -195,7 +198,7 @@ def _decide(
 ) -> PolicyDecision:
     ctx = PolicyContext(
         intent=ex.intent,
-        amount=tx["amount"] if tx else ex.amount,
+        amount=_convert_amounts(session, tx, profile) if tx else ex.amount,
         disputes_last_30d=profile.get("disputes_last_30d", 0),
     )
     decision = deps.policy.decide(ctx)
@@ -215,6 +218,23 @@ def _decide(
         },
     )
     return decision
+
+
+def _convert_amounts(session: Session, tx: dict[str, Any], profile: dict[str, Any]) -> float | None:
+    """Adds the USD amount and the customer display to a transaction, with its day's rate.
+
+    Policy thresholds are in USD, so the registered amount is converted before any decision; a
+    charge with no rate in the allowed days is marked not convertible for the reply to say so.
+
+    Returns:
+        The USD amount, or None when it is not convertible.
+    """
+    on = datetime.fromisoformat(tx["timestamp"]).date()
+    local = local_currency(profile["country_code"])
+    rates = rates_near(session, on, {(tx["currency"], "USD"), (tx["currency"], local)})
+    tx["amount_usd"] = to_usd(tx["amount"], tx["currency"], on, rates)
+    tx["amount_display"] = asdict(display_amount(tx["amount"], tx["currency"], local, on, rates))
+    return tx["amount_usd"]
 
 
 def _escalate(

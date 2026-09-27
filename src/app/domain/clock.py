@@ -98,50 +98,82 @@ class SimulatedClock:
         return None
 
     def relative_window(self, key: str, count: int = 1) -> tuple[int, int] | None:
-        """Resolves a language-neutral relative expression to a window of days back.
-
-        Customers are vague about dates, so every window covers each day the expression can
-        honestly mean: "el viernes pasado" may be the latest Friday or the one before it, and
-        "hace 3 días" is one day either side of three days ago.
+        """Resolves a language-neutral relative expression against `today()`.
 
         Args:
-            key: today, yesterday, day_before_yesterday, a weekday name ("friday"), a weekday
-                with "last" ("last_friday"), this_week, last_week, weekend, last_month,
-                early_this_month, few_days, recently, days_ago, weeks_ago or months_ago.
+            key: A key of `relative_window`.
             count: How many units back, for days_ago, weeks_ago and months_ago.
 
         Returns:
-            Fewest and most days back from `today()`, both inclusive, or None for an unknown key
-            or a window that would end in the future.
+            Fewest and most days back, both inclusive, or None for an unknown key.
         """
-        today = self.today()
-        weekday = today.weekday()
-        if key in _EXACT_DAYS:
-            return _EXACT_DAYS[key], _EXACT_DAYS[key]
-        day_name = key.removeprefix("last_")
-        if day_name in WEEKDAYS:
-            # The latest such weekday strictly before today; "last" also admits the week before.
-            back = (weekday - WEEKDAYS.index(day_name)) % 7 or 7
-            return (back, back + 7) if key.startswith("last_") else (back, back)
-        if key == "this_week":
-            return 0, weekday
-        if key == "last_week":
-            return weekday + 1, weekday + 7
-        if key == "weekend":
-            sunday_back = (weekday - 6) % 7 or 7
-            return sunday_back, sunday_back + 1
-        if key == "last_month":
-            last_of_previous = today.replace(day=1) - timedelta(days=1)
-            return today.day, (today - last_of_previous.replace(day=1)).days
-        if key == "early_this_month":
-            return max(0, today.day - 10), today.day - 1
-        if key == "few_days":
-            return 2, 7
-        if key == "recently":
-            return 0, 14
-        # A month back is vaguer than a week back, so its slack is wider.
-        spans = {"days_ago": (1, 1), "weeks_ago": (7, 3), "months_ago": (30, 10)}
-        if key in spans and count > 0:
-            unit, slack = spans[key]
-            return max(0, unit * count - slack), unit * count + slack
-        return None
+        return relative_window(self.today(), key, count)
+
+
+def relative_window(today: date, key: str, count: int = 1) -> tuple[int, int] | None:
+    """The one table of relative date windows, shared by the service and the case generator.
+
+    Customers are vague about dates, so every window covers each day the expression can
+    honestly mean. The case generator labels its cases with these same windows
+    (`pipeline.cases.noise.relative_windows`), so a window the service resolves and the window a
+    case was built with never disagree. Windows, in days back from `today` (w = weekday of
+    today, Monday 0; d = day of the month):
+
+    ========================  =====================================================
+    today, yesterday          0; 1
+    day_before_yesterday      2
+    <weekday> ("el viernes")  the latest such weekday strictly before today, b in 1..7
+    last_<weekday>            b to b + 7: that day or the same weekday a week earlier
+    this_week                 0 to w
+    last_week                 w + 1 to w + 7
+    weekend                   the last Saturday and Sunday before today
+    last_month                every day of the previous calendar month
+    early_this_month          d - 10 to d - 1, never before day 1
+    few_days                  2 to 7
+    recently                  0 to 14
+    days_ago, N               N - 1 to N + 1
+    weeks_ago, N              7N - 4 to 7N + 4 ("hace dos semanas": 10 to 18)
+    months_ago, N             30N - 10 to 30N + 10
+    ========================  =====================================================
+
+    Args:
+        today: Local date the customer writes on.
+        key: today, yesterday, day_before_yesterday, a weekday name ("friday"), a weekday
+            with "last" ("last_friday"), this_week, last_week, weekend, last_month,
+            early_this_month, few_days, recently, days_ago, weeks_ago or months_ago.
+        count: How many units back, for days_ago, weeks_ago and months_ago.
+
+    Returns:
+        Fewest and most days back from `today`, both inclusive, or None for an unknown key or
+        a window that would end in the future.
+    """
+    weekday = today.weekday()
+    if key in _EXACT_DAYS:
+        return _EXACT_DAYS[key], _EXACT_DAYS[key]
+    day_name = key.removeprefix("last_")
+    if day_name in WEEKDAYS:
+        # The latest such weekday strictly before today; "last" also admits the week before.
+        back = (weekday - WEEKDAYS.index(day_name)) % 7 or 7
+        return (back, back + 7) if key.startswith("last_") else (back, back)
+    if key == "this_week":
+        return 0, weekday
+    if key == "last_week":
+        return weekday + 1, weekday + 7
+    if key == "weekend":
+        sunday_back = (weekday - 6) % 7 or 7
+        return sunday_back, sunday_back + 1
+    if key == "last_month":
+        last_of_previous = today.replace(day=1) - timedelta(days=1)
+        return today.day, (today - last_of_previous.replace(day=1)).days
+    if key == "early_this_month":
+        return max(0, today.day - 10), today.day - 1
+    if key == "few_days":
+        return 2, 7
+    if key == "recently":
+        return 0, 14
+    # A month back is vaguer than a week back, so its slack is wider.
+    spans = {"days_ago": (1, 1), "weeks_ago": (7, 4), "months_ago": (30, 10)}
+    if key in spans and count > 0:
+        unit, slack = spans[key]
+        return max(0, unit * count - slack), unit * count + slack
+    return None

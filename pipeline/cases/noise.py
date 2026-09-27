@@ -16,12 +16,12 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from app.domain.clock import WEEKDAYS, relative_window
 from pipeline.cases.schema import AmountClue, DateClue, MerchantClue, Truth
 
 # Presence of (amount, product) in a dispute complaint -> share.
 PresenceTable = dict[tuple[bool, bool], float]
 
-WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 # Relative expressions that cover more than a couple of days: the ones an ambiguous case uses.
 WIDE_EXPRESSIONS = ("this_week", "last_week", "two_weeks_ago", "last_month")
 
@@ -157,9 +157,12 @@ def draw_now(
 
 
 def relative_windows(today: date) -> dict[str, tuple[date, date]]:
-    """Dates each relative expression can mean when said on a given day.
+    """Dates each relative expression the generator draws can mean when said on a given day.
 
-    "El martes pasado" is read as either of the last two Tuesdays, since speakers disagree.
+    The windows come from the service's table (`app.domain.clock.relative_window`), so a case is
+    labelled with the same window the service resolves. The generator draws a subset: "early
+    this month" only after day 12 and a "last <weekday>" only 3 to 7 days back, where the
+    expression is natural.
 
     Args:
         today: Local date of the case "now".
@@ -167,23 +170,29 @@ def relative_windows(today: date) -> dict[str, tuple[date, date]]:
     Returns:
         Expression key to (first, last) date.
     """
-    monday = today - timedelta(days=today.weekday())
-    first_of_month = today.replace(day=1)
-    last_of_prev = first_of_month - timedelta(days=1)
+
+    def dates(key: str, count: int = 1) -> tuple[date, date]:
+        window = relative_window(today, key, count)
+        assert window is not None, key
+        return today - timedelta(days=window[1]), today - timedelta(days=window[0])
+
     windows = {
-        "today": (today, today),
-        "yesterday": (today - timedelta(days=1), today - timedelta(days=1)),
-        "day_before_yesterday": (today - timedelta(days=2), today - timedelta(days=2)),
-        "this_week": (monday, today),
-        "last_week": (monday - timedelta(days=7), monday - timedelta(days=1)),
-        "two_weeks_ago": (today - timedelta(days=18), today - timedelta(days=10)),
-        "last_month": (last_of_prev.replace(day=1), last_of_prev),
+        key: dates(key)
+        for key in (
+            "today",
+            "yesterday",
+            "day_before_yesterday",
+            "this_week",
+            "last_week",
+            "last_month",
+        )
     }
+    windows["two_weeks_ago"] = dates("weeks_ago", 2)
     if today.day > 12:
-        windows["early_this_month"] = (first_of_month, first_of_month + timedelta(days=9))
+        windows["early_this_month"] = dates("early_this_month")
     for back in range(3, 8):
-        day = today - timedelta(days=back)
-        windows[f"last_{WEEKDAYS[day.weekday()]}"] = (day - timedelta(days=7), day)
+        key = f"last_{WEEKDAYS[(today - timedelta(days=back)).weekday()]}"
+        windows[key] = dates(key)
     return windows
 
 

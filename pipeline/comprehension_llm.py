@@ -21,11 +21,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from app.adapters.llm import READING_SCHEMA, LLMClient
+from app.adapters.llm import READING_SCHEMA, LLMClient, resolve_reading
 from app.core.logging import get_logger
 from app.domain.comprehension_rules import comprehend_rules
 from app.domain.pii import redact
-from app.schemas.comprehension import Comprehension, ComprehensionContext
+from app.schemas.comprehension import Comprehension, ComprehensionContext, ComprehensionReading
 from pipeline.cases.schema import CaseRecord
 
 log = get_logger("pipeline.comprehension_llm")
@@ -196,13 +196,17 @@ class LLMRuns:
 
     def _read(self, case: CaseRecord, run: int, key: str) -> dict[str, Any]:
         message = redact(case.message)[0]
-        reading, stats = self.client.read_clues(message, _context(case))
+        context = _context(case)
+        raw, stats = self.client.read_raw(message, context)
         return {
             "key": key,
             "run": run,
             "model": stats.model,
             "prompt_version": stats.prompt_version,
-            "reading": None if reading is None else reading.model_dump(mode="json"),
+            "raw": None if raw is None else raw.model_dump(mode="json"),
+            "reading": None
+            if raw is None
+            else resolve_reading(raw, context).model_dump(mode="json"),
             "error": stats.error,
             "calls": stats.calls,
             "input_tokens": stats.input_tokens,
@@ -251,6 +255,10 @@ class LLMRuns:
     def _outcome(case: CaseRecord, entry: dict[str, Any]) -> CaseRun:
         if entry["reading"] is None:
             reading = comprehend_rules(redact(case.message)[0], _context(case))
+        elif entry.get("raw") is not None:
+            # Resolved again on every read, so the current window table applies.
+            raw = ComprehensionReading.model_validate(entry["raw"])
+            reading = resolve_reading(raw, _context(case))
         else:
             reading = Comprehension.model_validate(entry["reading"])
         return CaseRun(

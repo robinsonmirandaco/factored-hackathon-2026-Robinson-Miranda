@@ -103,7 +103,7 @@ def test_counts_days_and_calendar_dates_are_not_amounts(message):
         ("na semana passada apareceu uma compra", date(2026, 6, 8), date(2026, 6, 14)),
         ("esta semana apareció un cobro", date(2026, 6, 15), date(2026, 6, 17)),
         ("hace 10 días me cobraron algo", date(2026, 6, 6), date(2026, 6, 8)),
-        ("há umas duas semanas apareceu uma compra", date(2026, 5, 31), date(2026, 6, 6)),
+        ("há umas duas semanas apareceu uma compra", date(2026, 5, 30), date(2026, 6, 7)),
         ("el mes pasado me cobraron algo raro", date(2026, 5, 1), date(2026, 5, 31)),
     ],
 )
