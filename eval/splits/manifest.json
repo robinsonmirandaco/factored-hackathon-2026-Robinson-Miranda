@@ -1,0 +1,340 @@
+{
+ "config_version": "1",
+ "presence_rates": {
+  "amount": 0.3318,
+  "joint": {
+   "amount=False,product=False": 0.2246,
+   "amount=False,product=True": 0.4437,
+   "amount=True,product=False": 0.1116,
+   "amount=True,product=True": 0.2201
+  },
+  "product": 0.6638,
+  "source": "gold/service_complaints, subcategory in dispute subcategories"
+ },
+ "seed": 42,
+ "splits": {
+  "calibration": {
+   "base_cases": 100,
+   "by_category": {
+    "ambiguous": 15,
+    "approval_amount": 6,
+    "billing_amount": 10,
+    "duplicate_approved": 3,
+    "duplicate_pending": 5,
+    "fraud_card_lost": 10,
+    "high_amount": 6,
+    "missing_data": 8,
+    "normal": 25,
+    "open_dispute": 4,
+    "recognized": 8
+   },
+   "by_channel": {
+    "ATM": 29,
+    "App": 15,
+    "Branch": 2,
+    "POS": 37,
+    "Transfer": 3,
+    "Web": 14
+   },
+   "by_country": {
+    "AR": 20,
+    "CO": 31,
+    "MX": 49
+   },
+   "by_expected_action": {
+    "analyst_approval": 6,
+    "escalate": 10,
+    "explain_and_watch": 5,
+    "recognized_closed": 8,
+    "register": 13,
+    "register_and_block": 15,
+    "register_and_offer_block": 43
+   },
+   "by_message_source": {
+    "llm": 400
+   },
+   "by_provenance": {
+    "generator_a": 100
+   },
+   "by_segment": {
+    "Basic": 62,
+    "Plus": 24,
+    "Premium": 9,
+    "Student": 5
+   },
+   "by_transaction_type": {
+    "Payment": 26,
+    "Purchase": 41,
+    "Withdrawal": 33
+   },
+   "by_variant": {
+    "es-AR": 100,
+    "es-CO": 100,
+    "es-MX": 100,
+    "pt-BR": 100
+   },
+   "cases": 400,
+   "customers": 100,
+   "file": "DATA_DIR/eval/calibration.jsonl",
+   "llm": {
+    "cost_usd": 0.1805,
+    "input_tokens": 61782,
+    "output_tokens": 23751,
+    "requests": 100
+   },
+   "marginals": {
+    "channel": {
+     "ATM": {
+      "cases": 29,
+      "population_share": 0.2866
+     },
+     "App": {
+      "cases": 15,
+      "population_share": 0.1453
+     },
+     "Branch": {
+      "cases": 2,
+      "population_share": 0.0299
+     },
+     "POS": {
+      "cases": 37,
+      "population_share": 0.359
+     },
+     "Transfer": {
+      "cases": 3,
+      "population_share": 0.0247
+     },
+     "Web": {
+      "cases": 14,
+      "population_share": 0.1545
+     }
+    },
+    "country_code": {
+     "AR": {
+      "cases": 20,
+      "population_share": 0.1968
+     },
+     "CO": {
+      "cases": 31,
+      "population_share": 0.3028
+     },
+     "MX": {
+      "cases": 49,
+      "population_share": 0.5004
+     }
+    },
+    "segment": {
+     "Basic": {
+      "cases": 62,
+      "population_share": 0.6306
+     },
+     "Plus": {
+      "cases": 24,
+      "population_share": 0.2354
+     },
+     "Premium": {
+      "cases": 9,
+      "population_share": 0.0898
+     },
+     "Student": {
+      "cases": 5,
+      "population_share": 0.0442
+     }
+    },
+    "transaction_type": {
+     "Payment": {
+      "cases": 26,
+      "population_share": 0.276
+     },
+     "Purchase": {
+      "cases": 41,
+      "population_share": 0.3941
+     },
+     "Withdrawal": {
+      "cases": 33,
+      "population_share": 0.3299
+     }
+    }
+   },
+   "non_native_cases": 0,
+   "second_pass_categories": [
+    "normal"
+   ],
+   "sha256": "bc9f16e905b58033e3ca02d900dbb91c79da800481e354cbd91be4e24574b420",
+   "versions": {
+    "config": "1",
+    "generator": "1",
+    "model": "claude-haiku-4-5-20251001",
+    "prompt": "a-1",
+    "templates": "a-1"
+   }
+  },
+  "dev": {
+   "base_cases": 150,
+   "by_category": {
+    "ambiguous": 14,
+    "approval_amount": 6,
+    "billing_amount": 10,
+    "claim_status": 4,
+    "duplicate_approved": 4,
+    "duplicate_pending": 6,
+    "fraud_card_lost": 10,
+    "high_amount": 8,
+    "injection": 5,
+    "missing_data": 8,
+    "multilingual": 6,
+    "no_match": 8,
+    "normal": 25,
+    "open_dispute": 6,
+    "other_customer": 4,
+    "out_of_scope": 10,
+    "recognized": 10,
+    "session_expired": 3,
+    "tool_failure": 3
+   },
+   "by_channel": {
+    "ATM": 44,
+    "App": 22,
+    "Branch": 2,
+    "POS": 54,
+    "Web": 24
+   },
+   "by_country": {
+    "AR": 31,
+    "CO": 49,
+    "MX": 70
+   },
+   "by_expected_action": {
+    "abstain_and_redirect": 10,
+    "analyst_approval": 6,
+    "escalate": 25,
+    "expired": 3,
+    "explain_and_watch": 6,
+    "recognized_closed": 10,
+    "register": 14,
+    "register_and_block": 19,
+    "register_and_offer_block": 44,
+    "report_claim_status": 4,
+    "security_blocked": 9
+   },
+   "by_message_source": {
+    "llm": 600
+   },
+   "by_provenance": {
+    "generator_a": 150
+   },
+   "by_segment": {
+    "Basic": 92,
+    "Plus": 38,
+    "Premium": 12,
+    "Student": 8
+   },
+   "by_transaction_type": {
+    "Payment": 34,
+    "Purchase": 61,
+    "Withdrawal": 51
+   },
+   "by_variant": {
+    "es-AR": 150,
+    "es-CO": 150,
+    "es-MX": 150,
+    "pt-BR": 150
+   },
+   "cases": 600,
+   "customers": 150,
+   "file": "DATA_DIR/eval/dev.jsonl",
+   "llm": {
+    "cost_usd": 0.273,
+    "input_tokens": 92969,
+    "output_tokens": 35999,
+    "requests": 150
+   },
+   "marginals": {
+    "channel": {
+     "ATM": {
+      "cases": 44,
+      "population_share": 0.2991
+     },
+     "App": {
+      "cases": 22,
+      "population_share": 0.1499
+     },
+     "Branch": {
+      "cases": 2,
+      "population_share": 0.0281
+     },
+     "POS": {
+      "cases": 54,
+      "population_share": 0.3496
+     },
+     "Transfer": {
+      "cases": 0,
+      "population_share": 0.0204
+     },
+     "Web": {
+      "cases": 24,
+      "population_share": 0.153
+     }
+    },
+    "country_code": {
+     "AR": {
+      "cases": 30,
+      "population_share": 0.2011
+     },
+     "CO": {
+      "cases": 48,
+      "population_share": 0.3138
+     },
+     "MX": {
+      "cases": 68,
+      "population_share": 0.4851
+     }
+    },
+    "segment": {
+     "Basic": {
+      "cases": 90,
+      "population_share": 0.6059
+     },
+     "Plus": {
+      "cases": 38,
+      "population_share": 0.246
+     },
+     "Premium": {
+      "cases": 11,
+      "population_share": 0.1053
+     },
+     "Student": {
+      "cases": 7,
+      "population_share": 0.0428
+     }
+    },
+    "transaction_type": {
+     "Payment": {
+      "cases": 34,
+      "population_share": 0.2569
+     },
+     "Purchase": {
+      "cases": 61,
+      "population_share": 0.3941
+     },
+     "Withdrawal": {
+      "cases": 51,
+      "population_share": 0.3491
+     }
+    }
+   },
+   "non_native_cases": 0,
+   "second_pass_categories": [
+    "normal"
+   ],
+   "sha256": "15c5f16987d2bfc89020bfdc59a80ea42fe4a307e066937a6fb1239c94773196",
+   "versions": {
+    "config": "1",
+    "generator": "1",
+    "model": "claude-haiku-4-5-20251001",
+    "prompt": "a-1",
+    "templates": "a-1"
+   }
+  }
+ }
+}
