@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(settings.log_level)
     if not settings.admin_database_url:
         raise SystemExit("ADMIN_DATABASE_URL is not set")
+    # Both sources load customers, whose document numbers are stored only as a keyed hash.
+    if not settings.document_hash_key:
+        raise SystemExit("DOCUMENT_HASH_KEY is not set in .env; run make init to generate it")
     db = Database(settings.admin_database_url)
     try:
         with db.session() as s:

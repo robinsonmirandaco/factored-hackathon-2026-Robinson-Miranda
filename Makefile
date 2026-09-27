@@ -1,7 +1,13 @@
-.PHONY: install dev test lint up down migrate seed seed-synthetic eval density extract data
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data
 
 install:
 	uv sync --frozen
+
+# Creates .env from .env.example if missing and generates DOCUMENT_HASH_KEY and APP_DB_PASSWORD
+# when they are empty or still the example; values already set are kept and none is printed.
+# System python3, so it runs before uv sync and with Docker alone.
+init:
+	python3 src/app/cli/init_env.py
 
 dev:
 	uv run --frozen uvicorn app.main:create_app --factory --reload --port 8000
