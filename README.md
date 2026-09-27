@@ -39,7 +39,7 @@ The API runs on your machine against the Postgres service from Compose. `--wait`
 cp .env.example .env
 uv sync
 docker compose up -d --wait db
-uv run python -m app.cli.ingest synthetic --seed 42
+uv run python -m app.cli.seed synthetic --seed 42
 uv run uvicorn app.main:create_app --factory --port 8000
 ```
 
@@ -65,9 +65,9 @@ The response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and
 | `make lint` | ruff check and format check | Terminal |
 | `uv run pytest -m integration` | Integration tests against Postgres | Terminal |
 | `make eval` | Runs the golden conversation cases in `eval/cases/` | `eval/reports/golden_report.md` |
-| `uv run python -m app.cli.ingest synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
+| `uv run python -m app.cli.seed synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
 
-Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
+Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` and `ADMIN_DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
 
 CI (`.github/workflows/ci.yml`) runs lint, unit and integration tests against a Postgres service, ingestion, the golden cases and the Docker build on every push and pull request, and publishes `eval/reports/` as an artifact.
 
