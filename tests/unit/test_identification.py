@@ -234,6 +234,22 @@ def test_the_button_checks_the_chosen_charge_is_a_candidate() -> None:
 def test_the_fitted_parameters_are_versioned_per_comprehension() -> None:
     for name in ("rules", "llm"):
         params = load_params(Path("config/identification.yaml"), name)
-        assert params.version == "identification-1" and params.comprehension == name
+        assert params.version == "identification-2" and params.comprehension == name
         assert sum(params.weights.values()) == pytest.approx(1.0)
         assert params.temperature > 0 and 0 < params.qhat <= 1
+        assert math.isfinite(params.reject_below)
+
+
+def test_a_best_candidate_below_the_threshold_empties_the_set() -> None:
+    clues = _clues(merchant_hint={"value": "Farmacia Sol", "evidence": "x"}, date=_date(40, 45))
+    cands = [_cand("A"), _cand("B", channel="ATM")]
+    lenient = Params("v", "rules", EVEN, 0.05, 0.8, reject_below=-5.0)
+    strict = Params("v", "rules", EVEN, 0.05, 0.8, reject_below=0.0)
+
+    kept = identify(clues, cands, lenient, "MXN", RATES)
+    rejected = identify(clues, cands, strict, "MXN", RATES)
+
+    # The softmax alone still spreads confidence over two charges that do not fit.
+    assert kept.conformal_set and not kept.rejected
+    assert rejected.conformal_set == () and rejected.decision == "not_found" and rejected.rejected
+    assert rejected.scored == kept.scored

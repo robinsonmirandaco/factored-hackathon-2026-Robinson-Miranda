@@ -76,7 +76,9 @@ class Params:
         comprehension: rules or llm: the comprehension whose clues they were fitted on.
         weights: Weight of each component.
         temperature: Softmax temperature.
-        qhat: Conformal threshold on 1 - p.
+        qhat: Conformal threshold on 1 - p, computed on the accepted calibration cases.
+        reject_below: Absolute rejection threshold: when the best candidate's total score is
+            below it, nothing matches the clues well enough and the set is empty.
     """
 
     version: str
@@ -84,6 +86,7 @@ class Params:
     weights: Mapping[str, float]
     temperature: float
     qhat: float
+    reject_below: float = -math.inf
 
 
 @dataclass(frozen=True)
@@ -113,6 +116,8 @@ class Identification:
         conformal_set: Ids in the conformal set, most probable first.
         decision: What design 6.2 says to do with a set of that size.
         amount_not_convertible: The stated amount could not be converted for some candidate.
+        rejected: The best candidate scored below the rejection threshold, so the set is empty
+            and the case escalates with the clues as open questions.
     """
 
     door: Door
@@ -120,6 +125,7 @@ class Identification:
     conformal_set: tuple[str, ...]
     decision: Decision
     amount_not_convertible: bool = False
+    rejected: bool = False
 
 
 def is_disputable(candidate: Candidate, now: datetime) -> bool:
@@ -315,6 +321,10 @@ def identify(
 ) -> Identification:
     """Scores the candidates and builds the conformal set (TRZ-15 CA2, CA6).
 
+    The softmax only compares candidates with each other, so it gives a confident answer even
+    when none of them fits the description (a charge that does not exist). The absolute
+    threshold on the best total catches that case first: the set is empty (design 6.2, size 0).
+
     Args:
         clues: Faithful clues of the customer message.
         candidates: Disputable transactions of the session customer.
@@ -335,9 +345,14 @@ def identify(
         ),
         key=lambda s: (-s.probability, s.candidate.transaction_id),
     )
+    rejected = bool(scored) and max(totals) < params.reject_below
     # The tolerance absorbs float error when p is exactly at the threshold.
-    kept = tuple(
-        s.candidate.transaction_id for s in scored if 1 - s.probability <= params.qhat + 1e-12
+    kept = (
+        ()
+        if rejected
+        else tuple(
+            s.candidate.transaction_id for s in scored if 1 - s.probability <= params.qhat + 1e-12
+        )
     )
     return Identification(
         door="conversation",
@@ -345,6 +360,7 @@ def identify(
         conformal_set=kept,
         decision=decide(len(kept)),
         amount_not_convertible=any(nc for _, nc in parts),
+        rejected=rejected,
     )
 
 
@@ -381,6 +397,7 @@ def load_params(path: Path, comprehension: str) -> Params:
         weights={k: float(fitted["weights"][k]) for k in COMPONENTS},
         temperature=float(fitted["temperature"]),
         qhat=float(fitted["qhat"]),
+        reject_below=float(fitted["reject_below"]),
     )
 
 

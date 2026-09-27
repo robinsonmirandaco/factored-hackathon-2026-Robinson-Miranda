@@ -19,8 +19,8 @@ import argparse
 import math
 import random
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from itertools import product
 from pathlib import Path
@@ -52,7 +52,13 @@ from app.schemas.comprehension import Comprehension
 from pipeline.cases.schema import CaseRecord
 from pipeline.cases.splits import load_split, read_manifest
 from pipeline.comprehension_eval import context_of
-from pipeline.comprehension_llm import CACHE_FILE, LLMRuns, ReadingCache, check_prompt_sources
+from pipeline.comprehension_llm import (
+    CACHE_FILE,
+    LLMRuns,
+    ReadingCache,
+    check_prompt_sources,
+    request_key,
+)
 from pipeline.settings import PipelineSettings
 
 log = get_logger("pipeline.identification_eval")
@@ -60,11 +66,15 @@ log = get_logger("pipeline.identification_eval")
 CONFIG_PATH = Path("config/identification.yaml")
 REPORT_PATH = Path("docs/reports/identificacion.md")
 POLICY_PATH = Path("config/policy.yaml")
-VERSION = "identification-1"
+VERSION = "identification-2"
 ALPHA = 0.05
 WEIGHT_STEP = 0.1
 TEMPERATURE_RANGE = (0.01, 10.0)
 LLM_RUNS = 3
+# Assumption: at most this share of real charges may be rejected on the development split.
+# Rejecting a real charge only sends it to a person; accepting one that does not exist can
+# register the dispute on the wrong charge, the unsafe outcome.
+MAX_REAL_REJECTION = 0.05
 CROSS_FIT_SPLITS = 20
 RELIABILITY_BINS = 10
 CHARGE_INTENTS = ("unrecognized_charge", "billing_error_amount", "billing_error_duplicate")
@@ -246,18 +256,26 @@ def rules_readings(cases: Iterable[CaseRecord]) -> Readings:
     return out
 
 
-def llm_readings(runner: LLMRuns, cases: list[CaseRecord], run: int) -> Readings:
+def llm_readings(
+    runner: LLMRuns, cases: list[CaseRecord], run: int, costs: dict[str, float] | None = None
+) -> Readings:
     """Faithful clues of the LLM for one run, from the cache when possible.
 
     Args:
         runner: LLM runner with its cache and budget.
         cases: Cases to read.
         run: Run number.
+        costs: When given, receives the original cost of every cached request used, by key,
+            so shared requests count once.
 
     Returns:
         Case id to clues; a failed reading holds the rules fallback, as in production.
     """
     outcomes = runner.run(cases, run)
+    if costs is not None:
+        for c in cases:
+            key = request_key(runner.client, redact(c.message)[0], context_of(c), run)
+            costs[key] = float(runner.cache.entries[key]["cost_usd"])
     return {c.case_id: outcomes[c.case_id].reading.faithful(redact(c.message)[0])[0] for c in cases}
 
 
@@ -386,24 +404,103 @@ def nonconformity(prep: Prepared, weights: dict[str, float], temperature: float)
     return 1 - probabilities(prep, weights, temperature)[prep.true_index]
 
 
+def top_total(prep: Prepared, weights: Mapping[str, float]) -> float:
+    """Total score of the best candidate: how well anything matches the clues at all.
+
+    Args:
+        prep: Prepared case.
+        weights: Component weights.
+
+    Returns:
+        The largest weighted total; minus infinity without candidates.
+    """
+    return max((weighted(v, weights) for v in prep.values), default=-math.inf)
+
+
 def base_scores(
-    preps: Iterable[Prepared], weights: dict[str, float], temperature: float
+    preps: Iterable[Prepared],
+    weights: dict[str, float],
+    temperature: float,
+    reject_below: float = -math.inf,
 ) -> dict[str, float]:
-    """Nonconformity of each base case: the largest of its variants.
+    """Nonconformity of each base case: the largest of its accepted variants.
+
+    A variant rejected by the absolute threshold escalates with an empty set; q-hat covers
+    the cases that pass it, so the guarantee is conditional on acceptance.
 
     Args:
         preps: Prepared cases.
         weights: Component weights.
         temperature: Softmax temperature.
+        reject_below: Absolute rejection threshold.
 
     Returns:
-        Base id to score.
+        Base id to score, for bases with at least one accepted variant.
     """
     out: dict[str, float] = {}
     for prep in preps:
+        if top_total(prep, weights) < reject_below:
+            continue
         s = nonconformity(prep, weights, temperature)
         out[prep.case.base_id] = max(out.get(prep.case.base_id, -math.inf), s)
     return out
+
+
+def choose_threshold(
+    real: Sequence[float], fake: Sequence[float], max_real_rejection: float = MAX_REAL_REJECTION
+) -> float:
+    """Absolute rejection threshold on the best total, fitted on development cases.
+
+    Among the thresholds that reject at most `max_real_rejection` of the real charges, the one
+    that accepts the fewest charges that do not exist; on a tie, the lowest. A case is rejected
+    when its best total is strictly below the threshold.
+
+    Args:
+        real: Best totals of cases whose charge exists.
+        fake: Best totals of cases whose charge does not exist (no_match).
+        max_real_rejection: Most share of real charges that may be rejected.
+
+    Returns:
+        The threshold; minus infinity when rejecting nothing is already best.
+    """
+    options = sorted({-math.inf, *real, *fake})
+    best: tuple[int, float] | None = None
+    for tau in options:
+        if sum(t < tau for t in real) > max_real_rejection * len(real):
+            continue
+        accepted = sum(t >= tau for t in fake)
+        if best is None or accepted < best[0]:
+            best = (accepted, tau)
+    assert best is not None
+    return best[1]
+
+
+def threshold_curve(
+    thresholds: Iterable[float],
+    dev_real: Sequence[float],
+    fake: Sequence[float],
+    cal_real: Sequence[float],
+) -> list[dict[str, Any]]:
+    """Charges that do not exist accepted against real charges rejected, per threshold.
+
+    Args:
+        thresholds: Thresholds to evaluate.
+        dev_real: Best totals of the real development charges.
+        fake: Best totals of the no_match development cases.
+        cal_real: Best totals of the real calibration charges.
+
+    Returns:
+        One row per threshold with counts.
+    """
+    return [
+        {
+            "tau": tau,
+            "dev_real_rejected": sum(t < tau for t in dev_real),
+            "fake_accepted": sum(t >= tau for t in fake),
+            "cal_real_rejected": sum(t < tau for t in cal_real),
+        }
+        for tau in thresholds
+    ]
 
 
 # ---- outcomes and summaries --------------------------------------------------------------
@@ -423,6 +520,7 @@ class Outcome:
         top_correct: The most probable candidate is the true one.
         true_missing: The true transaction is not among the candidates.
         not_convertible: The stated amount could not be converted for some candidate.
+        rejected: The absolute threshold emptied the set.
     """
 
     case: CaseRecord
@@ -434,6 +532,7 @@ class Outcome:
     top_correct: bool
     true_missing: bool
     not_convertible: bool
+    rejected: bool = False
 
 
 def outcome(prep: Prepared, params: Params) -> Outcome:
@@ -463,6 +562,7 @@ def outcome(prep: Prepared, params: Params) -> Outcome:
         top_correct=bool(result.scored) and result.scored[0].candidate.transaction_id == true_id,
         true_missing=missing,
         not_convertible=result.amount_not_convertible,
+        rejected=result.rejected,
     )
 
 
@@ -516,7 +616,10 @@ def summarize(outs: Sequence[Outcome]) -> dict[str, Any]:
     """
     n = len(outs)
     decisions = {d: sum(o.decision == d for o in outs) for d in _DECISIONS}
+    accepted = sum(not o.rejected for o in outs)
     return {
+        "rejected": n - accepted,
+        "accepted_coverage": sum(o.covered for o in outs) / accepted if accepted else math.nan,
         "n": n,
         "bases": len({o.case.base_id for o in outs}),
         "covered": sum(o.covered for o in outs),
@@ -574,7 +677,7 @@ def cross_fit(
     Returns:
         One summary per round.
     """
-    scores = base_scores(preps, dict(params.weights), params.temperature)
+    scores = base_scores(preps, dict(params.weights), params.temperature, params.reject_below)
     bases = sorted(scores)
     rounds = []
     for i in range(splits):
@@ -590,7 +693,7 @@ def cross_fit(
 
 
 def _with_qhat(params: Params, qhat: float) -> Params:
-    return Params(params.version, params.comprehension, params.weights, params.temperature, qhat)
+    return replace(params, qhat=qhat)
 
 
 def per_variant(preps: Sequence[Prepared], params: Params) -> dict[str, dict[str, Any]]:
@@ -606,7 +709,11 @@ def per_variant(preps: Sequence[Prepared], params: Params) -> dict[str, dict[str
     out = {}
     for variant in sorted({p.case.variant for p in preps}):
         cases = [p for p in preps if p.case.variant == variant]
-        scores = [nonconformity(p, dict(params.weights), params.temperature) for p in cases]
+        scores = [
+            nonconformity(p, dict(params.weights), params.temperature)
+            for p in cases
+            if top_total(p, params.weights) >= params.reject_below
+        ]
         own = conformal_quantile(scores, ALPHA)
         out[variant] = {
             "own_qhat": own,
@@ -687,24 +794,37 @@ def fit_command(settings: PipelineSettings, budget_usd: float, out: Path = CONFI
     spent_before = inputs.runner.cache.spent()
     fitted: dict[str, Any] = {}
     readings = {
-        "rules": (rules_readings(inputs.dev), rules_readings(inputs.calibration)),
+        "rules": (
+            rules_readings(inputs.dev),
+            rules_readings(inputs.calibration),
+            rules_readings(inputs.no_match),
+        ),
         "llm": (
             llm_readings(inputs.runner, inputs.dev, 0),
             llm_readings(inputs.runner, inputs.calibration, 0),
+            llm_readings(inputs.runner, inputs.no_match, 0),
         ),
     }
-    for name, (dev_readings, cal_readings) in readings.items():
+    for name, (dev_readings, cal_readings, nm_readings) in readings.items():
         dev = prepare(inputs.dev, dev_readings, inputs.by_customer, inputs.rates)
         cal = prepare(inputs.calibration, cal_readings, inputs.by_customer, inputs.rates)
+        no_match = prepare(inputs.no_match, nm_readings, inputs.by_customer, inputs.rates)
         weights, temperature, nll = fit(dev)
-        scores = base_scores(cal, weights, temperature)
+        real = [top_total(p, weights) for p in dev]
+        fake = [top_total(p, weights) for p in no_match]
+        reject_below = choose_threshold(real, fake)
+        scores = base_scores(cal, weights, temperature, reject_below)
         qhat = conformal_quantile(scores.values(), ALPHA)
         fitted[name] = {
             "weights": weights,
             "temperature": temperature,
             "qhat": qhat,
+            "reject_below": reject_below,
             "dev_mean_nll": nll,
             "dev_cases": len(dev),
+            "dev_real_rejected": sum(t < reject_below for t in real),
+            "dev_no_match_cases": len(fake),
+            "dev_no_match_accepted": sum(t >= reject_below for t in fake),
             "calibration_bases": len(scores),
             **(
                 {"version": RULES_VERSION}
@@ -716,7 +836,13 @@ def fit_command(settings: PipelineSettings, budget_usd: float, out: Path = CONFI
                 }
             ),
         }
-        log.info("identification_fitted", comprehension=name, qhat=qhat, temperature=temperature)
+        log.info(
+            "identification_fitted",
+            comprehension=name,
+            qhat=qhat,
+            temperature=temperature,
+            reject_below=reject_below,
+        )
     splits = inputs.manifest["splits"]
     config = {
         "version": VERSION,
@@ -724,7 +850,9 @@ def fit_command(settings: PipelineSettings, budget_usd: float, out: Path = CONFI
         "unit": "base case, largest nonconformity of its four variants",
         "fitted_on": {
             "weights_and_temperature": "dev",
-            "qhat": "calibration",
+            "reject_below": "dev, no_match included",
+            "max_real_rejection": MAX_REAL_REJECTION,
+            "qhat": "calibration, accepted cases",
             "dev_sha256": splits["dev"]["sha256"],
             "calibration_sha256": splits["calibration"]["sha256"],
             "seed": inputs.manifest["seed"],
@@ -734,8 +862,9 @@ def fit_command(settings: PipelineSettings, budget_usd: float, out: Path = CONFI
     }
     header = (
         "# Identification parameters (TRZ-15, design 6.2). Written by `make fit-identification`;\n"
-        "# do not edit by hand. Weights and temperature come from the development split and q-hat\n"
-        "# from the calibration split, once per comprehension. A new fit is a new version.\n"
+        "# do not edit by hand. Weights, temperature and the rejection threshold come from the\n"
+        "# development split and q-hat from the accepted calibration cases, once per\n"
+        "# comprehension. A new fit is a new version.\n"
     )
     out.write_text(header + yaml.safe_dump(config, sort_keys=False, allow_unicode=True))
     log.info(
@@ -775,6 +904,7 @@ def report_command(
     config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     _check_config(config, inputs.manifest)
     spent_before = inputs.runner.cache.spent()
+    costs: dict[str, float] = {}
     results: dict[str, Any] = {}
     for name in ("rules", "llm"):
         params = load_params(CONFIG_PATH, name)
@@ -788,15 +918,42 @@ def report_command(
                     rules_readings(inputs.no_match),
                 )
             else:
-                cal_r = llm_readings(inputs.runner, inputs.calibration, r)
-                dev_r = llm_readings(inputs.runner, inputs.dev, 0)
-                nm_r = llm_readings(inputs.runner, inputs.no_match, 0)
+                cal_r = llm_readings(inputs.runner, inputs.calibration, r, costs)
+                dev_r = llm_readings(inputs.runner, inputs.dev, 0, costs)
+                nm_r = llm_readings(inputs.runner, inputs.no_match, 0, costs)
             cal = prepare(inputs.calibration, cal_r, inputs.by_customer, inputs.rates)
+            dev = prepare(inputs.dev, dev_r, inputs.by_customer, inputs.rates)
+            no_match = prepare(inputs.no_match, nm_r, inputs.by_customer, inputs.rates)
             cal_outs = [outcome(p, params) for p in cal]
-            scores = base_scores(cal, dict(params.weights), params.temperature)
+            weights = dict(params.weights)
+            scores = base_scores(cal, weights, params.temperature, params.reject_below)
+            # The same weights without the threshold: what the system did before it.
+            unscreened = base_scores(cal, weights, params.temperature)
+            before = replace(
+                params,
+                reject_below=-math.inf,
+                qhat=conformal_quantile(unscreened.values(), ALPHA),
+            )
+            tops = {
+                "dev_real": [top_total(p, weights) for p in dev],
+                "fake": [top_total(p, weights) for p in no_match],
+                "cal_real": [top_total(p, weights) for p in cal],
+            }
+            low = math.floor(min(v for vals in tops.values() for v in vals) * 10) / 10
+            grid = sorted(
+                {round(low + i / 10, 1) for i in range(round((0.3 - low) * 10))}
+                | {params.reject_below}
+            )
             per_run.append(
                 {
                     "run": r,
+                    "before": {
+                        "qhat": before.qhat,
+                        "calibration": summarize([outcome(p, before) for p in cal]),
+                        "dev": summarize([outcome(p, before) for p in dev]),
+                        "no_match": summarize([outcome(p, before) for p in no_match]),
+                    },
+                    "curve": threshold_curve(grid, **tops),
                     "qhat_of_run": conformal_quantile(scores.values(), ALPHA),
                     "calibration": summarize(cal_outs),
                     "groups": {g: by_group(cal_outs, k) for g, k in GROUPS.items()},
@@ -810,20 +967,8 @@ def report_command(
                     "cross_fit": cross_fit(cal, params, inputs.manifest["seed"]),
                     "per_variant": per_variant(cal, params),
                     "button": button_door(cal),
-                    "dev": summarize(
-                        [
-                            outcome(p, params)
-                            for p in prepare(inputs.dev, dev_r, inputs.by_customer, inputs.rates)
-                        ]
-                    ),
-                    "no_match": summarize(
-                        [
-                            outcome(p, params)
-                            for p in prepare(
-                                inputs.no_match, nm_r, inputs.by_customer, inputs.rates
-                            )
-                        ]
-                    ),
+                    "dev": summarize([outcome(p, params) for p in dev]),
+                    "no_match": summarize([outcome(p, params) for p in no_match]),
                 }
             )
         results[name] = {"params": params, "runs": per_run}
@@ -834,6 +979,8 @@ def report_command(
         "seed": inputs.manifest["seed"],
         "llm_spend_usd": inputs.runner.cache.spent() - spent_before,
         "cache_spend_usd": inputs.runner.cache.spent(),
+        "cached_cost_usd": sum(costs.values()),
+        "cached_requests": len(costs),
     }
     write_report(results, meta, out)
     for name, res in results.items():
@@ -870,7 +1017,9 @@ def _fmt(values: list[float], pct: bool = False, digits: int = 3) -> str:
 
     if len(values) == 1:
         return one(values[0])
-    return f"{one(sum(values) / len(values))} [{one(min(values))}, {one(max(values))}]"
+    # Equal runs print their value as the mean, so float noise in the sum cannot round it apart.
+    mean = values[0] if max(values) == min(values) else sum(values) / len(values)
+    return f"{one(mean)} [{one(min(values))}, {one(max(values))}]"
 
 
 def _summary_cells(runs: list[dict[str, Any]], get: Callable[[dict[str, Any]], dict]) -> str:
@@ -878,6 +1027,7 @@ def _summary_cells(runs: list[dict[str, Any]], get: Callable[[dict[str, Any]], d
     cells = [
         f"{first['n']} ({first['bases']})",
         _fmt(_values(runs, lambda r: get(r)["coverage"]), pct=True),
+        _fmt(_values(runs, lambda r: get(r)["accepted_coverage"]), pct=True),
         _fmt(_values(runs, lambda r: get(r)["mean_size"]), digits=2),
         _fmt(_values(runs, lambda r: get(r)["size_one"]), pct=True),
     ]
@@ -885,6 +1035,7 @@ def _summary_cells(runs: list[dict[str, Any]], get: Callable[[dict[str, Any]], d
         _fmt(_values(runs, lambda r, d=d: get(r)["decisions"][d] / get(r)["n"]), pct=True)
         for d in _DECISIONS
     ]
+    cells.append(_fmt(_values(runs, lambda r: get(r)["rejected"]), digits=1))
     return " | ".join(cells)
 
 
@@ -902,10 +1053,11 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
     lines = [
         "# Identification on the development and calibration splits",
         "",
-        "> **Before the test split.** Weights and temperature were fitted on the development "
-        "split and q-hat on the calibration split. Coverage on calibration is in-sample for "
-        "q-hat; the cross-fit rows are the out-of-sample estimate available before the test "
-        "split is frozen. The final coverage against 95% is measured on the test split.",
+        "> **Before the test split.** Weights, temperature and the rejection threshold were "
+        "fitted on the development split and q-hat on the calibration split. Coverage on "
+        "calibration is in-sample for q-hat; the cross-fit rows are the out-of-sample "
+        "estimate available before the test split is frozen. The final coverage against 95% "
+        "is measured on the test split.",
         "",
         "Generated by `make eval-identification` (story TRZ-15; design 6.2) from "
         "`config/identification.yaml`, written by `make fit-identification`. Counts and rates "
@@ -918,8 +1070,10 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         f"- Development split sha256 `{config['fitted_on']['dev_sha256']}`",
         f"- Calibration split sha256 `{config['fitted_on']['calibration_sha256']}`",
         f"- Case generator seed: {meta['seed']}; policy version: {meta['policy_version']}",
-        f"- LLM spend of this run: {meta['llm_spend_usd']:.4f} USD; total recorded in the "
-        f"comprehension cache: {meta['cache_spend_usd']:.4f} USD",
+        f"- LLM spend of this run: {meta['llm_spend_usd']:.4f} USD new; the "
+        f"{meta['cached_requests']} cached LLM readings it used cost "
+        f"{meta['cached_cost_usd']:.4f} USD when first requested; total recorded in the "
+        f"comprehension cache, prompt iterations included: {meta['cache_spend_usd']:.4f} USD",
         "",
         "| Comprehension | Model | Prompt or rules version | Runs on calibration |",
         "| --- | --- | --- | --- |",
@@ -943,6 +1097,12 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         "transaction outside the candidates counts as a miss. **Size 1**: share of sets with "
         "exactly one transaction. Decisions follow design 6.2: 1 identified, 2 to 3 options, "
         "more than 3 ask for a detail, 0 not found.",
+        "- **Rejection**: the softmax only compares candidates with each other, so it is "
+        "confident even when no candidate fits (a charge that does not exist). When the best "
+        "candidate's total score is below the absolute threshold, the set is empty and the case "
+        "escalates. A rejected real charge counts as a miss in **Coverage**; **Coverage if "
+        "accepted** is over the cases that pass the threshold, the population q-hat is computed "
+        "on. **Rejected** is a count of cases.",
         "- **Brier**: multiclass, over the candidates of each case (plus 1 when the true one is "
         "missing). **ECE**: expected calibration error of the top candidate's probability, "
         f"{RELIABILITY_BINS} equal-width bins.",
@@ -952,23 +1112,84 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         "",
         "## Fitted parameters",
         "",
-        "| Comprehension | " + " | ".join(COMPONENTS) + " | Temperature | q-hat | "
-        "Dev mean NLL | Dev cases | Calibration bases |",
-        "| --- " * (len(COMPONENTS) + 6) + "|",
+        "| Comprehension | " + " | ".join(COMPONENTS) + " | Temperature | Reject below | "
+        "q-hat | Dev mean NLL | Dev cases | Calibration bases |",
+        "| --- " * (len(COMPONENTS) + 7) + "|",
     ]
     for name in names:
         f = fitted[name]
         lines.append(
             f"| {name} | "
             + " | ".join(f"{f['weights'][k]:.1f}" for k in COMPONENTS)
-            + f" | {f['temperature']:.4f} | {_fmt([f['qhat']], digits=4)} | "
+            + f" | {f['temperature']:.4f} | {f['reject_below']:.4f} | "
+            f"{_fmt([f['qhat']], digits=4)} | "
             f"{f['dev_mean_nll']:.4f} | {f['dev_cases']} | {f['calibration_bases']} |"
         )
+    lines += [
+        "",
+        "## Rejection threshold",
+        "",
+        "Fitted on the development split, whose no_match cases describe a charge that does not "
+        "exist (the calibration split has none). Among the thresholds that reject at most "
+        f"{MAX_REAL_REJECTION:.0%} of the real development charges (a declared assumption), the "
+        "one that accepts the fewest charges that do not exist; on a tie, the lowest. Rejecting "
+        "a real charge only sends it to a person; accepting one that does not exist can register "
+        "the dispute on the wrong charge.",
+        "",
+        "| Comprehension | Threshold | No-match with a non-empty set | No-match identified | "
+        "Real rejected, development | Real rejected, calibration | q-hat |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for name in names:
+        runs = results[name]["runs"]
+        for label, get in (("none (before)", lambda r: r["before"]), ("fitted", lambda r: r)):
+            nm = [get(r)["no_match"] for r in runs]
+            lines.append(
+                f"| {name} | {label} | "
+                + _fmt([1 - x["decisions"]["not_found"] / x["n"] for x in nm], pct=True)
+                + f" ({nm[0]['n']}) | "
+                + _fmt([x["decisions"]["identified"] / x["n"] for x in nm], pct=True)
+                + f" | {get(runs[0])['dev']['rejected']} of {get(runs[0])['dev']['n']} | "
+                + _fmt([get(r)["calibration"]["rejected"] for r in runs], digits=1)
+                + f" of {runs[0]['calibration']['n']} | "
+                + (
+                    _fmt([r["before"]["qhat"] for r in runs], digits=4)
+                    if label.startswith("none")
+                    else _fmt([fitted[name]["qhat"]], digits=4)
+                )
+                + " |"
+            )
+    lines += [
+        "",
+        "The no-match rates with the fitted threshold are in-sample: the threshold was chosen on "
+        "these same 32 cases, which come from 8 base cases. The real charges rejected on the "
+        "calibration split are out of sample for it. The test split measures both.",
+        "",
+        "Trade-off by threshold (cases; LLM: run 0). The fitted threshold is marked.",
+        "",
+        "| Comprehension | Threshold | Real rejected, development | No-match accepted, "
+        "development | Real rejected, calibration |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for name in names:
+        run0 = results[name]["runs"][0]
+        n_dev, n_fake, n_cal = (
+            run0["dev"]["n"],
+            run0["no_match"]["n"],
+            run0["calibration"]["n"],
+        )
+        for row in run0["curve"]:
+            mark = " (fitted)" if row["tau"] == fitted[name]["reject_below"] else ""
+            lines.append(
+                f"| {name} | {row['tau']:.4f}{mark} | "
+                f"{row['dev_real_rejected']} of {n_dev} | {row['fake_accepted']} of {n_fake} | "
+                f"{row['cal_real_rejected']} of {n_cal} |"
+            )
     head = (
-        "| Comprehension | Where | Cases (bases) | Coverage | Mean set size | Size 1 | "
-        "Identified | Options | Ask detail | Not found |"
+        "| Comprehension | Where | Cases (bases) | Coverage | Coverage if accepted | "
+        "Mean set size | Size 1 | Identified | Options | Ask detail | Not found | Rejected |"
     )
-    lines += ["", "## Conversation door: coverage and set size", "", head, "| --- " * 10 + "|"]
+    lines += ["", "## Conversation door: coverage and set size", "", head, "| --- " * 12 + "|"]
     for name in names:
         runs = results[name]["runs"]
         lines.append(
@@ -981,12 +1202,13 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
             f"| {name} | calibration, cross-fit ({CROSS_FIT_SPLITS} halves"
             f"{' x ' + str(len(runs)) + ' runs' if len(runs) > 1 else ''}) | "
             f"{rounds[0]['n']} ({rounds[0]['bases']}) | {_fmt(mean_cov, pct=True)} | "
+            f"{_fmt([x['accepted_coverage'] for x in rounds], pct=True)} | "
             f"{_fmt([x['mean_size'] for x in rounds], digits=2)} | "
             f"{_fmt([x['size_one'] for x in rounds], pct=True)} | "
             + " | ".join(
                 _fmt([x["decisions"][d] / x["n"] for x in rounds], pct=True) for d in _DECISIONS
             )
-            + " |"
+            + f" | {_fmt([x['rejected'] for x in rounds], digits=1)} |"
         )
         lines.append(
             f"| {name} | development, calibration q-hat | "

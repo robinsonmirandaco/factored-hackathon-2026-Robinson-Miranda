@@ -5,6 +5,8 @@ the evaluation measures; this module only reads the candidates and the rates fro
 the row level security context of the session customer, and writes the audit row.
 """
 
+import math
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -146,6 +148,10 @@ def _audit(
         {
             "door": result.door,
             "params_version": params.version if params else None,
+            # JSON has no infinity; "no threshold" is stored as null.
+            "reject_below": (
+                params.reject_below if params and math.isfinite(params.reject_below) else None
+            ),
             "comprehension": params.comprehension if params else None,
         },
         {
@@ -153,6 +159,7 @@ def _audit(
             "conformal_set": list(result.conformal_set),
             "decision": result.decision,
             "amount_not_convertible": result.amount_not_convertible,
+            "rejected": result.rejected,
             "top": [
                 {
                     "transaction_id": s.candidate.transaction_id,

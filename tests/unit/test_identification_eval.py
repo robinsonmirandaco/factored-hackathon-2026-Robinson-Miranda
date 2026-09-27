@@ -17,6 +17,7 @@ from pipeline.identification_eval import (
     Prepared,
     base_scores,
     candidates_of,
+    choose_threshold,
     cross_fit,
     ece,
     fit,
@@ -29,6 +30,8 @@ from pipeline.identification_eval import (
     prepare,
     probabilities,
     reliability,
+    threshold_curve,
+    top_total,
     weight_grid,
 )
 from tests.unit.test_comprehension_eval import NOW, _case
@@ -201,3 +204,32 @@ def test_the_committed_config_names_its_splits() -> None:
     manifest = json.loads(Path("eval/splits/manifest.json").read_text())
     assert config["fitted_on"]["dev_sha256"] == manifest["splits"]["dev"]["sha256"]
     assert config["fitted_on"]["calibration_sha256"] == manifest["splits"]["calibration"]["sha256"]
+
+
+def test_threshold_accepts_the_fewest_fake_charges_within_the_real_rejection_cap() -> None:
+    real = [0.2, 0.1, 0.0, -0.1, -0.9] + [0.2] * 15
+    fake = [-1.0, -0.8, -0.5]
+    # Rejecting one real charge of 20 (5%) is allowed: tau = 0.0 accepts no fake charge but
+    # rejects two real ones; tau = -0.1 rejects only -0.9 and accepts no fake charge either.
+    assert choose_threshold(real, fake, 0.05) == pytest.approx(-0.1)
+    # Without room to reject a real charge, the best is to accept only the fakes above -0.9.
+    assert choose_threshold(real, fake, 0.0) == pytest.approx(-0.9)
+    # When nothing separates them, rejecting nothing is the lowest best threshold.
+    assert choose_threshold([0.0], [], 0.05) == -math.inf
+
+
+def test_threshold_curve_counts_both_errors() -> None:
+    rows = threshold_curve([-1.0, 0.0], [0.5, -0.5], [-0.7, 0.1], [0.3])
+    assert rows == [
+        {"tau": -1.0, "dev_real_rejected": 0, "fake_accepted": 2, "cal_real_rejected": 0},
+        {"tau": 0.0, "dev_real_rejected": 1, "fake_accepted": 1, "cal_real_rejected": 0},
+    ]
+
+
+def test_rejected_variants_do_not_enter_the_quantile() -> None:
+    preps = _prepared(drop_merchant={"b0-pt-BR"})
+    weights = {**dict.fromkeys(COMPONENTS, 0.0), "merchant": 1.0}
+    # b0-pt-BR has no merchant clue, so its best total is 0 while the others reach 1.
+    assert top_total(preps[1], weights) == 0.0
+    screened = base_scores(preps, weights, 0.1, reject_below=0.5)
+    assert screened["b0"] < 0.01

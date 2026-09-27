@@ -117,3 +117,20 @@ def test_the_button_door_checks_ownership_and_window(db: Database) -> None:
 
     assert (mine.door, mine.decision, mine.conformal_set) == ("button", "identified", ("IN2",))
     assert old.decision == "not_found" and other.decision == "not_found"
+
+
+def test_a_rejected_identification_is_audited_with_its_threshold(db: Database) -> None:
+    strict = Params("identification-test", "rules", dict.fromkeys(COMPONENTS, 0.2), 0.05, 0.8, 5.0)
+    clues = Comprehension.model_validate(
+        {
+            "intent": "unrecognized_charge",
+            "language": "es-CO",
+            "merchant_hint": {"value": "Farmacia Sol", "evidence": "x"},
+        }
+    )
+    with db.session(customer_id="C1") as s:
+        result = identify_charge(s, SimulatedClock(NOW), "C1", clues, strict, "COP", "K2")
+        row = s.execute(select(AuditRecord).where(AuditRecord.case_id == "K2")).scalar_one()
+
+    assert result.rejected and result.decision == "not_found"
+    assert row.result["rejected"] is True and row.payload["reject_below"] == 5.0
