@@ -20,9 +20,9 @@ make init
 docker compose up --build
 ```
 
-Copying `.env.example` is required: Compose needs `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` to start. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
+`make init` is required: it creates `.env` from `.env.example` and generates `DOCUMENT_HASH_KEY` and `APP_DB_PASSWORD`, which Compose needs along with `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`. Values already set in `.env` are kept. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
 
-The `db` service starts first. The `api` service then loads the synthetic fixture (`ingest synthetic --seed 42`) and serves:
+The `db` service starts first. The one-shot `migrate` service then applies the migrations and loads the synthetic fixture (`seed synthetic --seed 42`) only if the database is empty, and the `api` service serves:
 
 | Service | URL |
 | --- | --- |
