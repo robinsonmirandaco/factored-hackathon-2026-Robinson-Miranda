@@ -1,7 +1,9 @@
-"""`make data`: bronze manifest, incremental silver with quarantine, gold and the quality report.
+"""`make data`: bronze manifest, incremental silver with quarantine, gold, the serving cohort and
+the quality and cohort reports.
 
-The pipeline has no random step; the seed is recorded with the run for traceability. Running it
-twice on the same bronze gives the same output hashes, listed in `manifest/outputs.json`.
+The only step that uses the seed is the cohort, which orders customers by a hash of the seed and
+the id. Running it twice on the same bronze gives the same output hashes, listed in
+`manifest/outputs.json`.
 """
 
 import hashlib
@@ -14,6 +16,7 @@ import duckdb
 
 from app.core.logging import configure_logging, get_logger
 from app.core.time import utcnow
+from pipeline.cohort import CohortResult, build_cohort, render_report
 from pipeline.contracts import CONTRACTS, PIPELINE_VERSION
 from pipeline.gold import build_gold
 from pipeline.manifest import scan_bronze
@@ -50,12 +53,14 @@ class RunResult:
         lineage: Batch id and pipeline version of the run.
         tables: Row counts per table, in processing order.
         gold: Row counts per gold table.
+        cohort: The serving cohort.
         outputs: SHA-256 per output file, keyed by path relative to the data directory.
     """
 
     lineage: Lineage
     tables: list[TableResult]
     gold: dict[str, int]
+    cohort: CohortResult
     outputs: dict[str, str]
 
 
@@ -80,11 +85,11 @@ def hash_outputs(data_dir: Path) -> dict[str, str]:
 
 
 def run(settings: PipelineSettings, now: datetime) -> RunResult:
-    """Runs bronze, silver and gold over the data directory and writes the quality report.
+    """Runs bronze, silver, gold and the cohort over the data directory and writes the reports.
 
     Args:
-        settings: Pipeline settings: data directory, mapping, report path, reprocessing window,
-            simulated clock and seed.
+        settings: Pipeline settings: data directory, mapping, report paths, reprocessing window,
+            simulated clock, seed and cohort size.
         now: Run time, naive UTC; only used to date newly registered bronze files.
 
     Returns:
@@ -139,7 +144,16 @@ def run(settings: PipelineSettings, now: datetime) -> RunResult:
     settings.quality_report_path.write_text(
         render(con, data_dir, tables, manifest, norm, header, settings.trazo_now)
     )
-    return RunResult(lineage=lineage, tables=tables, gold=gold, outputs=hash_outputs(data_dir))
+    cohort = build_cohort(con, data_dir, settings.cohort_size, settings.seed)
+    settings.cohort_report_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.cohort_report_path.write_text(render_report(cohort, header))
+    return RunResult(
+        lineage=lineage,
+        tables=tables,
+        gold=gold,
+        cohort=cohort,
+        outputs=hash_outputs(data_dir),
+    )
 
 
 def main() -> None:
@@ -155,6 +169,7 @@ def main() -> None:
         outputs=len(result.outputs),
         outputs_sha256=digest,
         gold=result.gold,
+        cohort_rows=result.cohort.rows,
     )
 
 

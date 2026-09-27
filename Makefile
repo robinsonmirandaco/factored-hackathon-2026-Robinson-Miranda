@@ -1,7 +1,13 @@
-.PHONY: install dev test lint up down ingest eval density extract data
+.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data
 
 install:
 	uv sync --frozen
+
+# Creates .env from .env.example if missing and generates DOCUMENT_HASH_KEY and APP_DB_PASSWORD
+# when they are empty or still the example; values already set are kept and none is printed.
+# System python3, so it runs before uv sync and with Docker alone.
+init:
+	python3 src/app/cli/init_env.py
 
 dev:
 	uv run --frozen uvicorn app.main:create_app --factory --reload --port 8000
@@ -19,8 +25,18 @@ up:
 down:
 	docker compose down
 
-ingest:
-	uv run --frozen python -m app.cli.ingest $(SOURCE) $(ARGS)
+# Applies db/migrations as the owner (ADMIN_DATABASE_URL) and sets the password of trazo_app.
+migrate:
+	uv run --frozen python -m app.cli.migrate
+
+# Loads the serving cohort ($(DATA_DIR)/gold/cohort, built by make data) into the database of
+# ADMIN_DATABASE_URL. A database holds one source: REPLACE=1 empties it first.
+seed:
+	uv run --frozen python -m app.cli.seed cohort $(if $(REPLACE),--replace)
+
+# The synthetic fixture instead of the cohort, as in CI and a fresh compose stack.
+seed-synthetic:
+	uv run --frozen python -m app.cli.seed synthetic $(if $(REPLACE),--replace)
 
 eval:
 	LLM_ENABLED=false uv run --frozen python -m app.cli.eval eval/cases --out eval/reports
@@ -34,6 +50,7 @@ density:
 extract:
 	uv run --frozen --group pipeline python -m pipeline.extract
 
-# Bronze manifest, silver with quarantine, and gold under $(DATA_DIR). Starts from an empty folder.
+# Bronze manifest, silver with quarantine, gold and the serving cohort under $(DATA_DIR), plus
+# docs/reports/calidad.md and cohorte.md. Starts from an empty folder.
 data: extract
 	uv run --frozen python -m pipeline.run

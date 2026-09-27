@@ -1,56 +1,38 @@
-"""Synthetic adapter. Generates coherent customers, transactions and interactions.
+"""Synthetic adapter, the CI fixture. Generates customers, products and transactions shaped like
+the dataset (same columns and domains), since CI has no access to the real data.
 
-Includes deliberate dirty rows (negative amounts, unknown customers, bad currencies) so the
-validator and quarantine path are exercised on every run. Timestamps count back from the
-simulated TRAZO_NOW passed in, never the wall clock, so the same seed and anchor always yield the
-same rows and the data sits inside the windows the agent searches.
+Every value is made up. Includes deliberate dirty rows (negative amount, unknown customer, bad
+currency, implausible date, a product of another customer) so the validator and quarantine path
+are exercised on every run. Timestamps count back from the simulated TRAZO_NOW passed in, never
+the wall clock, so the same seed and anchor always yield the same rows and the data sits inside
+the windows the agent searches.
 """
 
 import random
 from datetime import datetime, timedelta
 from typing import Any
 
-MERCHANTS = [
-    ("Amazon", "electronics", "online"),
-    ("Walmart", "grocery", "pos"),
-    ("Shell", "fuel", "pos"),
-    ("Uber Eats", "restaurant", "online"),
-    ("Netflix", "subscription", "online"),
-    ("Best Buy", "electronics", "pos"),
-    ("Delta Airlines", "travel", "online"),
-    ("Steam", "electronics", "online"),
-    ("Bet365", "gambling", "online"),
-    ("Coinbase", "crypto", "online"),
-    ("Zara", "other", "pos"),
-    ("Apple", "electronics", "online"),
+# Home country, ISO code, time zone, currency and coherent document types.
+COUNTRIES = [
+    ("Argentina", "AR", "America/Argentina/Buenos_Aires", "ARS", ("DNI",)),
+    ("Colombia", "CO", "America/Bogota", "COP", ("CC", "CE")),
+    # The dataset records every Mexican transaction in USD.
+    ("México", "MX", "America/Mexico_City", "USD", ("Pasaporte",)),
 ]
-COUNTRIES = ["US", "US", "US", "US", "CO", "MX", "BR", "GB", "NG", "RU"]
-
-TEMPLATES = {
-    "blocked_purchase": [
-        "My purchase of ${amount} at {merchant} was declined but it was me, please unblock it",
-        "Me bloquearon una compra de {amount} dolares en {merchant} y si fui yo",
-        "Why was my card blocked? I tried to pay {amount} at {merchant} an hour ago",
-    ],
-    "unrecognized_charge": [
-        "There is a charge of ${amount} from {merchant} that I never made",
-        "No reconozco un cargo de {amount} de {merchant}, yo no compre eso",
-        "Someone used my card at {merchant} for ${amount}, I want it disputed",
-    ],
-    "duplicate_charge": [
-        "I was charged twice by {merchant}, ${amount} each time",
-        "{merchant} me cobro dos veces {amount}",
-    ],
-    "lost_or_stolen_card": [
-        "I lost my card yesterday, please block it",
-        "Me robaron la tarjeta, necesito bloquearla ya",
-    ],
-    "general_inquiry": [
-        "What is my current balance?",
-        "How do I change my mailing address?",
-        "Cual es la tarifa por retiro en cajero internacional?",
-    ],
-}
+SEGMENTS = ["Basic", "Basic", "Basic", "Plus", "Premium", "Student"]
+MERCHANTS = [
+    ("Mercado Libre", "Other", "Web"),
+    ("Exito", "Food", "POS"),
+    ("Oxxo", "Food", "POS"),
+    ("Rappi", "Food", "App"),
+    ("Netflix", "Entertainment", "Web"),
+    ("Cinepolis", "Entertainment", "POS"),
+    ("Avianca", "Transport", "Web"),
+    ("Uber", "Transport", "App"),
+    ("Farmacias Guadalajara", "Health", "POS"),
+    ("Claro", "Services", "Web"),
+]
+Rows = list[dict[str, Any]]
 
 
 def generate(
@@ -59,8 +41,8 @@ def generate(
     n_customers: int = 200,
     tx_per_customer: int = 25,
     dirty: bool = True,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Generates customers, transactions and interactions.
+) -> tuple[Rows, Rows, Rows]:
+    """Generates customers, products and transactions.
 
     Args:
         now: Simulated "now" (TRAZO_NOW); every timestamp falls before it.
@@ -70,121 +52,82 @@ def generate(
         dirty: Whether to append deliberately invalid rows.
 
     Returns:
-        Raw customer, transaction and interaction rows, not yet validated.
+        Raw customer, product and transaction rows, not yet validated.
     """
     rng = random.Random(seed)
     now = now.replace(microsecond=0)
-    customers: list[dict[str, Any]] = []
-    transactions: list[dict[str, Any]] = []
-    interactions: list[dict[str, Any]] = []
+    customers: Rows = []
+    products: Rows = []
+    transactions: Rows = []
 
     for i in range(n_customers):
         cid = f"C{i:05d}"
-        home = rng.choice(["US", "US", "US", "CO", "MX", "BR"])
-        avg = round(rng.lognormvariate(6.5, 0.6), 2)  # ~ 665 median
+        country, code, zone, currency, documents = rng.choice(COUNTRIES)
         customers.append(
             {
-                "id": cid,
-                "segment": rng.choice(["retail", "retail", "premium", "student"]),
-                "country": home,
-                "tenure_months": rng.randint(1, 180),
-                "avg_monthly_spend": avg,
-                "card_status": "active",
+                "customer_id": cid,
+                "document_type": rng.choice(documents),
+                "document_number": f"SYN{i:07d}",
+                "first_name": f"Cliente{i}",
+                "country": country,
+                "country_code": code,
+                "timezone": zone,
+                "segment": rng.choice(SEGMENTS),
+                "customer_status": "Active" if rng.random() < 0.9 else "Suspended",
             }
         )
+        cards = [f"P{i:05d}D", f"P{i:05d}C"]
+        products += [
+            {
+                "product_id": cards[0],
+                "customer_id": cid,
+                "product_type": "debit_card",
+                "product_number_last4": f"{rng.randint(0, 9999):04d}",
+                "currency": currency,
+                "current_balance": round(rng.uniform(0, 5000), 2),
+                "product_status": "Active",
+            },
+            {
+                "product_id": cards[1],
+                "customer_id": cid,
+                "product_type": "credit_card",
+                "product_number_last4": f"{rng.randint(0, 9999):04d}",
+                "currency": currency,
+                "current_balance": round(rng.uniform(0, 2000), 2),
+                "credit_limit": float(rng.choice([1000, 2500, 5000])),
+                "product_status": "Active",
+            },
+        ]
         for j in range(tx_per_customer):
-            merchant, cat, channel = rng.choice(MERCHANTS)
-            is_fraud = rng.random() < 0.02
+            merchant, category, channel = rng.choice(MERCHANTS)
             ts = now - timedelta(days=rng.uniform(0, 30), hours=rng.uniform(0, 24))
-            if is_fraud:
-                amount = round(avg * rng.uniform(0.8, 4.0), 2)
-                country = rng.choice(["NG", "RU", "GB", "MX"])
-                # On the anchor's own day, a late hour could land after `now`.
-                ts = min(ts.replace(hour=rng.choice([1, 2, 3, 4, 23])), now)
-                cat = rng.choice(["electronics", "gambling", "crypto", "travel"])
-                channel = "online"
-            else:
-                amount = round(max(3.0, rng.gauss(avg / 10, avg / 15)), 2)
-                country = home if rng.random() < 0.95 else rng.choice(COUNTRIES)
-            blocked = is_fraud and rng.random() < 0.7 or (not is_fraud and rng.random() < 0.04)
             transactions.append(
                 {
-                    "id": f"T{i:05d}{j:03d}",
+                    "transaction_id": f"T{i:05d}{j:03d}",
                     "customer_id": cid,
-                    "amount": amount,
-                    "currency": "USD",
-                    "merchant": merchant,
-                    "merchant_category": cat,
-                    "country": country,
+                    "product_id": rng.choice(cards),
+                    "transaction_date": ts,
+                    "process_date": ts.date(),
+                    "transaction_type": "Purchase",
+                    "amount": round(max(3.0, rng.lognormvariate(3.5, 0.9)), 2),
+                    "currency": currency,
                     "channel": channel,
-                    "timestamp": ts,
-                    "status": "blocked" if blocked else "approved",
-                    "source": "synthetic",
+                    "merchant_name": merchant,
+                    "merchant_category": category,
+                    "transaction_country": code,
+                    "transaction_status": "Declined" if rng.random() < 0.04 else "Approved",
                 }
             )
 
-    # Interactions: pick a transaction per template so the text refers to something real.
-    k = 0
-    for c in customers[: n_customers // 2]:
-        intent = rng.choice(list(TEMPLATES))
-        tpl = rng.choice(TEMPLATES[intent])
-        tx = rng.choice([t for t in transactions if t["customer_id"] == c["id"]])
-        text = tpl.format(amount=int(tx["amount"]), merchant=tx["merchant"])
-        if rng.random() < 0.1:
-            text += " my card is 4111 1111 1111 1111 and email john@example.com"  # PII to redact
-        interactions.append(
-            {
-                "id": f"I{k:06d}",
-                "customer_id": c["id"],
-                "channel": "chat",
-                "text": text,
-                "product": "card",
-                "issue_type": intent,
-                "timestamp": now - timedelta(days=rng.uniform(0, 20)),
-                "outcome": None,
-                "source": "synthetic",
-            }
-        )
-        k += 1
-
     if dirty:
+        good = transactions[0]
         transactions += [
-            {
-                "id": "TBAD001",
-                "customer_id": "C00001",
-                "amount": -50.0,
-                "merchant": "X",
-                "timestamp": now,
-                "source": "synthetic",
-            },
-            {
-                "id": "TBAD002",
-                "customer_id": "GHOST",
-                "amount": 20.0,
-                "merchant": "X",
-                "timestamp": now,
-                "source": "synthetic",
-            },
-            {
-                "id": "TBAD003",
-                "customer_id": "C00002",
-                "amount": 20.0,
-                "merchant": "X",
-                "currency": "XXX",
-                "timestamp": now,
-                "source": "synthetic",
-            },
-            {
-                "id": "TBAD004",
-                "customer_id": "C00003",
-                "amount": 20.0,
-                "merchant": "X",
-                "timestamp": datetime(1990, 1, 1),
-                "source": "synthetic",
-            },
-        ]
-        interactions += [
-            {"id": "IBAD001", "customer_id": "C00001", "text": "", "timestamp": now},
+            {**good, "transaction_id": "TBAD001", "amount": -50.0},
+            {**good, "transaction_id": "TBAD002", "customer_id": "GHOST"},
+            {**good, "transaction_id": "TBAD003", "currency": "XXX"},
+            {**good, "transaction_id": "TBAD004", "transaction_date": datetime(1990, 1, 1)},
+            # A product that belongs to another customer.
+            {**good, "transaction_id": "TBAD005", "product_id": products[-1]["product_id"]},
         ]
 
-    return customers, transactions, interactions
+    return customers, products, transactions

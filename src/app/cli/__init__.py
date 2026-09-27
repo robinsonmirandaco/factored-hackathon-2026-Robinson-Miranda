@@ -1,1 +1,1 @@
-"""Command-line entrypoints: ingestion and golden-case evaluation."""
+"""Command-line entrypoints: environment setup, migrations, seeds and golden-case evaluation."""

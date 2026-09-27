@@ -8,8 +8,10 @@ with the expected intent, outcome, autonomy level and actions. The runner:
   1. gives every case its own throwaway schema in the Postgres of DATABASE_URL, so cases are
      order-independent, never touch existing tables and do not depend on the synthetic dataset
      (whose timestamps move with the clock),
-  2. loads the fixtures through the real ingestion validator (bad fixtures fail loudly),
-  3. drives the conversation through the real API (POST /chat) in-process,
+  2. loads the fixtures as the schema owner through the real ingestion validator (bad fixtures
+     fail loudly),
+  3. drives the conversation through the real API (POST /chat) in-process, connected as
+     trazo_app so row level security applies,
   4. compares, and writes a JSON + Markdown report.
 
 A case may declare `known_failure: <why>`. It still runs and shows up in the report, but does
@@ -17,7 +19,8 @@ not fail the run. If it starts passing, the run fails so the case gets promoted 
 
 A case may declare `now: <ISO datetime>`, the moment the customer writes. It becomes the
 simulated clock of that case, and fixture timestamps (`hours_ago`) count back from it. Without
-it, the case uses TRAZO_NOW.
+it, the case uses TRAZO_NOW. Fixture transactions default to the case customer and to the first
+fixture product.
 
 A case may declare `skip: <why>` when its expectations no longer apply and a later story will
 rewrite it. It is not run, and it is listed in the report with its reason.
@@ -38,8 +41,7 @@ from typing import Any
 import yaml
 from fastapi.testclient import TestClient
 
-from app.adapters.db.session import isolated_schema
-from app.api.deps import Runtime
+from app.adapters.db.session import Database, SchemaUrls, isolated_schema
 from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger
 from app.core.time import utcnow
@@ -108,25 +110,28 @@ def _fixture_rows(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     fx = case.get("fixtures") or {}
     customers = [dict(fx["customer"])] if fx.get("customer") else []
+    customer_id = customers[0]["customer_id"] if customers else None
+    products = [{"customer_id": customer_id, **p} for p in fx.get("products") or []]
     transactions: list[dict[str, Any]] = []
     for t in fx.get("transactions") or []:
         row = dict(t)
-        row["timestamp"] = now - timedelta(hours=float(row.pop("hours_ago", 1)))
-        row.setdefault("customer_id", customers[0]["id"] if customers else None)
-        row.setdefault("source", "eval")
+        row["transaction_date"] = now - timedelta(hours=float(row.pop("hours_ago", 1)))
+        row["process_date"] = row["transaction_date"].date()
+        row.setdefault("customer_id", customer_id)
+        row.setdefault("product_id", products[0]["product_id"] if products else None)
         transactions.append(row)
-    return customers, transactions, []
+    return customers, products, transactions
 
 
 # ---- running ------------------------------------------------------------------------------
 
 
-def run_case(case: dict[str, Any], database_url: str) -> CaseResult:
+def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
     """Runs one case through the real API against the given database.
 
     Args:
         case: Parsed case.
-        database_url: URL of an empty schema reserved for this case.
+        urls: Owner and trazo_app URLs of an empty, migrated schema reserved for this case.
 
     Returns:
         The case result.
@@ -139,20 +144,24 @@ def run_case(case: dict[str, Any], database_url: str) -> CaseResult:
         known_failure=case.get("known_failure"),
     )
     overrides = {"trazo_now": case["now"]} if "now" in case else {}
-    settings = Settings(database_url=database_url, **overrides)
+    settings = Settings(database_url=urls.app, **overrides)
     app = create_app(settings)
-    runtime: Runtime = app.state.runtime
-    customers, transactions, interactions = _fixture_rows(case, settings.trazo_now)
+    rows = _fixture_rows(case, settings.trazo_now)
+
+    owner = Database(urls.admin)
+    try:
+        with owner.session() as s:
+            report = ingest_rows(s, "eval", settings.document_hash_key, *rows)
+    finally:
+        owner.dispose()
+    if sum(report.rejected.values()):
+        result.status = "error"
+        result.error = f"fixtures rejected by validator: {dict(report.reasons)}"
+        return result
 
     with TestClient(app) as client:
-        with runtime.db.session() as s:
-            report = ingest_rows(s, "eval", customers, transactions, interactions)
-        if sum(report.rejected.values()):
-            result.status = "error"
-            result.error = f"fixtures rejected by validator: {dict(report.reasons)}"
-            return result
-
-        customer_id = customers[0]["id"] if customers else case["customer_id"]
+        customers = rows[0]
+        customer_id = customers[0]["customer_id"] if customers else case["customer_id"]
         case_id = None
         for turn in case["turns"]:
             body = {
@@ -336,7 +345,9 @@ def run(cases_dir: str | Path, out_dir: str | Path) -> tuple[list[CaseResult], d
     cases = load_cases(cases_dir)
     if not cases:
         raise SystemExit(f"no cases found in {cases_dir}")
-    base_url = Settings().database_url
+    base = Settings()
+    if not base.admin_database_url:
+        raise SystemExit("ADMIN_DATABASE_URL is not set")
     results = []
     for case in cases:
         if case.get("skip"):
@@ -351,8 +362,8 @@ def run(cases_dir: str | Path, out_dir: str | Path) -> tuple[list[CaseResult], d
             )
             continue
         try:
-            with isolated_schema(base_url, "golden") as url:
-                results.append(run_case(case, url))
+            with isolated_schema(base.admin_database_url, base.database_url, "golden") as urls:
+                results.append(run_case(case, urls))
         except Exception as e:  # a crash in one case must not hide the others
             results.append(
                 CaseResult(

@@ -1,7 +1,9 @@
 description: Lost card -> freeze is always safe and reversible, done alone (L1)
 tags: [golden, lost_or_stolen_card]
 fixtures:
-  customer: {id: EVC09, country: US, avg_monthly_spend: 800, tenure_months: 100}
+  customer: {customer_id: EVC09, document_type: Pasaporte, document_number: "EVC09-DOC", first_name: Eval, country: México, country_code: MX, timezone: America/Mexico_City, segment: Basic}
+  products:
+    - {product_id: EVP09, product_type: credit_card, currency: USD, product_status: Active}
 turns:
   - message: "I lost my card yesterday, please block it"
     expect:

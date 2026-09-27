@@ -1,9 +1,12 @@
-"""PII redaction applied before any text reaches the LLM or the audit log.
+"""PII handling: redaction before any text reaches the LLM or the audit log, and the keyed hash
+that stands in for identity document numbers.
 
-Pattern-based and conservative. Matches are replaced with typed placeholders so the LLM keeps
-the meaning of the sentence without seeing the data.
+Redaction is pattern-based and conservative. Matches are replaced with typed placeholders so the
+LLM keeps the meaning of the sentence without seeing the data.
 """
 
+import hashlib
+import hmac
 import re
 
 _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -40,3 +43,27 @@ def redact(text: str) -> tuple[str, dict[str, int]]:
         if n:
             counts[tag] = counts.get(tag, 0) + n
     return out, counts
+
+
+def document_hash(key: str, document_type: str, document_number: str) -> str:
+    """Returns the keyed hash stored instead of an identity document number.
+
+    A keyed HMAC and not a plain hash, because document numbers are short and a plain hash of
+    every possible number can be precomputed. Surrounding spaces are ignored and the type is
+    compared in upper case, so the same document typed at login gives the same hash.
+
+    Args:
+        key: DOCUMENT_HASH_KEY.
+        document_type: Document type, such as CC or DNI.
+        document_number: Document number.
+
+    Returns:
+        HMAC-SHA256 of "TYPE:number", hex encoded.
+
+    Raises:
+        ValueError: If the key is empty.
+    """
+    if not key:
+        raise ValueError("DOCUMENT_HASH_KEY is not set")
+    message = f"{document_type.strip().upper()}:{document_number.strip()}".encode()
+    return hmac.new(key.encode(), message, hashlib.sha256).hexdigest()

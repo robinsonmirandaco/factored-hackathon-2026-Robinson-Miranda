@@ -46,6 +46,9 @@ RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 def get_session(runtime: RuntimeDep) -> Iterator[Session]:
     """Opens one database session per request; commits on success, rolls back on error.
 
+    The session starts with no row level security context, so it sees no customer rows
+    until the route binds one.
+
     Args:
         runtime: App runtime.
 
@@ -56,4 +59,21 @@ def get_session(runtime: RuntimeDep) -> Iterator[Session]:
         yield session
 
 
+def get_analyst_session(runtime: RuntimeDep) -> Iterator[Session]:
+    """Opens one database session per request with the analyst role, which sees every customer.
+
+    TODO(TRZ-09): require an analyst token; until then any caller of these routes is treated as
+    an analyst.
+
+    Args:
+        runtime: App runtime.
+
+    Yields:
+        An open session.
+    """
+    with runtime.db.session(role="analyst") as session:
+        yield session
+
+
 SessionDep = Annotated[Session, Depends(get_session)]
+AnalystSessionDep = Annotated[Session, Depends(get_analyst_session)]

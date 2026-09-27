@@ -16,13 +16,13 @@ Scaffold. The service runs end to end on synthetic data, aligned with the target
 ## Run with Docker (recommended)
 
 ```bash
-cp .env.example .env
+make init
 docker compose up --build
 ```
 
-Copying `.env.example` is required: Compose needs `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` to start. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
+`make init` is required: it creates `.env` from `.env.example` and generates `DOCUMENT_HASH_KEY` and `APP_DB_PASSWORD`, which Compose needs along with `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`. Values already set in `.env` are kept. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
 
-The `db` service starts first. The `api` service then loads the synthetic fixture (`ingest synthetic --seed 42`) and serves:
+The `db` service starts first. The one-shot `migrate` service then applies the migrations and loads the synthetic fixture (`seed synthetic --seed 42`) only if the database is empty, and the `api` service serves:
 
 | Service | URL |
 | --- | --- |
@@ -36,10 +36,11 @@ The `db` service starts first. The `api` service then loads the synthetic fixtur
 The API runs on your machine against the Postgres service from Compose. `--wait` returns only when Postgres is healthy, so the next commands can connect:
 
 ```bash
-cp .env.example .env
+make init
 uv sync
 docker compose up -d --wait db
-uv run python -m app.cli.ingest synthetic --seed 42
+make migrate
+uv run python -m app.cli.seed synthetic --seed 42
 uv run uvicorn app.main:create_app --factory --port 8000
 ```
 
@@ -65,9 +66,9 @@ The response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and
 | `make lint` | ruff check and format check | Terminal |
 | `uv run pytest -m integration` | Integration tests against Postgres | Terminal |
 | `make eval` | Runs the golden conversation cases in `eval/cases/` | `eval/reports/golden_report.md` |
-| `uv run python -m app.cli.ingest synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
+| `uv run python -m app.cli.seed synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
 
-Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
+Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` and `ADMIN_DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
 
 CI (`.github/workflows/ci.yml`) runs lint, unit and integration tests against a Postgres service, ingestion, the golden cases and the Docker build on every push and pull request, and publishes `eval/reports/` as an artifact.
 

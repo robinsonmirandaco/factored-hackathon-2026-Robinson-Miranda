@@ -47,7 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings: Settings to use; read from the environment when omitted.
 
     Returns:
-        The application. Tables are created on startup and connections closed on shutdown.
+        The application. On startup it refuses to run if its database role could bypass row
+        level security; connections are closed on shutdown.
     """
     settings = settings or Settings()
     configure_logging(settings.log_level)
@@ -55,7 +56,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        runtime.db.create_all()
+        try:
+            runtime.db.assert_unprivileged()
+        except Exception:
+            runtime.db.dispose()
+            raise
         log.info(
             "startup",
             app_env=settings.app_env,

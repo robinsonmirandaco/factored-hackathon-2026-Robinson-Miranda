@@ -268,7 +268,8 @@ def handle_blocked_purchase(
 
     if decision.escalate:
         return _escalate(session, case, decision.reason, "review and unblock if legitimate", facts)
-    if tx["status"] != "blocked":
+    # The dataset records a blocked purchase as Declined.
+    if tx["status"] != "Declined":
         facts["outcome"] = "inform"
         facts["note"] = "transaction is not blocked"
         case.status = "closed"
@@ -310,10 +311,12 @@ def handle_unrecognized_charge(
     # Freezing the card is reversible and protective: do it whenever allowed,
     # even before escalating.
     if pol.can_execute("freeze_card", decision):
-        T.freeze_card(session, case.customer_id, case.id)
+        T.freeze_card(session, case.customer_id, case.id, ex.intent)
         facts["actions_taken"].append("freeze_card")
     if pol.can_execute("open_dispute", decision):
-        T.open_dispute(session, tx["tx_id"], case.id, "customer does not recognize charge")
+        T.open_dispute(
+            session, tx["tx_id"], case.id, ex.intent, "customer does not recognize charge"
+        )
         facts["actions_taken"].append("open_dispute")
 
     if decision.escalate:
@@ -389,7 +392,7 @@ def handle_lost_or_stolen(
     decision = _decide(session, deps, case, ex, None, profile)
     # Freezing is reversible and protective, so it runs even when a hard rule would escalate.
     facts = _base_facts(ex, None, decision)
-    T.freeze_card(session, case.customer_id, case.id)
+    T.freeze_card(session, case.customer_id, case.id, ex.intent)
     facts["actions_taken"].append("freeze_card")
     facts["action_taken"] = "freeze_card"
     facts["outcome"] = "auto_resolved"
@@ -419,7 +422,7 @@ def handle_general_inquiry(
     facts["outcome"] = "inform"
     facts["profile_hint"] = {
         "segment": profile.get("segment"),
-        "card_status": profile.get("card_status"),
+        "customer_status": profile.get("customer_status"),
     }
     case.status = "closed"
     case.autonomy_level = "L0"
