@@ -340,6 +340,12 @@ def _fact_check(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return f"O verificador bloqueou a resposta por dados sem respaldo ({what})."
 
 
+def _verification_failed(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El caso ya estaba en la cola: queda como verificación de registro fallida."
+    return "O caso já estava na fila: fica como verificação de registro falhou."
+
+
 def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "El sistema envió el caso a una analista."
@@ -450,6 +456,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "escalate_to_human"): _escalate,
     ("agent", "verify_action"): _verify,
     ("agent", "fact_check"): _fact_check,
+    ("agent", "verification_failed"): _verification_failed,
     ("agent", "security_event"): _security_event,
     ("agent", "recognize"): _recognize,
     ("agent", "choose"): _choose,

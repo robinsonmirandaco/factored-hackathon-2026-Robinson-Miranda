@@ -216,3 +216,39 @@ def test_a_registration_written_with_another_amount_is_marked_and_does_not_count
     # A dispute that failed its read-back is not an open dispute of the customer.
     nxt = client.post("/chat", json={"message": CINEPOLIS}).json()
     assert nxt["outcome"] == "awaiting_confirmation"
+
+
+def test_a_failed_read_back_on_a_case_escalated_before_still_leaves_it_failed(
+    client: TestClient, schema: SchemaUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def says_ok(*_a: object, **_k: object) -> T.ToolResult:
+        return T.ToolResult(True, {"folio": "DSP-2026-00042", "due_date": "2026-07-09"})
+
+    first = client.post("/chat", json={"message": NETFLIX}).json()
+    case_id = first["case_id"]
+    pending = still_not_recognized(client, case_id)
+    # An earlier turn of this case already put it in the queue.
+    engine = create_engine(schema.admin)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO audit_log (trace_id, case_id, customer_id, actor, action, "
+                "idempotency_key, result) VALUES ('t', :case_id, 'C1', 'tool', "
+                "'escalate_to_human', :key, '{\"status\": \"escalated\"}')"
+            ),
+            {"case_id": case_id, "key": f"{case_id}:escalate_to_human"},
+        )
+    engine.dispose()
+    monkeypatch.setattr(T, "register_dispute", says_ok)
+    r = _confirm(client, case_id, pending["pending_action"]["action_id"])
+
+    _assert_failed(r, schema)
+    assert _query(
+        schema,
+        f"SELECT count(*) FROM audit_log WHERE idempotency_key = '{case_id}:escalate_to_human'",
+    ) == [(1,)]
+    assert _query(
+        schema,
+        f"SELECT result->>'status', result->>'reason' FROM audit_log "
+        f"WHERE case_id = '{case_id}' AND action = 'verification_failed'",
+    ) == [("failed", VERIFICATION_FAILED_REASON)]

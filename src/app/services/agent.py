@@ -813,7 +813,19 @@ def _confirm(
     if len(verified) < len(checks):
         # Nothing is confirmed to the customer: the case goes to a person with the reason.
         case.autonomy_level = deps.policy.config.action_level["escalate"]
-        T.escalate_to_human(session, case.id, VERIFICATION_FAILED_REASON, status="failed")
+        handoff = T.escalate_to_human(session, case.id, VERIFICATION_FAILED_REASON, status="failed")
+        if handoff.message:
+            # The case was escalated before: its queue entry stays one, but the failure still
+            # moves the case to failed and is written down with its reason.
+            case.status, case.escalation_reason = "failed", VERIFICATION_FAILED_REASON
+            write_audit(
+                session,
+                "agent",
+                "verification_failed",
+                case.id,
+                {"unverified": [c.action for c in checks if not c.verified]},
+                {"status": "failed", "reason": VERIFICATION_FAILED_REASON},
+            )
         facts["unverified"] = [c.action for c in checks if not c.verified]
         facts["outcome"] = "failed"
         return facts
