@@ -2,13 +2,15 @@
 reaches the LLM. Every value here is made up; the check digits are computed, not copied."""
 
 import json
+from datetime import datetime
 
 import httpx
 import pytest
 
-from app.adapters.llm import EXTRACT_SYSTEM, VALIDATE_SYSTEM, LLMClient
+from app.adapters.llm import VALIDATE_SYSTEM, LLMClient
 from app.core.config import Settings
 from app.domain.pii import ACCOUNT, CARD, DOCUMENT, EMAIL, NAME, PHONE, redact
+from app.schemas.comprehension import ComprehensionContext
 
 # (text, value that must disappear, placeholder that must replace it)
 POSITIVES: list[tuple[str, str, str]] = [
@@ -193,15 +195,16 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
         body = json.loads(request.content)
         sent.append(json.dumps(body, ensure_ascii=False))
         system = body["messages"][0]["content"]
-        if system.startswith(EXTRACT_SYSTEM[:40]):
+        if system.startswith(llm.comprehension_prompt.system[:40]):
             content = json.dumps(
                 {
                     "intent": "unrecognized_charge",
-                    "amount": 1800,
-                    "merchant": None,
-                    "language": "es",
-                    "customer_claims_legitimate": False,
-                    "confidence": 0.9,
+                    "amount": None,
+                    "date": None,
+                    "merchant_hint": None,
+                    "channel_hint": None,
+                    "card_in_possession": None,
+                    "language": "es-MX",
                 }
             )
         elif system.startswith(VALIDATE_SYSTEM[:40]):
@@ -223,11 +226,14 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
 
     message = " ".join(text for text, _, _ in POSITIVES)
     redacted, _ = redact(message)
-    extraction, stats = llm.extract(redacted)
-    reply, _ = llm.compose(redacted, {"outcome": "auto_resolved"}, extraction.language)
+    context = ComprehensionContext(
+        now=datetime(2026, 6, 17, 10, 0), country_code="MX", local_currency="MXN"
+    )
+    _, stats = llm.comprehend(redacted, context)
+    llm.compose(redacted, {"outcome": "escalated"}, "es")
 
     assert not stats.fallback
-    assert len(sent) == 3  # extract, compose, validate
+    assert len(sent) == 3  # comprehend, compose, validate
     for body in sent:
         for secret in SECRETS:
             assert secret not in body

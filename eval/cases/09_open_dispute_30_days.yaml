@@ -1,0 +1,45 @@
+# Replaces 04 and 07 (risk scorer and restricted tier, both gone): the history rule of design 8.
+description: 'A dispute complaint opened 30 days ago is still open: escalated'
+tags:
+- golden
+- unrecognized_charge
+- escalation
+fixtures:
+  customer:
+    customer_id: EVC09
+    document_type: Pasaporte
+    document_number: EVC09-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P09
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX09
+    transaction_type: Purchase
+    amount: 200.0
+    currency: USD
+    merchant_name: Sanborns
+    merchant_category: Food
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+  complaints:
+  - complaint_id: EVCMP09
+    status: Open
+    days_ago: 30
+turns:
+- message: No reconozco un cargo de 200 dólares en Sanborns
+  expect:
+    intent: unrecognized_charge
+    outcome: escalated
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: escalate
+    policy_rule: escalate.open_dispute_last_90d

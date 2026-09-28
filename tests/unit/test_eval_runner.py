@@ -15,3 +15,10 @@ def test_every_skipped_case_names_the_story_that_rewrites_it():
         c["id"] for c in load_cases(CASES) if "skip" in c and not STORY_ID.search(str(c["skip"]))
     ]
     assert orphans == []
+
+
+def test_no_golden_case_is_skipped_or_a_known_failure():
+    # TRZ-17 CA8: every case is rewritten for the intents and the policy of design 8.
+    cases = load_cases(CASES)
+    assert len(cases) == 22
+    assert [c["id"] for c in cases if "skip" in c or "known_failure" in c] == []

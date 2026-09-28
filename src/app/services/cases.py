@@ -17,6 +17,10 @@ _HISTORY = text(
     "FROM case_history WHERE case_id = :case_id ORDER BY id"
 )
 
+# A person decides these cases: an escalation, an action prepared for analyst approval, and a
+# case stopped by a security rule.
+HANDOFF_STATUSES = ("escalated", "pending_analyst_approval", "security_blocked")
+
 _STATUS_AFTER_DECISION = {
     "approve": "approved",
     "reject": "rejected",
@@ -121,7 +125,7 @@ def get_history(session: Session, case_id: str, lang: Lang) -> list[HistoryEntry
 
 
 def list_queue(session: Session) -> list[CaseOut]:
-    """Lists escalated cases, oldest first.
+    """Lists the cases a person must decide, oldest first.
 
     Args:
         session: Open database session.
@@ -130,7 +134,9 @@ def list_queue(session: Session) -> list[CaseOut]:
         The escalation queue.
     """
     rows = (
-        session.execute(select(Case).where(Case.status == "escalated").order_by(Case.created_at))
+        session.execute(
+            select(Case).where(Case.status.in_(HANDOFF_STATUSES)).order_by(Case.created_at)
+        )
         .scalars()
         .all()
     )
@@ -151,11 +157,17 @@ def record_decision(session: Session, case_id: str, body: HumanDecisionIn) -> Ca
         The updated case.
 
     Raises:
-        AppError: 404 case_not_found, or 409 case_not_escalated.
+        AppError: 404 case_not_found, 409 case_not_escalated, or 409 decision_not_allowed
+            when a case stopped by security is sent back to the customer.
     """
     case = _require_case(session, case_id)
-    if case.status != "escalated":
-        raise AppError("case_not_escalated", f"Case is {case.status}, not escalated.", 409)
+    if case.status not in HANDOFF_STATUSES:
+        raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
+    # Asking the customer for more would hand a case stopped by security back to the chat.
+    if case.status == "security_blocked" and body.decision == "need_info":
+        raise AppError(
+            "decision_not_allowed", "A case stopped by security can only be closed.", 409
+        )
     case.human_decision = body.decision
     case.status = _STATUS_AFTER_DECISION[body.decision]
     note = redact(body.note)[0] if body.note else None

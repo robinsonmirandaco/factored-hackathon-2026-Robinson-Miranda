@@ -52,14 +52,14 @@ def db(schema: SchemaUrls):
 def test_candidates_are_the_session_customers_disputable_transactions(db: Database) -> None:
     clock = SimulatedClock(NOW)
     with db.session(customer_id="C1") as s:
-        found = load_candidates(s, "C1", clock)
+        found = load_candidates(s, "C1", clock, 120)
         # Row level security hides another customer's rows even if asked by id.
-        foreign = load_candidates(s, "C2", clock)
+        foreign = load_candidates(s, "C2", clock, 120)
 
     assert sorted(c.transaction_id for c in found) == ["IN1", "IN2", "PEND", "WD"]
     assert foreign == []
     # The evaluation filters the gold rows with this predicate; both must agree.
-    assert all(is_disputable(c, NOW) for c in found)
+    assert all(is_disputable(c, NOW, 120) for c in found)
 
 
 def test_the_evaluation_predicate_rejects_what_the_query_leaves_out() -> None:
@@ -76,9 +76,9 @@ def test_the_evaluation_predicate_rejects_what_the_query_leaves_out() -> None:
         }
         return Candidate(**{**base, **extra})
 
-    assert not is_disputable(cand(status="Declined"), NOW)
-    assert not is_disputable(cand(timestamp=NOW - timedelta(days=121)), NOW)
-    assert not is_disputable(cand(timestamp=NOW + timedelta(hours=1)), NOW)
+    assert not is_disputable(cand(status="Declined"), NOW, 120)
+    assert not is_disputable(cand(timestamp=NOW - timedelta(days=121)), NOW, 120)
+    assert not is_disputable(cand(timestamp=NOW + timedelta(hours=1)), NOW, 120)
 
 
 def test_identify_charge_scores_converts_and_audits(db: Database) -> None:
@@ -92,7 +92,7 @@ def test_identify_charge_scores_converts_and_audits(db: Database) -> None:
         }
     )
     with db.session(customer_id="C1") as s:
-        result = identify_charge(s, SimulatedClock(NOW), "C1", clues, PARAMS, "COP", "K1")
+        result = identify_charge(s, SimulatedClock(NOW), "C1", clues, PARAMS, "COP", 120, "K1")
     with db.session(customer_id="C1") as s:
         row = s.execute(
             select(AuditRecord).where(AuditRecord.action == "identify_transaction")
@@ -111,9 +111,9 @@ def test_identify_charge_scores_converts_and_audits(db: Database) -> None:
 def test_the_button_door_checks_ownership_and_window(db: Database) -> None:
     clock = SimulatedClock(NOW)
     with db.session(customer_id="C1") as s:
-        mine = identify_by_button(s, clock, "C1", "IN2")
-        old = identify_by_button(s, clock, "C1", "OLD")
-        other = identify_by_button(s, clock, "C1", "OTHER")
+        mine = identify_by_button(s, clock, "C1", "IN2", 120)
+        old = identify_by_button(s, clock, "C1", "OLD", 120)
+        other = identify_by_button(s, clock, "C1", "OTHER", 120)
 
     assert (mine.door, mine.decision, mine.conformal_set) == ("button", "identified", ("IN2",))
     assert old.decision == "not_found" and other.decision == "not_found"
@@ -129,7 +129,7 @@ def test_a_rejected_identification_is_audited_with_its_threshold(db: Database) -
         }
     )
     with db.session(customer_id="C1") as s:
-        result = identify_charge(s, SimulatedClock(NOW), "C1", clues, strict, "COP", "K2")
+        result = identify_charge(s, SimulatedClock(NOW), "C1", clues, strict, "COP", 120, "K2")
         row = s.execute(select(AuditRecord).where(AuditRecord.case_id == "K2")).scalar_one()
 
     assert result.rejected and result.decision == "not_found"

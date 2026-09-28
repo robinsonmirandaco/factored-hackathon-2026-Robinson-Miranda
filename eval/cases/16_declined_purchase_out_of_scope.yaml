@@ -1,0 +1,40 @@
+# Replaces 01, 02 (first half), 03 and 13: releasing a blocked purchase is outside the scope of design 3.1.
+description: 'A declined purchase is not a dispute (design 3.1): abstain and redirect'
+tags:
+- golden
+- out_of_scope
+fixtures:
+  customer:
+    customer_id: EVC16
+    document_type: Pasaporte
+    document_number: EVC16-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P16
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX16
+    transaction_type: Purchase
+    amount: 60.0
+    currency: USD
+    merchant_name: Walmart
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Declined
+    hours_ago: 20
+turns:
+- message: Me rechazaron la tarjeta en el súper y no sé por qué
+  expect:
+    intent: out_of_scope
+    outcome: abstained
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: abstain_and_redirect
+    policy_rule: routing.out_of_scope

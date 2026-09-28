@@ -1,0 +1,49 @@
+description: 'Two identical charges, one pending: explain the temporary hold, no action'
+tags:
+- golden
+- billing_error_duplicate
+fixtures:
+  customer:
+    customer_id: EVC12
+    document_type: Pasaporte
+    document_number: EVC12-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P12
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX12A
+    transaction_type: Purchase
+    amount: 35.0
+    currency: USD
+    merchant_name: Uber Eats
+    merchant_category: Food
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 3.1
+  - transaction_id: EVTX12B
+    transaction_type: Purchase
+    amount: 35.0
+    currency: USD
+    merchant_name: Uber Eats
+    merchant_category: Food
+    transaction_country: MX
+    channel: Web
+    transaction_status: Pending
+    hours_ago: 3
+turns:
+- message: Me cobraron dos veces 35 dólares en Uber Eats
+  expect:
+    intent: billing_error_duplicate
+    outcome: informed
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: explain_and_watch
+    policy_rule: routing.billing_error_duplicate.one_pending

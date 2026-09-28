@@ -8,6 +8,10 @@
 #   business_days   deadline counted in business days of the customer's country (optional)
 #   calendar_days   deadline counted in calendar days (optional)
 #   text            passage in Spanish (es) and Portuguese (pt)
+#
+# The dispute window is a business rule, so its number lives only in config/policy.yaml
+# (`dispute_window_days`): passage dispute_window takes its days from there and its text writes
+# them through {dispute_window_days}.
 
 version: "2026.09.1"
 
@@ -18,14 +22,13 @@ label:
 passages:
   - id: "§1.1"
     rule: dispute_window
-    calendar_days: 120
     text:
       es: >-
         Puedes presentar una aclaración por un cargo que no reconoces o que consideras
-        incorrecto dentro de los 120 días naturales siguientes a la fecha del cargo.
+        incorrecto dentro de los {dispute_window_days} días naturales siguientes a la fecha del cargo.
       pt: >-
         Você pode contestar uma cobrança que não reconhece ou que considera incorreta em até
-        120 dias corridos a partir da data da cobrança.
+        {dispute_window_days} dias corridos a partir da data da cobrança.
 
   - id: "§2.1"
     rule: response_deadline

@@ -22,7 +22,6 @@ import yaml
 from app.domain.fx import Rates, convert
 from app.schemas.comprehension import Comprehension
 
-WINDOW_DAYS = 120
 DISPUTABLE_TYPES = ("Purchase", "Payment", "Withdrawal")
 DISPUTABLE_STATUSES = ("Approved", "Pending")
 COMPONENTS = ("amount", "date", "merchant", "channel", "currency")
@@ -39,6 +38,7 @@ DATE_SCALE_DAYS = 3.0
 PENALTY_CAP = 4.0
 
 Decision = Literal["identified", "show_options", "ask_for_detail", "not_found"]
+DuplicateTwin = Literal["one_pending", "both_approved"]
 Door = Literal["conversation", "button"]
 
 
@@ -128,21 +128,22 @@ class Identification:
     rejected: bool = False
 
 
-def is_disputable(candidate: Candidate, now: datetime) -> bool:
+def is_disputable(candidate: Candidate, now: datetime, window_days: int) -> bool:
     """Whether a transaction is a candidate: type, status and the window before `now`.
 
     Args:
         candidate: The transaction.
         now: Simulated "now" of the case.
+        window_days: Dispute window, `dispute_window_days` of config/policy.yaml.
 
     Returns:
-        True for a purchase, payment or withdrawal, approved or pending, in the 120 days
+        True for a purchase, payment or withdrawal, approved or pending, in the window
         before `now`.
     """
     return (
         candidate.transaction_type in DISPUTABLE_TYPES
         and candidate.status in DISPUTABLE_STATUSES
-        and now - timedelta(days=WINDOW_DAYS) <= candidate.timestamp <= now
+        and now - timedelta(days=window_days) <= candidate.timestamp <= now
     )
 
 
@@ -412,3 +413,31 @@ def dates_of(candidates: Iterable[Candidate]) -> tuple[date, date] | None:
     """
     days = [c.timestamp.date() for c in candidates]
     return (min(days), max(days)) if days else None
+
+
+def duplicate_twin(charge: Candidate, candidates: Iterable[Candidate]) -> DuplicateTwin | None:
+    """Status of a charge and its twin: another charge of the same merchant, amount and currency.
+
+    When there are several twins, the closest in time is the one charged twice.
+
+    Args:
+        charge: The charge the customer says was duplicated.
+        candidates: The customer's other disputable charges.
+
+    Returns:
+        one_pending when either of the two is still pending (a temporary hold), both_approved
+        when both are settled, None when the charge has no twin.
+    """
+    twins = [
+        c
+        for c in candidates
+        if c.transaction_id != charge.transaction_id
+        and c.merchant_name is not None
+        and c.merchant_name == charge.merchant_name
+        and c.amount == charge.amount
+        and c.currency == charge.currency
+    ]
+    if not twins:
+        return None
+    twin = min(twins, key=lambda c: (abs(c.timestamp - charge.timestamp), c.transaction_id))
+    return "one_pending" if "Pending" in (charge.status, twin.status) else "both_approved"

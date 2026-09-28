@@ -1,0 +1,41 @@
+description: 'No charge fits the clues: the conformal set is empty and the case is escalated'
+tags:
+- golden
+- unrecognized_charge
+- escalation
+- identification
+fixtures:
+  customer:
+    customer_id: EVC19
+    document_type: Pasaporte
+    document_number: EVC19-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P19
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX19
+    transaction_type: Purchase
+    amount: 15.0
+    currency: USD
+    merchant_name: Netflix
+    merchant_category: Entertainment
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: No reconozco un cargo de 900 dólares en Coppel de ayer
+  expect:
+    intent: unrecognized_charge
+    outcome: escalated
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: escalate
+    policy_rule: escalate.conformal_set_empty

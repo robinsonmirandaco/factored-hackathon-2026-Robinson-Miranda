@@ -1,6 +1,7 @@
 """Audit rows (TRZ-26): the fields of CA1 and the refusal of model reasoning (CA5)."""
 
 import json
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -10,8 +11,7 @@ from app.adapters.db.audit import REASONING_KEYS, ReasoningInAuditError, write_a
 from app.adapters.llm import LLMCallStats, LLMClient, prompt_version_of
 from app.core.config import Settings
 from app.core.logging import trace_id_var
-from app.schemas.comprehension import ComprehensionReading
-from app.schemas.extraction import IntentExtraction
+from app.schemas.comprehension import ComprehensionContext, ComprehensionReading
 
 
 class FakeSession:
@@ -102,8 +102,7 @@ def test_the_llm_output_schemas_have_no_field_for_reasoning() -> None:
                     names |= fields(arg)
         return names
 
-    for schema in (IntentExtraction, ComprehensionReading):
-        assert not fields(schema) & REASONING_KEYS, schema.__name__
+    assert not fields(ComprehensionReading) & REASONING_KEYS
 
 
 def test_an_unversioned_prompt_is_named_by_its_content() -> None:
@@ -148,11 +147,24 @@ def _anthropic_client(outputs: list[str], requests: list[dict[str, Any]]) -> LLM
 
 def test_no_request_asks_the_model_for_its_reasoning() -> None:
     requests: list[dict[str, Any]] = []
-    extraction = json.dumps({"intent": "lost_or_stolen_card", "language": "en"})
-    llm = _anthropic_client([extraction, "Your card is blocked.", '{"ok": true}'], requests)
+    reading = json.dumps(
+        {
+            "intent": "out_of_scope",
+            "amount": None,
+            "date": None,
+            "merchant_hint": None,
+            "channel_hint": None,
+            "card_in_possession": None,
+            "language": "es-MX",
+        }
+    )
+    llm = _anthropic_client([reading, "Te ayudo con eso.", '{"ok": true}'], requests)
+    context = ComprehensionContext(
+        now=datetime(2026, 6, 17, 10, 0), country_code="MX", local_currency="MXN"
+    )
 
-    llm.extract("my card was stolen")
-    llm.compose("my card was stolen", {"outcome": "inform"}, "en")
+    llm.comprehend("quiero un préstamo", context)
+    llm.compose("quiero un préstamo", {"outcome": "abstained"}, "es")
 
     assert len(requests) == 3
     for request in requests:
@@ -165,7 +177,7 @@ def test_a_rejected_reply_keeps_the_outcome_not_the_validators_words() -> None:
     verdict = json.dumps({"ok": False, "reason": "the reply promises a refund"})
     llm = _anthropic_client(["We will refund you.", verdict], requests)
 
-    _, stats = llm.compose("charge", {"outcome": "inform"}, "en")
+    _, stats = llm.compose("charge", {"outcome": "informed"}, "es")
 
     assert stats.fallback
     assert stats.error == "validator_rejected"

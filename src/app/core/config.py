@@ -49,5 +49,7 @@ class Settings(BaseSettings):
     llm_price_output_per_mtok: float = 5.0
 
     policy_path: str = "config/policy.yaml"
+    # Fitted weights, temperature and q-hat of the identification (TRZ-15), per comprehension.
+    identification_path: Path = Path("config/identification.yaml")
 
     log_level: str = "INFO"

@@ -1,0 +1,60 @@
+# Replaces 08. No tool reverses the charge: it moves money.
+description: 'Two identical approved charges: register the duplicate after confirmation'
+tags:
+- golden
+- billing_error_duplicate
+- confirmation
+- multi_turn
+fixtures:
+  customer:
+    customer_id: EVC11
+    document_type: Pasaporte
+    document_number: EVC11-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P11
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX11A
+    transaction_type: Purchase
+    amount: 35.0
+    currency: USD
+    merchant_name: Uber Eats
+    merchant_category: Food
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 3.1
+  - transaction_id: EVTX11B
+    transaction_type: Purchase
+    amount: 35.0
+    currency: USD
+    merchant_name: Uber Eats
+    merchant_category: Food
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 3
+turns:
+- message: Me cobraron dos veces 35 dólares en Uber Eats
+  expect:
+    intent: billing_error_duplicate
+    outcome: awaiting_confirmation
+    autonomy_level: L1
+    actions_taken: []
+    policy_action: register
+    policy_rule: routing.billing_error_duplicate.both_approved
+- message: sí
+  confirm: true
+  expect:
+    intent: billing_error_duplicate
+    outcome: registered
+    autonomy_level: L1
+    actions_taken:
+    - open_dispute

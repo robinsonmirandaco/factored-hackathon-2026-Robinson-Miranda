@@ -82,8 +82,11 @@ class Case(Base):
     customer_id: Mapped[str] = mapped_column(Text)
     transaction_id: Mapped[str | None] = mapped_column(Text)
     intent: Mapped[str] = mapped_column(Text)
-    # open | auto_resolved | awaiting_customer | escalated | approved | rejected | closed
+    # open | identifying | awaiting_confirmation | registered | pending_analyst_approval |
+    # escalated | security_blocked | abstained | closed | approved | rejected
     status: Mapped[str] = mapped_column(Text, default="open")
+    # es or pt; with the intent, the autonomy cell of the case.
+    language: Mapped[str | None] = mapped_column(Text)
     autonomy_level: Mapped[str] = mapped_column(Text, default="L0")
     recommended_action: Mapped[str | None] = mapped_column(Text)
     escalation_reason: Mapped[str | None] = mapped_column(Text)

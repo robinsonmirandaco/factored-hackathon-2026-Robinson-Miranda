@@ -1,0 +1,52 @@
+# Replaces 06. Nothing runs before the customer confirms; the offered block is not run by the "sí".
+description: 'Unrecognized charge of 120 USD, card not mentioned: register and offer the block; the confirmation
+  runs only the pending registration'
+tags:
+- golden
+- unrecognized_charge
+- confirmation
+- multi_turn
+fixtures:
+  customer:
+    customer_id: EVC01
+    document_type: Pasaporte
+    document_number: EVC01-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P01
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX01
+    transaction_type: Purchase
+    amount: 120.0
+    currency: USD
+    merchant_name: Netflix
+    merchant_category: Entertainment
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: No reconozco un cargo de 120 dólares en Netflix de ayer
+  expect:
+    intent: unrecognized_charge
+    outcome: awaiting_confirmation
+    autonomy_level: L1
+    actions_taken: []
+    policy_action: register_and_offer_block
+    policy_rule: routing.unrecognized_charge.card_in_possession
+- message: sí
+  confirm: true
+  expect:
+    intent: unrecognized_charge
+    outcome: registered
+    autonomy_level: L1
+    actions_taken:
+    - open_dispute
+    policy_action: null

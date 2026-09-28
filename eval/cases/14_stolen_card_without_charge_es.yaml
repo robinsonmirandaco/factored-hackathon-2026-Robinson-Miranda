@@ -1,0 +1,32 @@
+# Replaces 12, which was a known failure. TRZ-17 CA9.
+description: 'Stolen card with no charge mentioned, in Spanish: urgent redirect to the bank''s card block
+  channel, no action'
+tags:
+- golden
+- out_of_scope
+- lost_or_stolen_card
+- spanish
+fixtures:
+  customer:
+    customer_id: EVC14
+    document_type: CC
+    document_number: EVC14-DOC
+    first_name: Eval
+    country: Colombia
+    country_code: CO
+    timezone: America/Bogota
+    segment: Basic
+  products:
+  - product_id: P14
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+turns:
+- message: Me robaron la tarjeta, necesito bloquearla ya
+  expect:
+    intent: out_of_scope
+    outcome: abstained
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: abstain_and_redirect
+    policy_rule: routing.out_of_scope.lost_card_without_charge

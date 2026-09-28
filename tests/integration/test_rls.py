@@ -40,7 +40,7 @@ def _seed_operational_rows(admin_url: str) -> None:
             conn.execute(
                 text(
                     "INSERT INTO cases (id, customer_id, intent, trace_id) "
-                    "VALUES (:c || '-K', :c, 'general_inquiry', 't')"
+                    "VALUES (:c || '-K', :c, 'out_of_scope', 't')"
                 ),
                 {"c": c},
             )
@@ -62,7 +62,7 @@ def _seed_operational_rows(admin_url: str) -> None:
             conn.execute(
                 text(
                     "INSERT INTO card_blocks (customer_id, product_id, case_id, reason, "
-                    "status_before) VALUES (:c, :p, :k, 'lost_or_stolen_card', 'Active')"
+                    "status_before) VALUES (:c, :p, :k, 'unrecognized_charge', 'Active')"
                 ),
                 params,
             )

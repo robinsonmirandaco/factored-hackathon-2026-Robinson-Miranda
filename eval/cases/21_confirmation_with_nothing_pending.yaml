@@ -1,0 +1,44 @@
+# Replaces 13. The confirmation applies only to the exact pending action of the case (TRZ-18 CA3, the part TRZ-17 brings forward).
+description: A "sí" with no pending action runs nothing
+tags:
+- golden
+- confirmation
+- multi_turn
+fixtures:
+  customer:
+    customer_id: EVC21
+    document_type: Pasaporte
+    document_number: EVC21-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P21
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX21
+    transaction_type: Purchase
+    amount: 120.0
+    currency: USD
+    merchant_name: Netflix
+    merchant_category: Entertainment
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: Quiero saber mi saldo
+  expect:
+    intent: out_of_scope
+    outcome: abstained
+    actions_taken: []
+- message: sí
+  confirm: true
+  expect:
+    outcome: no_pending_action
+    actions_taken: []
+    policy_action: null

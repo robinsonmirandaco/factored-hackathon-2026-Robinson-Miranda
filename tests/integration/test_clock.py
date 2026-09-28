@@ -11,7 +11,7 @@ from app.adapters.db.models import AuditRecord
 from app.adapters.db.session import Database, SchemaUrls
 from app.cli.eval import run
 from app.domain.clock import SimulatedClock
-from app.services.tools import lookup_transaction
+from app.services.identification import identify_by_button, load_candidates
 from tests.serving_data import card, customer, load, transaction
 
 CASES = Path(__file__).resolve().parents[2] / "eval" / "cases"
@@ -33,21 +33,21 @@ def db(schema: SchemaUrls):
     database.dispose()
 
 
-def test_lookup_window_ends_at_simulated_now(db):
+def test_candidate_window_ends_at_simulated_now(db):
     with db.session(customer_id="C1") as s:
-        found = lookup_transaction(s, SimulatedClock(TRAZO_NOW), "C1", amount=120.0)
-        # With the wall clock the June charge would be outside a 14-day window.
-        too_late = lookup_transaction(s, SimulatedClock(datetime(2026, 9, 26, 12, 0)), "C1")
+        found = load_candidates(s, "C1", SimulatedClock(TRAZO_NOW), 120)
+        # With a clock 132 days after the charge it is outside the 120-day window.
+        too_late = load_candidates(s, "C1", SimulatedClock(datetime(2026, 10, 20, 12, 0)), 120)
         # A case set before the charge must not see it: it had not happened yet.
-        too_early = lookup_transaction(s, SimulatedClock(datetime(2026, 6, 9, 12, 0)), "C1")
-    assert [m["tx_id"] for m in found.data["matches"]] == ["TX1"]
-    assert too_late.data["count"] == 0
-    assert too_early.data["count"] == 0
+        too_early = load_candidates(s, "C1", SimulatedClock(datetime(2026, 6, 9, 12, 0)), 120)
+    assert [c.transaction_id for c in found] == ["TX1"]
+    assert too_late == []
+    assert too_early == []
 
 
 def test_audit_timestamps_use_the_real_clock(db):
     with db.session(customer_id="C1") as s:
-        lookup_transaction(s, SimulatedClock(TRAZO_NOW), "C1", case_id="K1")
+        identify_by_button(s, SimulatedClock(TRAZO_NOW), "C1", "TX1", 120, case_id="K1")
     with db.session(customer_id="C1") as s:
         created = s.execute(select(AuditRecord.created_at)).scalars().all()
     assert created
@@ -58,10 +58,10 @@ def test_audit_timestamps_use_the_real_clock(db):
 def test_eval_case_runs_at_its_own_now(tmp_path, monkeypatch):
     monkeypatch.setenv("LLM_ENABLED", "false")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
-    name = "05_blocked_over_limit_escalates.yaml"
+    name = "06_amount_1000_01_edge.yaml"
     case = yaml.safe_load((CASES / name).read_text())
-    # Passes only if the fixtures and the lookup window both follow the case clock: with
-    # either on TRAZO_NOW, the charge falls outside the window and the reason changes.
+    # Passes only if the fixtures and the candidate window both follow the case clock: with
+    # either on TRAZO_NOW, the charge falls outside the window and the rule changes.
     case["now"] = "2024-03-01T10:00:00"
     d = tmp_path / "cases"
     d.mkdir()

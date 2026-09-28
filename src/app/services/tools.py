@@ -8,10 +8,9 @@ Which tools may run is decided by the policy engine before the call, never here.
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
-from typing import Any
+from typing import Any, Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
@@ -24,10 +23,22 @@ from app.adapters.db.models import (
     Product,
     Transaction,
 )
-from app.core.time import utcnow
 from app.domain.clock import SimulatedClock
 
 CARD_TYPES = ("credit_card", "debit_card")
+HandoffStatus = Literal["escalated", "pending_analyst_approval", "security_blocked"]
+# Complaint subcategories that are transaction disputes (design 2.1).
+DISPUTE_SUBCATEGORIES = ("Cargo no reconocido", "Cobro indebido")
+
+# Complaints are loaded by the seed, not mapped by the ORM. Resolution or closing, whichever
+# comes first, ends a complaint, as the case generator reads it (TRZ-42).
+_OPEN_COMPLAINTS = text(
+    "SELECT count(*) FROM complaints WHERE customer_id = :customer_id "
+    "AND subcategory = ANY(:subcategories) AND creation_date BETWEEN :since AND :now "
+    "AND status <> 'Rejected' "
+    "AND (least(resolution_date, closing_date) IS NULL "
+    "OR least(resolution_date, closing_date) > :now)"
+)
 
 
 @dataclass
@@ -55,13 +66,23 @@ def _existing(session: Session, key: str) -> AuditRecord | None:
 
 
 def get_customer_profile(
-    session: Session, customer_id: str, case_id: str | None = None
+    session: Session,
+    clock: SimulatedClock,
+    customer_id: str,
+    lookback_days: int,
+    case_id: str | None = None,
 ) -> ToolResult:
-    """Reads the segment, status and recent dispute count of a customer.
+    """Reads the segment, country and status of a customer, and whether a dispute is open.
+
+    A dispute is open when a dispute complaint of the dataset was created in the `lookback_days`
+    before the simulated now, was not rejected and was not resolved or closed by then, or when
+    a dispute registered by TRAZO is still opened (design 8, customer_has_open_dispute_last_90d).
 
     Args:
         session: Open database session.
+        clock: Simulated clock the look-back ends at.
         customer_id: Customer to read.
+        lookback_days: `open_dispute_lookback_days` of the policy.
         case_id: Case for the audit row.
 
     Returns:
@@ -72,12 +93,20 @@ def get_customer_profile(
         if not c:
             res = ToolResult(False, {}, f"customer {customer_id} not found")
         else:
-            since = utcnow() - timedelta(days=30)
+            complaints = session.execute(
+                _OPEN_COMPLAINTS,
+                {
+                    "customer_id": customer_id,
+                    "subcategories": list(DISPUTE_SUBCATEGORIES),
+                    "since": clock.days_ago(lookback_days),
+                    "now": clock.now,
+                },
+            ).scalar_one()
+            # Own disputes carry the real clock of the database, not the simulated one, so the
+            # look-back cannot be applied to them: every one still opened counts.
             disputes = session.execute(
-                select(func.count(Case.id)).where(
-                    Case.customer_id == customer_id,
-                    Case.intent.in_(["unrecognized_charge", "duplicate_charge"]),
-                    Case.created_at >= since,
+                select(func.count(Dispute.id)).where(
+                    Dispute.customer_id == customer_id, Dispute.status == "opened"
                 )
             ).scalar_one()
             res = ToolResult(
@@ -87,7 +116,9 @@ def get_customer_profile(
                     "segment": c.segment,
                     "country_code": c.country_code,
                     "customer_status": c.customer_status,
-                    "disputes_last_30d": int(disputes),
+                    "open_dispute_complaints": int(complaints),
+                    "open_disputes": int(disputes),
+                    "open_dispute_last_90d": complaints + disputes > 0,
                 },
             )
     write_audit(
@@ -95,7 +126,7 @@ def get_customer_profile(
         "tool",
         "get_customer_profile",
         case_id,
-        {"customer_id": customer_id},
+        {"customer_id": customer_id, "lookback_days": lookback_days},
         res.data,
         t["ms"],
     )
@@ -138,61 +169,6 @@ def list_recent_transactions(
         t["ms"],
     )
     return ToolResult(True, data)
-
-
-def lookup_transaction(
-    session: Session,
-    clock: SimulatedClock,
-    customer_id: str,
-    amount: float | None = None,
-    merchant: str | None = None,
-    days: int = 14,
-    case_id: str | None = None,
-) -> ToolResult:
-    """Finds the transaction the customer is talking about. Fuzzy on amount (+-2%) and merchant.
-
-    The search covers the `days` before the simulated `now`, never after it.
-
-    Args:
-        session: Open database session.
-        clock: Simulated clock the search window ends at.
-        customer_id: Owner of the transaction.
-        amount: Amount mentioned by the customer, if any.
-        merchant: Merchant mentioned by the customer, if any.
-        days: How far back to search.
-        case_id: Case for the audit row.
-
-    Returns:
-        Up to five matches, newest first; ok is False when there are none.
-    """
-    with timed() as t:
-        # The upper bound matters when an evaluation case sets its own "now": later
-        # transactions had not happened yet when the customer wrote.
-        q = select(Transaction).where(
-            Transaction.customer_id == customer_id,
-            Transaction.transaction_date.between(clock.days_ago(days), clock.now),
-        )
-        if amount is not None:
-            q = q.where(Transaction.amount.between(amount * 0.98, amount * 1.02))
-        if merchant:
-            q = q.where(func.lower(Transaction.merchant_name).like(f"%{merchant.lower()}%"))
-        rows = (
-            session.execute(q.order_by(Transaction.transaction_date.desc()).limit(5))
-            .scalars()
-            .all()
-        )
-        data = {"matches": [_tx_dict(r) for r in rows], "count": len(rows)}
-        res = ToolResult(len(rows) > 0, data, "" if rows else "no matching transaction")
-    write_audit(
-        session,
-        "tool",
-        "lookup_transaction",
-        case_id,
-        {"customer_id": customer_id, "amount": amount, "merchant": merchant},
-        {"count": len(rows)},
-        t["ms"],
-    )
-    return res
 
 
 # ---- state-changing tools (class 1) -----------------------------------------------------
@@ -315,7 +291,11 @@ def open_dispute(
 
 
 def escalate_to_human(
-    session: Session, case_id: str, reason: str, recommended_action: str | None = None
+    session: Session,
+    case_id: str,
+    reason: str,
+    recommended_action: str | None = None,
+    status: HandoffStatus = "escalated",
 ) -> ToolResult:
     """Puts a case in the human queue with the reason and the recommended action.
 
@@ -324,6 +304,8 @@ def escalate_to_human(
         case_id: Case to escalate; also the idempotency key.
         reason: Why it was escalated, truncated to 256 characters.
         recommended_action: What the system suggests the operator do.
+        status: escalated, pending_analyst_approval (the analyst approves a prepared action)
+            or security_blocked.
 
     Returns:
         The escalation, or the stored result on a replay.
@@ -335,11 +317,11 @@ def escalate_to_human(
         case = session.get(Case, case_id)
         if not case:
             return ToolResult(False, {}, "case not found")
-        case.status = "escalated"
+        case.status = status
         case.escalation_reason = reason[:256]
         if recommended_action:
             case.recommended_action = recommended_action
-        res = ToolResult(True, {"case_id": case_id, "status": "escalated", "reason": reason[:256]})
+        res = ToolResult(True, {"case_id": case_id, "status": status, "reason": reason[:256]})
     write_audit(
         session,
         "tool",

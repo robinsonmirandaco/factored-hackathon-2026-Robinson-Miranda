@@ -4,7 +4,9 @@ An AI-first intake assistant for disputed card transactions, built for the Facto
 
 ## Status
 
-Scaffold. The service runs end to end on synthetic data, aligned with the target architecture. It does not yet use the challenge dataset or the dispute workflow of the design. 8 of the 13 golden cases are skipped until the dispute policy is rewritten (TRZ-17); `make eval` reports them as skipped with that reason.
+Prototype in progress. The service runs end to end on synthetic data. A customer turn follows the dispute workflow of the design up to the decision: the LLM reads the intent and the clues (the rules baseline answers when it fails), the charge is identified with a conformal set, and the business policy of `config/policy.yaml` decides. Registering a dispute or blocking a card runs only after the customer confirms the pending action.
+
+Not built yet: the recognition step before deciding, dispute folios and the read-back check after acting, the analyst dossier and queue with priority, autonomy levels per cell (every cell starts at A0) and authentication. `make eval` runs 22 golden cases, none skipped.
 
 ## Requirements
 
@@ -50,13 +52,27 @@ Then open http://localhost:8000/docs.
 
 **Warning:** the endpoints do not have authentication yet, and `/chat` still takes `customer_id` in the request body. Session-based authentication arrives with TRZ-09. Do not expose this service on a public URL before then.
 
+The examples use customer `C00001` of the synthetic fixture (`make seed-synthetic`). Messages are in Spanish or Portuguese.
+
+A charge the customer does not recognize. The policy decides; nothing runs until the customer confirms:
+
 ```bash
 curl -s -X POST localhost:8000/chat \
   -H 'content-type: application/json' \
-  -d '{"customer_id": "C00001", "message": "What is my balance?"}'
+  -d '{"customer_id": "C00001", "message": "No reconozco un cargo de 40.92 dólares en Claro"}'
 ```
 
-The response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and a `trace_id`. `GET /cases/{case_id}/trace` returns the audit events of that case.
+The response has `outcome` `awaiting_confirmation` and a `case_id`. Confirm the pending action of that case:
+
+```bash
+curl -s -X POST localhost:8000/chat \
+  -H 'content-type: application/json' \
+  -d '{"customer_id": "C00001", "message": "sí", "case_id": "<case_id>", "confirm": true}'
+```
+
+The outcome is `registered` and `actions_taken` is `["open_dispute"]`. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
+
+Every response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and a `trace_id`. `GET /cases/{case_id}/trace` returns the audit events of that case, including the policy rule and version behind each decision.
 
 ## Test and evaluate
 
@@ -145,7 +161,7 @@ The synthetic generator creates customers, transactions and messages, including 
 | `src/app/domain/` | Pure business rules (policy, PII redaction) |
 | `src/app/adapters/` | Database, LLM client and ingestion adapters |
 | `src/app/core/` | Settings, logging, errors, trace_id middleware |
-| `config/policy.yaml` | Autonomy policy: amount limits, intent ceilings, action classes and hard escalation rules |
+| `config/policy.yaml` | Business policy of design section 8 (version 2026.09.1): USD amount bands, security, escalation and approval rules, routing per intent and the level of each action. Code applies it; the LLM never reads it |
 | `eval/cases/` | Golden conversation cases, one YAML per case |
 | `web/` | Reserved for the customer and back-office web app |
 | `tests/unit/` | Unit tests, no database |

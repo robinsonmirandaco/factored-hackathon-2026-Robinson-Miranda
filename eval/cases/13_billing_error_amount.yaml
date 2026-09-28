@@ -1,0 +1,39 @@
+description: 'Charged 400 USD for a 40 USD purchase: register the billing error after confirmation'
+tags:
+- golden
+- billing_error_amount
+fixtures:
+  customer:
+    customer_id: EVC13
+    document_type: Pasaporte
+    document_number: EVC13-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P13
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX13
+    transaction_type: Purchase
+    amount: 400.0
+    currency: USD
+    merchant_name: Cinépolis
+    merchant_category: Entertainment
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: 'Me cobraron de más en Cinépolis: eran 40 dólares y me cobraron 400 dólares'
+  expect:
+    intent: billing_error_amount
+    outcome: awaiting_confirmation
+    autonomy_level: L1
+    actions_taken: []
+    policy_action: register
+    policy_rule: routing.billing_error_amount

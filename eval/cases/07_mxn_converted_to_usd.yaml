@@ -1,0 +1,47 @@
+# Thresholds are compared in USD with the rate of the transaction date (TRZ-14 CA3).
+description: '15,000 MXN at 0.05 USD per peso on the transaction date is 750 USD: analyst approval'
+tags:
+- golden
+- unrecognized_charge
+- amount_band
+- fx
+fixtures:
+  customer:
+    customer_id: EVC07
+    document_type: Pasaporte
+    document_number: EVC07-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P07
+    product_type: credit_card
+    currency: MXN
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX07
+    transaction_type: Purchase
+    amount: 15000.0
+    currency: MXN
+    merchant_name: Liverpool
+    merchant_category: Other
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+  exchange_rates:
+  - source: MXN
+    target: USD
+    rate: 0.05
+    days_ago: 1
+turns:
+- message: No reconozco un cargo de 15,000 pesos en Liverpool
+  expect:
+    intent: unrecognized_charge
+    outcome: pending_analyst_approval
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: analyst_approval
+    policy_rule: approval.amount_above_auto_register

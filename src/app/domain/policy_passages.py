@@ -12,6 +12,8 @@ import yaml
 
 from app.domain.business_days import HolidayCalendar, OutsideCalendarError
 
+DISPUTE_WINDOW = "dispute_window"
+
 
 @dataclass(frozen=True)
 class Passage:
@@ -62,31 +64,43 @@ class Unsupported:
     reason: str
 
 
-def load_passages(path: str | Path) -> dict[str, Passage]:
+def load_passages(path: str | Path, dispute_window_days: int) -> dict[str, Passage]:
     """Loads the demo policy passages.
 
     Args:
         path: YAML file with `label` and `passages`.
+        dispute_window_days: `dispute_window_days` of config/policy.yaml, the only source of
+            that number: passage dispute_window counts it and its text states it.
 
     Returns:
         Passages keyed by rule.
 
     Raises:
-        ValueError: If two passages share a rule or an id.
+        ValueError: If two passages share a rule or an id, or the dispute_window passage sets
+            its own days.
     """
     with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
-    passages = [
-        Passage(
-            id=p["id"],
-            rule=p["rule"],
-            label=raw["label"],
-            text=p["text"],
-            business_days=p.get("business_days"),
-            calendar_days=p.get("calendar_days"),
+    passages = []
+    for p in raw["passages"]:
+        calendar_days = p.get("calendar_days")
+        if p["rule"] == DISPUTE_WINDOW:
+            if calendar_days is not None:
+                raise ValueError(f"{path}: {DISPUTE_WINDOW} takes its days from the policy")
+            calendar_days = dispute_window_days
+        passages.append(
+            Passage(
+                id=p["id"],
+                rule=p["rule"],
+                label=raw["label"],
+                text={
+                    lang: text.format(dispute_window_days=dispute_window_days)
+                    for lang, text in p["text"].items()
+                },
+                business_days=p.get("business_days"),
+                calendar_days=calendar_days,
+            )
         )
-        for p in raw["passages"]
-    ]
     by_rule = {p.rule: p for p in passages}
     if len(by_rule) != len(passages) or len({p.id for p in passages}) != len(passages):
         raise ValueError(f"{path}: duplicate passage rule or id")

@@ -1,40 +1,85 @@
-# Autonomy policy. Deterministic. The LLM never reads or overrides this file.
+# Business policy of TRAZO (design 4.2, section 8). Code applies it; the LLM never reads it.
+# Every change to this file is a versioned business decision: bump `version`, since every
+# decision and audit row cites it. Thresholds marked [assumption] are declared choices; their
+# sensitivity is reported by the evaluation.
 #
-# Action classes:
-#   0 read          lookup, profile
-#   1 reversible    freeze card, open dispute
-# No action moves money. Anything that would is escalated to a human.
-#
-# Display levels: L0 inform, L1 act, L2 act with confirmation, L3 human.
-#
-# Thresholds are placeholders until the cost function is fitted on the challenge data (Sep 28).
-# Every change to this file is a versioned business decision. Keep the git history clean.
+# Rules are evaluated in this order: security, escalation, analyst approval, routing. The
+# escalation and approval stages apply only to `dispute_intents`. Each rule list must name every
+# rule the code knows, exactly once; the order of the list is the order of evaluation.
 
-version: 1
+version: "2026.09.1"
 
-amount_limits_usd:
-  l1_max: 500      # above this, any action needs customer confirmation
-  l2_max: 2000     # above this, everything goes to a human
+dispute_window_days: 120            # [assumption] the only source of this number at runtime
+open_dispute_lookback_days: 90      # [assumption] look-back of open_dispute_last_90d
 
-# Intent -> highest action class the agent may run for it, before amount adjustments.
-intent_ceiling:
-  blocked_purchase: 1
-  unrecognized_charge: 1
-  duplicate_charge: 1
-  lost_or_stolen_card: 1
-  general_inquiry: 0
-  unknown: 0
+conformal:
+  alpha: 0.05                       # [assumption] must match config/identification.yaml
+  max_options_shown: 3              # [assumption]
 
-# Action -> class.
-action_class:
-  lookup_transaction: 0
-  get_customer_profile: 0
-  list_recent_transactions: 0
-  escalate_to_human: 0
-  freeze_card: 1
-  open_dispute: 1
+amount_usd:
+  auto_register_max: 500            # [assumption] up to this amount the autonomy level decides
+  human_review_above: 1000          # [assumption] above this amount the case is escalated
 
-# Hard rules evaluated first. Any match forces escalation with clearance 0.
-hard_escalation_rules:
-  - name: over_l2_amount
-  - name: repeat_dispute_30d
+dispute_intents: [unrecognized_charge, billing_error_amount, billing_error_duplicate]
+
+security_if:
+  - security_event
+
+escalate_if:
+  - amount_above_human_review       # amount_usd > amount_usd.human_review_above
+  - amount_unknown                  # identified charge not convertible to USD
+  - open_dispute_last_90d           # dispute complaints + own disputes still open
+  - conformal_set_empty
+  - verification_failed
+  - autonomy_a2
+
+require_analyst_approval_if:
+  - autonomy_a1
+  - amount_above_auto_register      # between 500 and 1000 USD
+
+routing:
+  unrecognized_charge:
+    card_in_possession: {action: register_and_offer_block, confirm: true}
+    card_not_in_possession: {action: register_and_block, confirm: true, priority: high}
+  billing_error_duplicate:
+    one_pending: {action: explain_and_watch}
+    both_approved: {action: register, confirm: true}
+    no_twin: {action: escalate}
+  billing_error_amount: {action: register, confirm: true}
+  claim_status: {action: report_claim_status}
+  out_of_scope: {action: abstain_and_redirect}
+  # A lost or stolen card with no charge mentioned is out of scope: redirect to the bank's card
+  # block channel at once.
+  lost_card_without_charge: {action: abstain_and_redirect, redirect: card_block, priority: urgent}
+
+# Display level of each action (design 3.2): L0 read, L1 register, L2 block, L3 a person.
+action_level:
+  report_claim_status: L0
+  explain_and_watch: L0
+  abstain_and_redirect: L0
+  register: L1
+  register_and_offer_block: L1
+  register_and_block: L2
+  analyst_approval: L3
+  escalate: L3
+  security_blocked: L3
+
+autonomy:
+  cell: [intent, language]
+  initial_level: A0                 # level of every cell until TRZ-30 reads the real one
+  window_n: 20
+  z: 1.645
+  demote_if_wilson_lower_gte: 0.30
+  promote_if_rate_lt: 0.15
+  promote_after_consecutive_windows: 2
+  audit_sample_rate: 0.10           # rho
+  reversal_reasons:
+    - wrong_charge
+    - should_not_act
+    - should_have_escalated
+    - misunderstanding_unresolved
+    - insufficient_data
+    - other
+
+slots_required:
+  register: [identified_transaction, customer_confirmation]

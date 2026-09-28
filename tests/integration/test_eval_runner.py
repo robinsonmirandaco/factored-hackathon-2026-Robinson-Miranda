@@ -40,8 +40,8 @@ def test_repo_cases_pass_and_report_is_written(tmp_path):
 
 
 def test_wrong_expectation_is_reported_as_failure(tmp_path):
-    d = _one_case(tmp_path, "09_lost_card_freezes.yaml")
-    case_file = d / "09_lost_card_freezes.yaml"
+    d = _one_case(tmp_path, "14_stolen_card_without_charge_es.yaml")
+    case_file = d / "14_stolen_card_without_charge_es.yaml"
     case = yaml.safe_load(case_file.read_text())
     case["turns"][0]["expect"]["outcome"] = "escalated"
     case_file.write_text(yaml.safe_dump(case))
@@ -52,15 +52,47 @@ def test_wrong_expectation_is_reported_as_failure(tmp_path):
     assert summary["escalation"]["missed"] == 1
 
 
+def test_wrong_policy_rule_is_reported_as_failure(tmp_path):
+    d = _one_case(tmp_path, "03_amount_500_edge.yaml")
+    case_file = d / "03_amount_500_edge.yaml"
+    case = yaml.safe_load(case_file.read_text())
+    case["turns"][0]["expect"]["policy_rule"] = "approval.amount_above_auto_register"
+    case_file.write_text(yaml.safe_dump(case))
+
+    results, _ = run(d, tmp_path / "reports")
+    assert results[0].status == "fail"
+    assert results[0].turns[0].mismatches == [
+        "policy_rule: expected 'approval.amount_above_auto_register', "
+        "got 'routing.unrecognized_charge.card_in_possession'"
+    ]
+
+
+def test_complaint_fixture_counts_for_the_open_dispute_rule(tmp_path):
+    d = _one_case(tmp_path, "09_open_dispute_30_days.yaml")
+    case_file = d / "09_open_dispute_30_days.yaml"
+    case = yaml.safe_load(case_file.read_text())
+    # A rejected complaint is not open, so the same charge is no longer escalated.
+    case["fixtures"]["complaints"][0]["status"] = "Rejected"
+    case_file.write_text(yaml.safe_dump(case))
+
+    results, _ = run(d, tmp_path / "reports")
+    assert (
+        "policy_rule: expected 'escalate.open_dispute_last_90d'"
+        in results[0].turns[0].mismatches[-1]
+    )
+
+
 def test_known_failure_that_starts_passing_is_flagged(tmp_path):
-    d = _one_case(tmp_path, "09_lost_card_freezes.yaml", known_failure="pretend this is broken")
+    d = _one_case(
+        tmp_path, "14_stolen_card_without_charge_es.yaml", known_failure="pretend this is broken"
+    )
     results, summary = run(d, tmp_path / "reports")
     assert results[0].status == "unexpected_pass"
     assert summary["unexpected_passes"] == 1
 
 
 def test_skipped_case_is_not_run_and_keeps_its_reason(tmp_path):
-    d = _one_case(tmp_path, "01_blocked_low_risk_en.yaml", skip="rewritten later")
+    d = _one_case(tmp_path, "17_balance_out_of_scope.yaml", skip="rewritten later")
     results, summary = run(d, tmp_path / "reports")
     assert results[0].status == "skipped"
     assert results[0].skipped == "rewritten later"
@@ -71,8 +103,8 @@ def test_skipped_case_is_not_run_and_keeps_its_reason(tmp_path):
 
 
 def test_fixture_rejected_by_validator_is_an_error(tmp_path):
-    d = _one_case(tmp_path, "05_blocked_over_limit_escalates.yaml")
-    case_file = d / "05_blocked_over_limit_escalates.yaml"
+    d = _one_case(tmp_path, "06_amount_1000_01_edge.yaml")
+    case_file = d / "06_amount_1000_01_edge.yaml"
     case = yaml.safe_load(case_file.read_text())
     case["fixtures"]["transactions"][0]["amount"] = -5
     case_file.write_text(yaml.safe_dump(case))
