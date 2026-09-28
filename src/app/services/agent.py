@@ -60,6 +60,7 @@ from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
 from app.services.identification import candidate_of, identify_charge, load_candidates
 from app.services.recognition import charge_detail
+from app.services.replies import check_reply, deadline_note, verified_facts
 from app.services.verification import verify_block, verify_dispute
 
 Facts = dict[str, Any]
@@ -92,6 +93,7 @@ class AgentDeps:
         autonomy: Autonomy level of each intent x language cell.
         passages: Demo policy passages by rule, which back the response deadline.
         calendars: Bank holiday calendars by country code.
+        fact_check: False turns the fact checker into an observer (ablation, TRZ-20 CA6).
     """
 
     policy: PolicyEngine
@@ -101,6 +103,7 @@ class AgentDeps:
     autonomy: AutonomyLookup
     passages: Mapping[str, Passage]
     calendars: Mapping[str, HolidayCalendar]
+    fact_check: bool = True
 
 
 @dataclass(frozen=True)
@@ -201,7 +204,7 @@ def handle_message(
             if facts["outcome"] != "awaiting_confirmation":
                 T.settle_pending_action(session, case.id, "canceled")
 
-        reply, rstats = _reply(deps, redacted, facts, language)
+        reply, rstats = _reply(session, deps, customer, case, redacted, facts, language)
         stats.add(rstats)
         # The charge detail and the recognition text carry the last four digits of the card:
         # shown to the customer, never written to the audit log. The show_charge_detail row
@@ -815,7 +818,17 @@ def _confirm(
         facts["outcome"] = "failed"
         return facts
     facts["actions_taken"] = verified
-    facts["dispute"] = {"folio": dispute.data["folio"], "due_date": dispute.data["due_date"]}
+    facts["dispute"] = {
+        "folio": dispute.data["folio"],
+        "registered_on": deps.clock.now.date().isoformat(),
+        "due_date": dispute.data.get("due_date"),
+        "passage": dispute.data.get("due_date_passage"),
+    }
+    tx = session.get(Transaction, row.transaction_id)
+    if tx is not None:
+        facts["transaction"] = _charge_facts(
+            session, candidate_of(tx), local_currency(customer.country_code)
+        )
     if first_run:
         case.status = "registered_verified"
     facts["outcome"] = "registered_verified"
@@ -874,24 +887,48 @@ def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
 
 
 def _reply(
-    deps: AgentDeps, redacted: str, facts: Facts, language: Language
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    redacted: str,
+    facts: Facts,
+    language: Language,
 ) -> tuple[str, LLMCallStats]:
+    """The reply of the turn. The LLM writes it from the facts; code adds the deadline note,
+    and the fact checker decides whether the LLM text is sent or the fixed reply instead."""
+    note = deadline_note(facts, dict(deps.passages), language)
     # The urgent card block redirect must say the same thing every time, a security stop must
     # not send the text of the turn to the LLM, and a failed read-back confirms nothing, so none
     # of them is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
-        return template_reply(facts, language), LLMCallStats(fallback=True)
+        return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
     # The recognition step is written by code by design (TRZ-16), not as an LLM fallback.
     if facts["outcome"] == "recognizing":
         return recognition_text(facts["charge"], language), LLMCallStats()
-    return deps.llm.compose(redacted, _reply_facts(facts), language)
+    body, stats = deps.llm.compose(redacted, _reply_facts(facts), language)
+    text = _joined(body, note)
+    if stats.fallback:
+        return text, stats
+    verified = verified_facts(session, customer.customer_id, facts, dict(deps.passages))
+    if check_reply(session, case.id, text, verified, deps.fact_check):
+        return text, stats
+    stats.fallback = True
+    stats.error = "fact_check_blocked"
+    return _joined(template_reply(facts, language), note), stats
+
+
+def _joined(body: str, note: str) -> str:
+    return f"{body} {note}" if note else body
 
 
 def _reply_facts(facts: Facts) -> Facts:
     """What the reply is written from: what happened to the customer's case, never the policy
-    (rules, thresholds or autonomy levels), which the LLM does not see (TRZ-17 CA7)."""
+    (rules, thresholds or autonomy levels), which the LLM does not see (TRZ-17 CA7). Nor the
+    deadline: code writes it with its citation after the LLM text."""
     tx = facts.get("transaction")
     shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
+    dispute = facts.get("dispute")
     return {
         "outcome": facts["outcome"],
         "action": facts.get("action"),
@@ -899,7 +936,7 @@ def _reply_facts(facts: Facts) -> Facts:
         "identification": facts.get("identification"),
         "options": facts.get("options", []),
         "actions_taken": facts["actions_taken"],
-        "dispute": facts.get("dispute"),
+        "dispute": {"folio": dispute["folio"]} if dispute else None,
         "card_not_blocked": facts.get("card_not_blocked"),
     }
 

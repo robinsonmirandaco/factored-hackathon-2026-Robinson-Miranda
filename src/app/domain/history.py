@@ -295,6 +295,51 @@ def _verify(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     )
 
 
+_CLAIM_KINDS: dict[Lang, dict[str, str]] = {
+    "es": {
+        "folio": "folio",
+        "passage": "pasaje de política",
+        "date": "fecha",
+        "card_digits": "dígitos de tarjeta",
+        "deadline": "plazo",
+        "amount": "monto",
+        "merchant": "comercio",
+        "number": "número",
+        "forbidden_request": "pedido prohibido",
+        "action_claim": "acción no realizada",
+    },
+    "pt": {
+        "folio": "protocolo",
+        "passage": "trecho da política",
+        "date": "data",
+        "card_digits": "dígitos do cartão",
+        "deadline": "prazo",
+        "amount": "valor",
+        "merchant": "estabelecimento",
+        "number": "número",
+        "forbidden_request": "pedido proibido",
+        "action_claim": "ação não realizada",
+    },
+}
+
+
+def _fact_check(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    kinds = sorted({_label(_CLAIM_KINDS, lang, c.get("kind")) for c in r.get("unsupported", [])})
+    if lang == "es":
+        if not kinds:
+            return "El verificador de hechos aprobó la respuesta: cada dato tiene respaldo."
+        what = ", ".join(kinds)
+        if r.get("sent"):
+            return f"El verificador encontró datos sin respaldo ({what}), en modo de observación."
+        return f"El verificador bloqueó la respuesta por datos sin respaldo ({what})."
+    if not kinds:
+        return "O verificador de fatos aprovou a resposta: cada dado tem respaldo."
+    what = ", ".join(kinds)
+    if r.get("sent"):
+        return f"O verificador encontrou dados sem respaldo ({what}), em modo de observação."
+    return f"O verificador bloqueou a resposta por dados sem respaldo ({what})."
+
+
 def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "El sistema envió el caso a una analista."
@@ -404,6 +449,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "block_card"): _block,
     ("tool", "escalate_to_human"): _escalate,
     ("agent", "verify_action"): _verify,
+    ("agent", "fact_check"): _fact_check,
     ("agent", "security_event"): _security_event,
     ("agent", "recognize"): _recognize,
     ("agent", "choose"): _choose,

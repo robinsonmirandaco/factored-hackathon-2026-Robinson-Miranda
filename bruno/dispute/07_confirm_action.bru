@@ -29,4 +29,7 @@ tests {
     expect(res.getBody().actions_taken).to.eql(["register_dispute"]);
     expect(res.getBody().dispute_folio).to.match(/^DSP-2026-\d{5}$/);
   });
+  test("TRZ-19 TRZ-20 the verified receipt cites the passage of its deadline", function() {
+    expect(res.getBody().reply).to.contain("§2.1");
+  });
 }

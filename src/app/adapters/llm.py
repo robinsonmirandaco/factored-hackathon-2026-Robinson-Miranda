@@ -5,7 +5,8 @@ OpenAI-compatible endpoint (Docker Model Runner, Ollama). Prompts and fallbacks 
 
 Calls:
   comprehend(text, ctx)    -> Comprehension of design 6.1; the rules baseline is its fallback
-  compose(...)             -> customer reply, checked by a second validation call
+  compose(...)             -> customer reply; the deterministic fact checker of TRZ-20 decides
+                              whether it is sent
 
 Every call is logged with model, prompt version, tokens, latency and cost (TRZ-12 CA6). Every
 failure returns a typed fallback. Callers never see an exception from this module.
@@ -215,14 +216,12 @@ def _resolve_date(reading: DateReading, clock: SimulatedClock) -> DateClue | Non
 
 
 COMPOSE_SYSTEM = """You are a bank customer service assistant. Reply to the customer in their
-language, in 2 to 4 short sentences, plain and warm. State clearly what was done or what will
-happen next. Never invent actions that are not in the facts you are given. Never ask for card
-numbers, passwords or documents. Do not mention internal scores, rules or system names."""
-
-VALIDATE_SYSTEM = """You check a bank's customer reply for safety before it is sent.
-Answer ONLY a JSON object: {"ok": true|false, "reason": "..."}.
-Mark ok=false if the reply: promises an action not in the facts, asks for card numbers,
-passwords or ID documents, reveals internal scores or rules, or contradicts the facts."""
+language, in 2 to 4 short sentences, plain and warm. Use only the facts you are given: write no
+amount, date, folio, duration, card digits or merchant that is not in them, and state as done
+only the actions listed in actions_taken. Never promise refunds or cancellations. Never ask for
+or mention passwords, PINs, security codes, card numbers or identity documents. Do not state
+response deadlines nor cite policy: they are added after your text. Do not mention internal
+scores, rules or system names."""
 
 
 class LLMClient:
@@ -506,7 +505,10 @@ class LLMClient:
     def compose(
         self, redacted_text: str, facts: dict[str, Any], language: str
     ) -> tuple[str, LLMCallStats]:
-        """Writes the customer reply from facts and validates it with a second call.
+        """Writes the customer reply from facts.
+
+        The reply is not trusted: the caller checks every figure in it against the verified
+        facts before sending it (TRZ-20).
 
         Args:
             redacted_text: Customer message with PII already replaced.
@@ -514,7 +516,7 @@ class LLMClient:
             language: Reply language.
 
         Returns:
-            The reply (LLM or template) and the combined call stats.
+            The reply (LLM or template) and the call stats.
         """
         user = (
             f"Customer language: {language}\nCustomer message: {redacted_text}\n"
@@ -524,37 +526,7 @@ class LLMClient:
         if stats.fallback or not reply.strip():
             stats.fallback = True
             return template_reply(facts, language), stats
-
-        ok, why, vstats = self.validate(reply, facts)
-        stats.add(vstats)
-        if not ok:
-            log.warning("reply_rejected_by_validator", reason=why)
-            stats.fallback = True
-            # The validator's own words are model text; the audit log keeps only the outcome.
-            stats.error = "validator_rejected"
-            return template_reply(facts, language), stats
         return reply.strip(), stats
-
-    def validate(self, reply: str, facts: dict[str, Any]) -> tuple[bool, str, LLMCallStats]:
-        """Asks the LLM whether a reply is safe and consistent with the facts.
-
-        Args:
-            reply: Candidate reply.
-            facts: Facts the reply must respect.
-
-        Returns:
-            Whether the reply is ok, the reason, and the call stats.
-        """
-        user = f"Facts: {json.dumps(facts, ensure_ascii=False)}\nReply: {reply}"
-        raw, stats = self._call(VALIDATE_SYSTEM, user, max_tokens=120)
-        if stats.fallback:
-            # A validator outage must not block customer replies; compose already passed.
-            return True, "validator_unavailable", stats
-        try:
-            data = json.loads(_strip_fence(raw))
-            return bool(data.get("ok", False)), str(data.get("reason", "")), stats
-        except (json.JSONDecodeError, AttributeError):
-            return False, "validator_invalid_json", stats
 
 
 _REPLIES: dict[str, dict[str, str]] = {
@@ -575,12 +547,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "oficial del banco."
         ),
         "failed": (
-            "No pudimos confirmar que tu aclaración quedara registrada, así que pasamos tu caso "
-            "a una analista con toda la información. Ella te contactará."
+            "No pudimos confirmar el registro de tu aclaración, así que pasamos tu caso a una "
+            "analista con toda la información. Ella te contactará."
         ),
         "failed_card_block": (
-            "No pudimos confirmar que tu aclaración quedara registrada ni que tu tarjeta quedara "
-            "bloqueada, así que pasamos tu caso a una analista. Bloquea tu tarjeta de inmediato "
+            "No pudimos confirmar el registro de tu aclaración ni el bloqueo de tu tarjeta, así "
+            "que pasamos tu caso a una analista. Bloquea tu tarjeta de inmediato "
             "con la opción de bloqueo de la app de tu banco o llamando a la línea de bloqueo que "
             "aparece en el sitio oficial del banco."
         ),
@@ -646,13 +618,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "oficial do banco."
         ),
         "failed": (
-            "Não conseguimos confirmar que a sua contestação ficou registrada, então "
-            "encaminhamos o seu caso a uma analista com todas as informações. Ela vai entrar em "
-            "contato."
+            "Não conseguimos confirmar o registro da sua contestação, então encaminhamos o seu "
+            "caso a uma analista com todas as informações. Ela vai entrar em contato."
         ),
         "failed_card_block": (
-            "Não conseguimos confirmar que a sua contestação ficou registrada nem que o seu "
-            "cartão ficou bloqueado, então encaminhamos o seu caso a uma analista. Bloqueie o "
+            "Não conseguimos confirmar o registro da sua contestação nem o bloqueio do seu "
+            "cartão, então encaminhamos o seu caso a uma analista. Bloqueie o "
             "seu cartão agora mesmo pela opção de bloqueio do app do seu banco ou ligando para a "
             "central de bloqueio indicada no site oficial do banco."
         ),
@@ -745,8 +716,8 @@ def reply_key(facts: dict[str, Any]) -> str:
 
 
 def template_reply(facts: dict[str, Any], language: str) -> str:
-    """Fixed reply used when the LLM is unavailable, its reply fails validation, or the reply
-    must not vary (the urgent card block redirect).
+    """Fixed reply used when the LLM is unavailable, the fact checker blocks its reply, or the
+    reply must not vary (the urgent card block redirect, a security stop, a failed read-back).
 
     Args:
         facts: What the system did.

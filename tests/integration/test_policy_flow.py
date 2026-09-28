@@ -293,8 +293,8 @@ def test_no_llm_call_carries_the_policy(schema: SchemaUrls, database_url: str) -
         not_recognized=True,
     )
     assert result.outcome == "awaiting_confirmation"
-    # comprehend; the recognition step is written by code; then compose and validate
-    assert len(sent) == 3
+    # comprehend; the recognition step is written by code; then compose, checked by code
+    assert len(sent) == 2
 
     policy = yaml.safe_load(POLICY.read_text(encoding="utf-8"))
     decide = next(r for r in rows if r.action == "decide")

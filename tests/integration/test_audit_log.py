@@ -172,8 +172,9 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
                 None,
             ), r.action
     compose = next(r for r in rows if r.action == "compose" and by_llm(r))
-    # Compose and its validator are two prompts, and the row cites both.
-    assert "+" in (compose.prompt_version or "")
+    # One prompt writes the reply; no second model judges it (TRZ-20).
+    assert (compose.prompt_version or "").startswith("sha256:")
+    assert "+" not in (compose.prompt_version or "")
     extract = next(r for r in rows if r.action == "comprehend")
     assert extract.payload and "redacted_text" in extract.payload
 

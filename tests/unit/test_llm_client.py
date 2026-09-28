@@ -147,18 +147,14 @@ def test_slow_server_is_cut_at_the_wall_clock_deadline() -> None:
     assert elapsed < 1.0  # deadline 0.2 s x 2 attempts, far below the 2 s server delay
 
 
-def test_reply_rejected_by_validator_uses_template() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        system = json.loads(request.content)["messages"][0]["content"]
-        if "check a bank's customer reply" in system:
-            return _completion('{"ok": false, "reason": "promises a refund"}')
-        return _completion("We refunded you 1000 USD.")
+def test_compose_makes_one_call_and_leaves_the_check_to_the_caller() -> None:
+    calls: list[str] = []
+    llm = _client(lambda _r: _completion("  Pasamos tu caso a una analista.  "), calls)
 
-    reply, stats = _client(handler, []).compose("refund me", {"outcome": "escalated"}, "es")
+    reply, stats = llm.compose("ayuda", {"outcome": "escalated"}, "es")
 
-    assert stats.fallback
-    assert reply == template_reply({"outcome": "escalated"}, "es")
-    assert "1000" not in reply
+    # No second LLM judges the reply: the fact checker of TRZ-20 does, deterministically.
+    assert (reply, stats.fallback, stats.calls) == ("Pasamos tu caso a una analista.", False, 1)
 
 
 def test_malformed_provider_response_falls_back() -> None:

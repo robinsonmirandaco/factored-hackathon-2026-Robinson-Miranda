@@ -59,3 +59,7 @@ turns:
     - register_dispute
     policy_action: null
     dispute_folio: DSP-2026-\d{5}
+    reply_contains:
+    - 15 días hábiles
+    - §2.1
+    - política de demostración, no del banco

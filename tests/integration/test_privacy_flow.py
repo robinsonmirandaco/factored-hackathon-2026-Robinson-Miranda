@@ -69,8 +69,8 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
         app_db.dispose()
 
     assert not result.llm_fallback
-    # comprehend; the recognition step is written by code; then compose and validate
-    assert len(sent) == 3
+    # comprehend; the recognition step is written by code; then compose, checked by code
+    assert len(sent) == 2
     for body in sent:
         assert FIRST_NAME not in body
         assert DOCUMENT_NUMBER not in body
