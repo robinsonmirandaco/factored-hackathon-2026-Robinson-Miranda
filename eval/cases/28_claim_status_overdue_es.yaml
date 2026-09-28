@@ -1,31 +1,31 @@
-description: 'Claim status with no open claim, in Portuguese: said so, read only (L0)'
+description: 'An open dispute complaint past its response deadline: the reply says it is overdue'
 tags:
 - golden
 - claim_status
-- portuguese
 fixtures:
   customer:
-    customer_id: EVC18
+    customer_id: EVC28
     document_type: Pasaporte
-    document_number: EVC18-DOC
+    document_number: EVC28-DOC
     first_name: Eval
     country: México
     country_code: MX
     timezone: America/Mexico_City
     segment: Basic
   products:
-  - product_id: P18
+  - product_id: P28
     product_type: credit_card
     currency: USD
     product_status: Active
+  complaints:
+  - complaint_id: CMP-EVC28CLAIM00000001
+    days_ago: 40
 turns:
-- message: Como vai minha reclamação?
+- message: ¿Cómo va mi reclamo?
   expect:
     intent: claim_status
     outcome: informed
     autonomy_level: L0
     actions_taken: []
-    policy_action: report_claim_status
-    policy_rule: routing.claim_status
     reply_contains:
-    - Não encontrei reclamações abertas
+    - El plazo de respuesta venció el

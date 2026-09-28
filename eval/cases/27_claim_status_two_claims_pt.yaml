@@ -1,0 +1,44 @@
+description: 'Two open claims, in Portuguese: listed to choose, then the chosen one is reported'
+tags:
+- golden
+- claim_status
+- portuguese
+fixtures:
+  customer:
+    customer_id: EVC27
+    document_type: Pasaporte
+    document_number: EVC27-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P27
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  complaints:
+  - complaint_id: CMP-EVC27CLAIM00000001
+    days_ago: 3
+  - complaint_id: CMP-EVC27CLAIM00000002
+    days_ago: 8
+turns:
+- message: Qual é o status da minha reclamação?
+  expect:
+    intent: claim_status
+    outcome: identifying
+    autonomy_level: L0
+    actions_taken: []
+    reply_contains:
+    - Escolha qual quer consultar
+- message: Esta
+  option: CMP-EVC27CLAIM00000002
+  expect:
+    intent: claim_status
+    outcome: informed
+    autonomy_level: L0
+    actions_taken: []
+    reply_contains:
+    - CMP-EVC27CLAIM00000002
+    - 15 dias úteis conforme o §2.1

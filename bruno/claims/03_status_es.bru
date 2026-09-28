@@ -1,0 +1,33 @@
+meta {
+  name: claim status in Spanish
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "¿Cómo va mi reclamo?"}
+}
+
+tests {
+  test("read only: informed, or a list when there are several claims", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(body.intent).to.equal("claim_status");
+    expect(["informed", "identifying"]).to.include(body.outcome);
+    expect(body.autonomy_level).to.equal("L0");
+    expect(body.actions_taken).to.eql([]);
+    if (body.outcome === "identifying") {
+      expect(body.claims.length).to.be.at.least(2);
+    }
+  });
+}

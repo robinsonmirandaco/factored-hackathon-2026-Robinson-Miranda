@@ -1,0 +1,11 @@
+meta {
+  name: claims
+}
+
+docs {
+  TRZ-22 against a running API with the synthetic fixture and DEMO_MODE=true.
+  The synthetic fixture has no complaints, so on a freshly seeded database the customer has
+  no open claim; after the dispute folder, the dispute it registered is an open claim with its
+  deadline cited from §2.1. The status of a claim is read only (L0): nothing is registered or
+  blocked. Several claims come as a list in `claims`, and `option` with a `claim_id` picks one.
+}

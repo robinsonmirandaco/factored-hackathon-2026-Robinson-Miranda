@@ -3,10 +3,11 @@ docs {
   
   TRAZO is a governed agentic flow for disputed card charges in LATAM digital banking (Factored AI & Data Hackathon 2026). The customer signs in with a document and a one-time code, reviews the charge before disputing it, and confirms each action explicitly. Business rules live in a policy engine outside the model, and cases the system should not resolve alone go to an analyst queue.
   
-  This collection covers two areas:
+  This collection covers three areas:
   
   - **auth**: customer sign-in with document + OTP, analyst sign-in, role separation and session handling (TRZ-09).
   - **dispute**: the dispute flow end to end: recognizing the charge before disputing (TRZ-16), registering the dispute and blocking the card (TRZ-18), and choosing between several matching charges.
+  - **claims**: the status of an open claim, read only (TRZ-22).
   
   ## How to run
   
@@ -20,7 +21,7 @@ docs {
   
      The file is already covered by `.gitignore`. Never write the value in this collection.
   4. Reload the collection so Bruno reads the `.env` file.
-  5. Run `auth` first, then `dispute`.
+  5. Run `auth` first, then `dispute`, then `claims`.
   
   ### Environment variables (`local`)
   
@@ -40,6 +41,7 @@ docs {
   | `dispute` | Setup (demo code + customer login) · CA1/CA4/CA5 charge details shown before any decision · CA7 "Ya lo reconozco" closes the case · CA5 "Sigo sin reconocerlo" goes straight to the policy | TRZ-16 |
   | `dispute` | CA1/CA3 the confirmed action registers with a folio · CA4 a double send returns the same folio (idempotency) · CA3 the action of another case runs nothing | TRZ-18 |
   | `dispute` | Several matching charges are shown as options · a chosen option goes to the recognition step · options belong to their own case · "none of the options" escalates | Charge identification |
+  | `claims` | Setup (demo code + customer login) · CA2/CA5 the status of a claim in Spanish and Portuguese, read only (L0, no action) · CA3 several claims come as a list | TRZ-22 |
   
   ## Gotchas
   

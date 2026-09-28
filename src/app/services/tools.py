@@ -49,6 +49,15 @@ _OPEN_COMPLAINTS = text(
     "AND (least(resolution_date, closing_date) IS NULL "
     "OR least(resolution_date, closing_date) > :now)"
 )
+# Every complaint of the customer still open at the simulated now, whatever its category.
+_OPEN_CLAIMS = text(
+    "SELECT complaint_id, subcategory, creation_date, assignment_date, first_response_date "
+    "FROM complaints WHERE customer_id = :customer_id AND creation_date <= :now "
+    "AND status <> 'Rejected' "
+    "AND (least(resolution_date, closing_date) IS NULL "
+    "OR least(resolution_date, closing_date) > :now) "
+    "ORDER BY creation_date DESC, complaint_id"
+)
 
 
 @dataclass
@@ -182,6 +191,119 @@ def list_recent_transactions(
         t["ms"],
     )
     return ToolResult(True, data)
+
+
+def get_open_claims(
+    session: Session,
+    clock: SimulatedClock,
+    deadline: Callable[[date], PolicyDeadline | Unsupported],
+    customer_id: str,
+    case_id: str | None = None,
+) -> ToolResult:
+    """Reads the open claims of the session customer, with status, last step and deadline.
+
+    A claim is a dispute registered by TRAZO that is still opened, or a complaint of the dataset
+    created before the simulated now, not rejected, and not resolved or closed by then (design
+    3.1). Status and last step come from the dates known at the simulated now, not from the
+    dataset's final status, which may lie after it.
+
+    The deadline of a dispute is the one registered with it. The deadline of a dispute complaint
+    is counted from its creation date by the response deadline passage. Any other complaint has
+    no passage that backs a deadline, and none is given (TRZ-22 CA6).
+
+    Args:
+        session: Open session bound to the customer of the JWT.
+        clock: Simulated clock of the case.
+        deadline: Response deadline counted from a business date, with its passage, or
+            Unsupported when no passage backs it.
+        customer_id: Customer of the session.
+        case_id: Case for the audit row.
+
+    Returns:
+        The claims, newest first, each with claim_id, source (table), opened_on, status,
+        last_step, and due_date with passage_id, overdue, or due_unsupported.
+    """
+    with timed() as t:
+        today = clock.now.date()
+        claims: list[dict[str, Any]] = []
+        disputes = session.execute(
+            select(Dispute)
+            .where(Dispute.customer_id == customer_id, Dispute.status == "opened")
+            .order_by(Dispute.business_at.desc(), Dispute.id)
+        ).scalars()
+        for d in disputes:
+            if d.business_at is None or d.folio is None or d.business_at > clock.now:
+                continue
+            opened = d.business_at.date()
+            # register_dispute sets due_date only from the response deadline passage.
+            backed = deadline(opened)
+            due = d.due_date if isinstance(backed, PolicyDeadline) else None
+            claims.append(
+                _claim(d.folio, "disputes", opened, "received", ("registered", opened))
+                | _due(due, backed)
+            )
+        rows = session.execute(
+            _OPEN_CLAIMS, {"customer_id": customer_id, "now": clock.now}
+        ).mappings()
+        for r in rows:
+            opened = r["creation_date"].date()
+            steps = [("created", r["creation_date"])]
+            steps += [
+                (name, r[column])
+                for name, column in (
+                    ("assigned", "assignment_date"),
+                    ("first_response", "first_response_date"),
+                )
+                if r[column] is not None and r[column] <= clock.now
+            ]
+            step, at = max(steps, key=lambda s: s[1])
+            status = {"created": "received", "assigned": "in_review"}.get(step, "answered")
+            backed = (
+                deadline(opened)
+                if r["subcategory"] in DISPUTE_SUBCATEGORIES
+                else Unsupported("no passage backs a deadline for this kind of complaint")
+            )
+            due = backed.due if isinstance(backed, PolicyDeadline) else None
+            claims.append(
+                _claim(r["complaint_id"], "complaints", opened, status, (step, at.date()))
+                | _due(due, backed)
+            )
+        claims.sort(key=lambda c: (c["opened_on"], c["claim_id"]), reverse=True)
+        for c in claims:
+            c["overdue"] = c["due_date"] is not None and c["due_date"] < today.isoformat()
+    write_audit(
+        session,
+        "tool",
+        "get_open_claims",
+        case_id,
+        {"customer_id": customer_id},
+        {"count": len(claims), "claims": claims},
+        t["ms"],
+    )
+    return ToolResult(True, {"claims": claims})
+
+
+def _claim(
+    claim_id: str,
+    source: str,
+    opened: date,
+    status: str,
+    last_step: tuple[str, date],
+) -> dict[str, Any]:
+    return {
+        "claim_id": claim_id,
+        "source": source,
+        "opened_on": opened.isoformat(),
+        "status": status,
+        "last_step": {"step": last_step[0], "on": last_step[1].isoformat()},
+    }
+
+
+def _due(due: date | None, backed: PolicyDeadline | Unsupported) -> dict[str, Any]:
+    if due is None or not isinstance(backed, PolicyDeadline):
+        reason = backed.reason if isinstance(backed, Unsupported) else "no deadline registered"
+        return {"due_date": None, "passage_id": None, "due_unsupported": reason}
+    return {"due_date": due.isoformat(), "passage_id": backed.passage_id, "due_unsupported": None}
 
 
 # ---- state-changing tools (class 1) -----------------------------------------------------
