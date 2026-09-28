@@ -1,7 +1,8 @@
 """The fact checker in full customer turns with a simulated LLM (TRZ-20): a reply with an
 unsupported element is replaced by the fixed one and the element is audited (CA3, CA4, CA5); the
 ablation lets it through and counts it (CA6); without a backing passage no deadline is stated and
-a person is offered, in the customer's language (CA7)."""
+a person is offered, in the customer's language (CA7); the card digits a reply may state are read
+from products through the charge."""
 
 import dataclasses
 from collections.abc import Callable
@@ -14,7 +15,9 @@ from sqlalchemy import create_engine, text
 from app.adapters.db.session import Database, SchemaUrls
 from app.adapters.llm import template_reply
 from app.core.config import Settings
+from app.domain.fact_check import unsupported
 from app.services.agent import AgentDeps, AgentResponse, handle_message
+from app.services.replies import verified_facts
 from tests.agent_support import agent_deps, fake_llm, llm_settings, reading
 from tests.serving_data import card, customer, load, transaction
 
@@ -219,3 +222,27 @@ def test_without_a_backing_passage_no_deadline_is_stated_and_a_person_is_offered
     assert PERSON[language] in r.reply
     assert "hábiles" not in r.reply and "úteis" not in r.reply
     assert _last_check(schema, r.case_id)[3] == [{"kind": "deadline", "value": "15 d"}]
+
+
+def test_the_card_digits_are_read_from_products_through_the_charge(
+    schema: SchemaUrls, database_url: str
+) -> None:
+    settings = llm_settings(database_url)
+    at = settings.trazo_now - timedelta(hours=20)
+    load(
+        schema.admin,
+        [customer("C1")],
+        [card("P1", "C1", product_number_last4="4821")],
+        [transaction("TX1", "C1", "P1", at, amount=120.0, currency="USD")],
+    )
+    charge = {"transaction_id": "TX1", "amount": 120.0, "date": at.date().isoformat()}
+    db = Database(schema.app)
+    try:
+        with db.session(customer_id="C1") as s:
+            facts = verified_facts(s, "C1", {"transaction": charge}, {})
+    finally:
+        db.dispose()
+
+    assert facts.last4 == frozenset({"4821"})
+    assert unsupported("Es el cargo de tu tarjeta terminada en 4821.", facts) == []
+    assert [c.value for c in unsupported("Tu tarjeta terminada en 1111.", facts)] == ["1111"]
