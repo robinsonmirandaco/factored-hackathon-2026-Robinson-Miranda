@@ -15,35 +15,68 @@ Fields = dict[str, Any]
 
 _INTENTS: dict[Lang, dict[str, str]] = {
     "es": {
-        "blocked_purchase": "compra bloqueada",
         "unrecognized_charge": "cargo no reconocido",
-        "duplicate_charge": "cargo duplicado",
-        "lost_or_stolen_card": "tarjeta perdida o robada",
-        "general_inquiry": "consulta general",
-        "unknown": "fuera de alcance",
+        "billing_error_amount": "cobro de un monto distinto",
+        "billing_error_duplicate": "cobro duplicado",
+        "claim_status": "estado de un reclamo",
+        "out_of_scope": "fuera de alcance",
     },
     "pt": {
-        "blocked_purchase": "compra bloqueada",
         "unrecognized_charge": "cobrança não reconhecida",
-        "duplicate_charge": "cobrança duplicada",
-        "lost_or_stolen_card": "cartão perdido ou roubado",
-        "general_inquiry": "consulta geral",
-        "unknown": "fora do escopo",
+        "billing_error_amount": "cobrança de valor diferente",
+        "billing_error_duplicate": "cobrança duplicada",
+        "claim_status": "status de uma reclamação",
+        "out_of_scope": "fora do escopo",
     },
 }
 
 _OUTCOMES: dict[Lang, dict[str, str]] = {
     "es": {
-        "auto_resolved": "resuelto por el sistema",
-        "awaiting_customer": "esperando al cliente",
+        "identifying": "buscando el cargo con el cliente",
+        "awaiting_confirmation": "esperando la confirmación del cliente",
+        "registered": "aclaración registrada",
+        "pending_analyst_approval": "esperando la aprobación de una analista",
         "escalated": "enviado a una analista",
-        "inform": "informado al cliente",
+        "security_blocked": "detenido por seguridad",
+        "abstained": "fuera de alcance, cliente redirigido",
+        "informed": "informado al cliente",
+        "no_pending_action": "no había nada que confirmar",
     },
     "pt": {
-        "auto_resolved": "resolvido pelo sistema",
-        "awaiting_customer": "aguardando o cliente",
+        "identifying": "buscando a cobrança com o cliente",
+        "awaiting_confirmation": "aguardando a confirmação do cliente",
+        "registered": "contestação registrada",
+        "pending_analyst_approval": "aguardando a aprovação de uma analista",
         "escalated": "enviado a uma analista",
-        "inform": "informado ao cliente",
+        "security_blocked": "interrompido por segurança",
+        "abstained": "fora do escopo, cliente redirecionado",
+        "informed": "informado ao cliente",
+        "no_pending_action": "não havia nada para confirmar",
+    },
+}
+
+_ACTIONS: dict[Lang, dict[str, str]] = {
+    "es": {
+        "register_and_offer_block": "registrar y ofrecer el bloqueo de la tarjeta",
+        "register_and_block": "registrar y bloquear la tarjeta",
+        "register": "registrar la aclaración",
+        "explain_and_watch": "explicar la retención y esperar",
+        "report_claim_status": "informar el estado del reclamo",
+        "abstain_and_redirect": "abstenerse y redirigir",
+        "analyst_approval": "pedir la aprobación de una analista",
+        "escalate": "enviar el caso a una analista",
+        "security_blocked": "detener el caso por seguridad",
+    },
+    "pt": {
+        "register_and_offer_block": "registrar e oferecer o bloqueio do cartão",
+        "register_and_block": "registrar e bloquear o cartão",
+        "register": "registrar a contestação",
+        "explain_and_watch": "explicar a retenção e aguardar",
+        "report_claim_status": "informar o status da reclamação",
+        "abstain_and_redirect": "abster-se e redirecionar",
+        "analyst_approval": "pedir a aprovação de uma analista",
+        "escalate": "enviar o caso a uma analista",
+        "security_blocked": "interromper o caso por segurança",
     },
 }
 
@@ -90,22 +123,32 @@ def _compose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 
 
 def _turn_complete(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
-    outcome = _label(_OUTCOMES, lang, r.get("outcome", "inform"))
+    outcome = _label(_OUTCOMES, lang, r.get("outcome", "informed"))
     if lang == "es":
         return f"Terminó el turno: {outcome}."
     return f"Turno concluído: {outcome}."
 
 
 def _decide(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
-    version = policy or "?"
+    version = r.get("version") or policy or "?"
     rule, level = r.get("rule"), r.get("level")
+    action = _label(_ACTIONS, lang, r.get("action"))
     if lang == "es":
-        cited = f", regla «{rule}»" if rule else ""
-        tail = " y envía el caso a una analista" if r.get("escalate") else ""
-        return f"La política v{version}{cited} fija el nivel {level}{tail}."
-    cited = f", regra «{rule}»" if rule else ""
-    tail = " e envia o caso a uma analista" if r.get("escalate") else ""
-    return f"A política v{version}{cited} define o nível {level}{tail}."
+        cited = f", regla «{rule}»," if rule else ""
+        return f"La política v{version}{cited} decidió {action} (nivel {level})."
+    cited = f", regra «{rule}»," if rule else ""
+    return f"A política v{version}{cited} decidiu {action} (nível {level})."
+
+
+def _confirm(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    pending = r.get("pending_action")
+    if lang == "es":
+        if not pending:
+            return "El cliente confirmó, pero no había ninguna acción pendiente."
+        return f"El cliente confirmó la acción pendiente: {_label(_ACTIONS, lang, pending)}."
+    if not pending:
+        return "O cliente confirmou, mas não havia nenhuma ação pendente."
+    return f"O cliente confirmou a ação pendente: {_label(_ACTIONS, lang, pending)}."
 
 
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -180,8 +223,12 @@ def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 
 Template = Callable[[Lang, Fields, Fields, str | None], str]
 
+# ("agent", "extract") and ("tool", "lookup_transaction") are no longer written, but the audit
+# log is append-only and still holds rows of both, which the history must keep telling.
 TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "extract"): _extract,
+    ("agent", "comprehend"): _extract,
+    ("agent", "confirm"): _confirm,
     ("agent", "compose"): _compose,
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,

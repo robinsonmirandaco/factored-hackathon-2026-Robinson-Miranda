@@ -3,12 +3,14 @@
 import json
 import time
 from collections.abc import Callable
+from datetime import datetime
 
 import httpx
 import pytest
 
-from app.adapters.llm import LLMClient
+from app.adapters.llm import LLMClient, template_reply
 from app.core.config import Settings
+from app.schemas.comprehension import ComprehensionContext
 
 BASE_URL = "http://llm.test/v1"
 Handler = Callable[[httpx.Request], httpx.Response]
@@ -49,23 +51,29 @@ def _completion(content: str) -> httpx.Response:
     )
 
 
-EXTRACTION = {
-    "intent": "lost_or_stolen_card",
+# Rules fallback of this message: out_of_scope, since "roubaram" alone names no charge.
+MESSAGE = "Roubaram meu cartão"
+CONTEXT = ComprehensionContext(
+    now=datetime(2026, 6, 17, 10, 0), country_code="MX", local_currency="MXN"
+)
+READING = {
+    "intent": "unrecognized_charge",
     "amount": None,
-    "merchant": None,
-    "language": "en",
-    "customer_claims_legitimate": None,
-    "confidence": 0.9,
+    "date": None,
+    "merchant_hint": None,
+    "channel_hint": None,
+    "card_in_possession": {"value": False, "evidence": "Roubaram meu cartão"},
+    "language": "pt-BR",
 }
 
 
-def test_extract_success_reports_tokens() -> None:
+def test_comprehend_success_reports_tokens() -> None:
     calls: list[str] = []
-    llm = _client(lambda _r: _completion(json.dumps(EXTRACTION)), calls)
+    llm = _client(lambda _r: _completion(json.dumps(READING)), calls)
 
-    result, stats = llm.extract("my card was stolen")
+    result, stats = llm.comprehend(MESSAGE, CONTEXT)
 
-    assert result.intent == "lost_or_stolen_card"
+    assert result.intent == "unrecognized_charge"
     assert not stats.fallback
     assert (stats.input_tokens, stats.output_tokens) == (50, 10)
     assert len(calls) == 1
@@ -73,7 +81,7 @@ def test_extract_success_reports_tokens() -> None:
 
 def test_timeout_is_retried_once_then_succeeds() -> None:
     calls: list[str] = []
-    attempts = iter([httpx.ReadTimeout("slow"), _completion(json.dumps(EXTRACTION))])
+    attempts = iter([httpx.ReadTimeout("slow"), _completion(json.dumps(READING))])
 
     def handler(_r: httpx.Request) -> httpx.Response:
         outcome = next(attempts)
@@ -81,24 +89,24 @@ def test_timeout_is_retried_once_then_succeeds() -> None:
             raise outcome
         return outcome
 
-    result, stats = _client(handler, calls).extract("my card was stolen")
+    result, stats = _client(handler, calls).comprehend(MESSAGE, CONTEXT)
 
-    assert result.intent == "lost_or_stolen_card"
+    assert result.intent == "unrecognized_charge"
     assert not stats.fallback
     assert len(calls) == 2
 
 
-def test_persistent_timeout_falls_back_after_one_retry() -> None:
+def test_persistent_timeout_falls_back_to_the_rules_after_one_retry() -> None:
     calls: list[str] = []
 
     def handler(_r: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow")
 
-    result, stats = _client(handler, calls).extract("my card was stolen")
+    result, stats = _client(handler, calls).comprehend(MESSAGE, CONTEXT)
 
     assert stats.fallback
     assert stats.error == "ReadTimeout"
-    assert result.intent == "lost_or_stolen_card"  # heuristic path
+    assert result.intent == "out_of_scope"  # rules baseline
     assert len(calls) == 2
 
 
@@ -112,30 +120,30 @@ def test_only_transient_http_errors_are_retried(status: int, expected_calls: int
     assert len(calls) == expected_calls
 
 
-def test_invalid_json_gets_one_stricter_retry_then_heuristics() -> None:
+def test_invalid_json_gets_one_stricter_retry_then_the_rules() -> None:
     calls: list[str] = []
-    result, stats = _client(lambda _r: _completion("not json"), calls).extract("my card was stolen")
+    result, stats = _client(lambda _r: _completion("not json"), calls).comprehend(MESSAGE, CONTEXT)
 
     assert stats.fallback
     assert stats.error is not None and stats.error.startswith("invalid_json")
-    assert result.confidence == 0.4  # heuristic extraction
+    assert result.intent == "out_of_scope"  # rules baseline
     assert len(calls) == 2
-    assert "not valid JSON" in calls[1]
+    assert "not valid" in calls[1]
 
 
 def test_slow_server_is_cut_at_the_wall_clock_deadline() -> None:
     def handler(_r: httpx.Request) -> httpx.Response:
         time.sleep(2)  # the mock ignores httpx timeouts, like a server that trickles bytes
-        return _completion(json.dumps(EXTRACTION))
+        return _completion(json.dumps(READING))
 
     llm = _client(handler, [], llm_timeout_seconds=0.2, llm_max_retries=1)
     t0 = time.perf_counter()
-    result, stats = llm.extract("my card was stolen")
+    result, stats = llm.comprehend(MESSAGE, CONTEXT)
     elapsed = time.perf_counter() - t0
 
     assert stats.fallback
     assert stats.error == "TimeoutError"
-    assert result.confidence == 0.4  # heuristic extraction
+    assert result.intent == "out_of_scope"  # rules baseline
     assert elapsed < 1.0  # deadline 0.2 s x 2 attempts, far below the 2 s server delay
 
 
@@ -146,10 +154,10 @@ def test_reply_rejected_by_validator_uses_template() -> None:
             return _completion('{"ok": false, "reason": "promises a refund"}')
         return _completion("We refunded you 1000 USD.")
 
-    reply, stats = _client(handler, []).compose("refund me", {"outcome": "escalated"}, "en")
+    reply, stats = _client(handler, []).compose("refund me", {"outcome": "escalated"}, "es")
 
     assert stats.fallback
-    assert "human agent" in reply
+    assert reply == template_reply({"outcome": "escalated"}, "es")
     assert "1000" not in reply
 
 

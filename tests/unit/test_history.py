@@ -46,19 +46,36 @@ def test_every_template_writes_a_full_sentence_with_or_without_data(
 
 def test_the_languages_differ() -> None:
     result = {"intent": "unrecognized_charge", "fallback": False}
-    es = describe("agent", "extract", None, result, "1", "es")
-    pt = describe("agent", "extract", None, result, "1", "pt")
+    es = describe("agent", "comprehend", None, result, "1", "es")
+    pt = describe("agent", "comprehend", None, result, "1", "pt")
     assert es == "El sistema entendió el mensaje del cliente como «cargo no reconocido»."
     assert pt == "O sistema entendeu a mensagem do cliente como «cobrança não reconhecida»."
 
 
-def test_a_policy_line_cites_rule_version_and_level() -> None:
-    result = {"level": "L3", "escalate": True, "rule": "over_l2_amount"}
+def test_a_policy_line_cites_rule_version_action_and_level() -> None:
+    result = {
+        "action": "escalate",
+        "level": "L3",
+        "rule": "escalate.amount_above_human_review",
+        "version": "2026.09.1",
+    }
     assert describe("policy", "decide", None, result, "1", "es") == (
-        "La política v1, regla «over_l2_amount» fija el nivel L3 y envía el caso a una analista."
+        "La política v2026.09.1, regla «escalate.amount_above_human_review», decidió enviar el "
+        "caso a una analista (nivel L3)."
     )
     assert describe("policy", "decide", None, result, "1", "pt") == (
-        "A política v1, regra «over_l2_amount» define o nível L3 e envia o caso a uma analista."
+        "A política v2026.09.1, regra «escalate.amount_above_human_review», decidiu enviar o "
+        "caso a uma analista (nível L3)."
+    )
+
+
+def test_a_confirmation_line_names_the_pending_action() -> None:
+    result = {"pending_action": "register_and_block"}
+    assert describe("agent", "confirm", None, result, "1", "es") == (
+        "El cliente confirmó la acción pendiente: registrar y bloquear la tarjeta."
+    )
+    assert describe("agent", "confirm", None, {}, "1", "pt") == (
+        "O cliente confirmou, mas não havia nenhuma ação pendente."
     )
 
 

@@ -1,20 +1,20 @@
-"""The agent loop.
+"""One customer turn (design 5): understand, screen, identify, decide, confirm, reply.
 
   1. redact PII
-  2. LLM extracts intent and entities (heuristic fallback if the LLM is down)
-  3. open or continue a Case
-  4. route to the sub-agent for that intent; the sub-agent calls tools
-  5. policy decides autonomy; the sub-agent only executes what policy allows
-  6. LLM composes the reply from facts; a second LLM call validates it (template fallback)
-  7. everything lands in the audit log under one trace_id
+  2. comprehension: intent and clues with their literal evidence (LLM; rules when it fails)
+  3. policy screen, before any identification: security first, then the routes that need no
+     charge (out of scope, lost card without a charge, claim status)
+  4. identification of the disputed charge with its conformal set
+  5. policy decision on the identified charge, compared in USD
+  6. nothing runs until the customer confirms the exact pending action of the case
+  7. reply from the facts; every step lands in the audit log under one trace_id
 
-The LLM never picks tools. Tool selection is deterministic per intent and gated by policy.
+The LLM never picks tools nor decides: tool selection is code and the decision is the policy.
 """
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -22,17 +22,39 @@ from sqlalchemy.orm import Session
 from app.adapters.db.audit import timed, write_audit
 from app.adapters.db.models import Case, Customer
 from app.adapters.db.rates import rates_near
-from app.adapters.llm import LLMClient
+from app.adapters.llm import LLMCallStats, LLMClient, template_reply
 from app.core.errors import AppError
 from app.core.logging import trace_id_var
 from app.domain.clock import SimulatedClock
 from app.domain.fx import display_amount, local_currency, to_usd
+from app.domain.identification import (
+    Candidate,
+    DuplicateTwin,
+    Identification,
+    Params,
+    duplicate_twin,
+)
 from app.domain.pii import redact
-from app.domain.policy import PolicyContext, PolicyDecision, PolicyEngine
-from app.schemas.extraction import IntentExtraction
+from app.domain.policy import (
+    AutonomyLookup,
+    Language,
+    PolicyContext,
+    PolicyDecision,
+    PolicyEngine,
+)
+from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
+from app.services.identification import identify_charge
 
 Facts = dict[str, Any]
+
+# What confirming each pending action runs. The folio, blocking only the card of the charge and
+# the read-back come with TRZ-18 and TRZ-19.
+CONFIRMED_TOOLS: dict[str, tuple[str, ...]] = {
+    "register": ("open_dispute",),
+    "register_and_offer_block": ("open_dispute",),
+    "register_and_block": ("open_dispute", "freeze_card"),
+}
 
 
 @dataclass(frozen=True)
@@ -40,14 +62,18 @@ class AgentDeps:
     """Collaborators the agent needs, built once at startup.
 
     Attributes:
-        policy: Autonomy policy engine.
+        policy: Policy engine of config/policy.yaml.
         llm: LLM client with fallbacks.
         clock: Simulated clock for data windows, relative dates and deadlines.
+        identification: Fitted identification parameters by comprehension, rules and llm.
+        autonomy: Autonomy level of each intent x language cell.
     """
 
     policy: PolicyEngine
     llm: LLMClient
     clock: SimulatedClock
+    identification: Mapping[str, Params]
+    autonomy: AutonomyLookup
 
 
 @dataclass
@@ -58,7 +84,7 @@ class AgentResponse:
     trace_id: str
     intent: str
     reply: str
-    outcome: str  # auto_resolved | awaiting_customer | escalated | inform
+    outcome: str
     autonomy_level: str
     actions_taken: list[str] = field(default_factory=list)
     llm_fallback: bool = False
@@ -79,10 +105,10 @@ def handle_message(
 
     Args:
         session: Open database session.
-        deps: Policy and LLM.
+        deps: Policy, LLM, clock, identification parameters and autonomy lookup.
         customer_id: Customer sending the message.
         text: Raw customer message.
-        confirm: True when the customer confirms a pending action.
+        confirm: True when the customer confirms the pending action of `case_id`.
         case_id: Case to continue, or None to open a new one.
 
     Returns:
@@ -98,382 +124,381 @@ def handle_message(
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
-        extraction, xstats = deps.llm.extract(redacted)
-        tokens = xstats.input_tokens + xstats.output_tokens
-
-        if case_id is None:
-            case_id = f"CASE-{uuid.uuid4().hex[:10].upper()}"
-            case = Case(
-                id=case_id,
-                customer_id=customer_id,
-                intent=extraction.intent,
-                status="open",
-                trace_id=trace_id_var.get(),
-            )
-            session.add(case)
-            session.flush()
+        if confirm and case_id is not None:
+            case = _own_case(session, customer_id, case_id)
+            language: Language = "pt" if case.language == "pt" else "es"
+            facts = _confirm(session, case, redacted, pii_counts)
+            stats = LLMCallStats()
         else:
-            found = session.get(Case, case_id)
-            # Same answer for "missing" and "not yours", so case ids cannot be probed.
-            if found is None or found.customer_id != customer_id:
-                raise AppError("case_not_found", f"Case {case_id} not found.", 404)
-            case = found
+            case, language, facts, stats = _understand_and_decide(
+                session, deps, customer, redacted, pii_counts, case_id
+            )
 
-        write_audit(
-            session,
-            "agent",
-            "extract",
-            case_id,
-            {"redacted_text": redacted[:500], "pii": pii_counts},
-            {**extraction.model_dump(), "fallback": xstats.fallback, "error": xstats.error},
-            xstats.latency_ms,
-            llm=xstats,
-        )
-
-        profile = T.get_customer_profile(session, customer_id, case_id).data
-        handler = SUBAGENTS.get(extraction.intent, handle_general_inquiry)
-        facts = handler(session, deps, case, extraction, profile, confirm)
-
-        reply, cstats = deps.llm.compose(redacted, facts, extraction.language)
-        tokens += cstats.input_tokens + cstats.output_tokens
+        reply, rstats = _reply(deps, redacted, facts, language)
+        stats.add(rstats)
         write_audit(
             session,
             "agent",
             "compose",
-            case_id,
+            case.id,
             {"facts": facts},
-            {"reply": reply, "fallback": cstats.fallback, "error": cstats.error},
-            cstats.latency_ms,
-            llm=cstats,
+            {"reply": reply, "fallback": rstats.fallback, "error": rstats.error},
+            rstats.latency_ms,
+            llm=rstats,
         )
-
-        case.summary = _summary(extraction, facts)
+        case.summary = _summary(case, facts)
         session.flush()
 
+    tokens = stats.input_tokens + stats.output_tokens
     write_audit(
         session,
         "agent",
         "turn_complete",
-        case_id,
+        case.id,
         None,
-        {"outcome": facts.get("outcome"), "tokens": tokens},
+        {"outcome": facts["outcome"], "tokens": tokens},
         total["ms"],
     )
     return AgentResponse(
-        case_id=case_id,
+        case_id=case.id,
         trace_id=trace_id_var.get(),
-        intent=extraction.intent,
+        intent=case.intent,
         reply=reply,
-        outcome=facts.get("outcome", "inform"),
+        outcome=facts["outcome"],
         autonomy_level=case.autonomy_level,
-        actions_taken=facts.get("actions_taken", []),
-        llm_fallback=xstats.fallback or cstats.fallback,
+        actions_taken=facts["actions_taken"],
+        llm_fallback=stats.fallback or rstats.fallback,
         tokens=tokens,
         latency_ms=total["ms"],
         facts=facts,
     )
 
 
-# ---- shared steps ----------------------------------------------------------------------
+# ---- understanding and deciding ---------------------------------------------------------
 
 
-def _find_tx(
-    session: Session, deps: AgentDeps, case: Case, ex: IntentExtraction
-) -> dict[str, Any] | None:
-    res = T.lookup_transaction(
-        session, deps.clock, case.customer_id, ex.amount, ex.merchant, case_id=case.id
-    )
-    if not res.ok:
-        return None
-    tx = res.data["matches"][0]
-    case.transaction_id = tx["tx_id"]
-    return tx
-
-
-def _decide(
+def _understand_and_decide(
     session: Session,
     deps: AgentDeps,
-    case: Case,
-    ex: IntentExtraction,
-    tx: dict[str, Any] | None,
-    profile: dict[str, Any],
-) -> PolicyDecision:
-    ctx = PolicyContext(
-        intent=ex.intent,
-        amount=_convert_amounts(session, tx, profile) if tx else ex.amount,
-        disputes_last_30d=profile.get("disputes_last_30d", 0),
+    customer: Customer,
+    redacted: str,
+    pii_counts: dict[str, int],
+    case_id: str | None,
+) -> tuple[Case, Language, Facts, LLMCallStats]:
+    local = local_currency(customer.country_code)
+    context = ComprehensionContext(
+        now=deps.clock.now, country_code=customer.country_code, local_currency=local
     )
-    decision = deps.policy.decide(ctx)
-    case.autonomy_level = decision.level
+    clues, stats = deps.llm.comprehend(redacted, context)
+    language: Language = "pt" if clues.language == "pt-BR" else "es"
+    case = _open_case(session, customer.customer_id, case_id, clues.intent, language)
+    write_audit(
+        session,
+        "agent",
+        "comprehend",
+        case.id,
+        {"redacted_text": redacted[:500], "pii": pii_counts},
+        {
+            **clues.model_dump(mode="json"),
+            "fallback": stats.fallback,
+            "error": stats.error,
+            "dropped_clues": stats.dropped_clues,
+        },
+        stats.latency_ms,
+        llm=stats,
+    )
+
+    card = clues.card_in_possession.value if clues.card_in_possession else None
+    screened = deps.policy.screen(clues.intent, language, card, _security_event(case))
+    if screened is not None:
+        _audit_decision(
+            session,
+            case,
+            {"intent": clues.intent, "language": language, "card_in_possession": card},
+            screened,
+        )
+        return case, language, _apply(session, case, screened, None), stats
+
+    policy = deps.policy.config
+    params = deps.identification["rules" if stats.fallback else "llm"]
+    found = identify_charge(
+        session,
+        deps.clock,
+        customer.customer_id,
+        clues,
+        params,
+        local,
+        policy.dispute_window_days,
+        case.id,
+    )
+    charge, twin = _chosen(clues, found)
+    if charge is None and found.decision in ("show_options", "ask_for_detail"):
+        return case, language, _identifying(case, found), stats
+
+    profile = T.get_customer_profile(
+        session, deps.clock, customer.customer_id, policy.open_dispute_lookback_days, case.id
+    ).data
+    tx = _charge_facts(session, charge, local) if charge else None
+    if charge is not None:
+        case.transaction_id = charge.transaction_id
+    ctx = PolicyContext(
+        intent=clues.intent,
+        language=language,
+        amount_usd=tx["amount_usd"] if tx else None,
+        card_in_possession=card,
+        open_dispute_last_90d=bool(profile.get("open_dispute_last_90d")),
+        conformal_set_size=1 if charge else 0,
+        duplicate_twin=twin,
+    )
+    decision = deps.policy.decide(ctx, deps.autonomy)
+    _audit_decision(session, case, asdict(ctx), decision)
+    return case, language, _apply(session, case, decision, tx), stats
+
+
+def _security_event(case: Case) -> bool:
+    """Whether a security event was raised for the case before it is identified.
+
+    No detector raises one yet: access to another customer's data raises it with TRZ-09 (the
+    session) and TRZ-18 CA5 (tools that check ownership). The policy screens it first anyway.
+
+    Args:
+        case: The case of the turn.
+
+    Returns:
+        False until a detector exists.
+    """
+    return False
+
+
+def _chosen(
+    clues: Comprehension, found: Identification
+) -> tuple[Candidate | None, DuplicateTwin | None]:
+    """The charge the policy decides on, and for a duplicate, the status of its twin.
+
+    Two identical charges of a duplicate score the same, so a set of exactly those two is the
+    pair the customer describes, not an ambiguity: the newer one is the charge made twice.
+    """
+    by_id = {s.candidate.transaction_id: s.candidate for s in found.scored}
+    kept = [by_id[i] for i in found.conformal_set]
+    candidates = list(by_id.values())
+    if clues.intent == "billing_error_duplicate" and len(kept) == 2:
+        first, second = sorted(kept, key=lambda c: (c.timestamp, c.transaction_id))
+        if pair := duplicate_twin(second, [first]):
+            return second, pair
+    if found.decision != "identified":
+        return None, None
+    charge = kept[0]
+    if clues.intent == "billing_error_duplicate":
+        return charge, duplicate_twin(charge, candidates)
+    return charge, None
+
+
+def _charge_facts(session: Session, charge: Candidate, local: str) -> Facts:
+    """The identified charge for the reply, with its USD amount at the rate of its date.
+
+    Policy thresholds are in USD; a charge with no rate in the allowed days has no USD amount,
+    and the policy escalates it rather than reading it as zero.
+    """
+    on = charge.timestamp.date()
+    rates = rates_near(session, on, {(charge.currency, "USD"), (charge.currency, local)})
+    return {
+        "transaction_id": charge.transaction_id,
+        "amount": charge.amount,
+        "currency": charge.currency,
+        "merchant": charge.merchant_name,
+        "channel": charge.channel,
+        "date": on.isoformat(),
+        "status": charge.status,
+        "amount_usd": to_usd(charge.amount, charge.currency, on, rates),
+        "amount_display": asdict(display_amount(charge.amount, charge.currency, local, on, rates)),
+    }
+
+
+def _identifying(case: Case, found: Identification) -> Facts:
+    by_id = {s.candidate.transaction_id: s.candidate for s in found.scored}
+    case.status = "identifying"
+    case.autonomy_level = "L0"
+    return {
+        "intent": case.intent,
+        "outcome": "identifying",
+        "identification": found.decision,
+        # Ask-for-detail sets are not shown: the customer is asked for one more clue instead.
+        "options": [
+            {
+                "transaction_id": c.transaction_id,
+                "merchant": c.merchant_name,
+                "amount": c.amount,
+                "currency": c.currency,
+                "date": c.timestamp.date().isoformat(),
+            }
+            for c in (by_id[i] for i in found.conformal_set)
+        ]
+        if found.decision == "show_options"
+        else [],
+        "actions_taken": [],
+    }
+
+
+def _apply(session: Session, case: Case, d: PolicyDecision, tx: Facts | None) -> Facts:
+    """Carries out a decision. Nothing that changes customer data runs here: registering and
+    blocking wait for the customer's confirmation of the pending action."""
+    case.autonomy_level = d.level
+    facts: Facts = {
+        "intent": case.intent,
+        "action": d.action,
+        "transaction": tx,
+        "redirect": d.redirect,
+        "actions_taken": [],
+    }
+    if d.action == "security_blocked":
+        # A pending action of an earlier turn must not survive a security stop.
+        case.recommended_action = None
+        T.escalate_to_human(session, case.id, d.rule, None, status="security_blocked")
+        facts["outcome"] = "security_blocked"
+    elif d.action == "escalate":
+        T.escalate_to_human(session, case.id, d.rule, d.recommended)
+        facts["outcome"] = "escalated"
+    elif d.action == "analyst_approval":
+        T.escalate_to_human(
+            session, case.id, d.rule, d.recommended, status="pending_analyst_approval"
+        )
+        facts["outcome"] = "pending_analyst_approval"
+    elif d.action in CONFIRMED_TOOLS:
+        case.status = "awaiting_confirmation"
+        case.recommended_action = d.action
+        facts["outcome"] = "awaiting_confirmation"
+    elif d.action == "abstain_and_redirect":
+        case.status = "abstained"
+        facts["outcome"] = "abstained"
+    else:  # explain_and_watch, report_claim_status: read only
+        case.status = "closed"
+        facts["outcome"] = "informed"
+    return facts
+
+
+def _audit_decision(
+    session: Session, case: Case, context: dict[str, Any], d: PolicyDecision
+) -> None:
     write_audit(
         session,
         "policy",
         "decide",
         case.id,
-        asdict(ctx),
+        context,
         {
-            "level": decision.level,
-            "escalate": decision.escalate,
-            "rule": decision.rule,
-            "reason": decision.reason,
-            "confirm": decision.require_confirmation,
+            "action": d.action,
+            "rule": d.rule,
+            "version": d.version,
+            "level": d.level,
+            "confirm": d.confirm,
+            "priority": d.priority,
+            "redirect": d.redirect,
+            "recommended": d.recommended,
+            "autonomy_level": d.autonomy_level,
         },
     )
-    return decision
 
 
-def _convert_amounts(session: Session, tx: dict[str, Any], profile: dict[str, Any]) -> float | None:
-    """Adds the USD amount and the customer display to a transaction, with its day's rate.
+# ---- confirmation -----------------------------------------------------------------------
 
-    Policy thresholds are in USD, so the registered amount is converted before any decision; a
-    charge with no rate in the allowed days is marked not convertible for the reply to say so.
 
-    Returns:
-        The USD amount, or None when it is not convertible.
+def _confirm(session: Session, case: Case, redacted: str, pii_counts: dict[str, int]) -> Facts:
+    """Runs the pending action of the case, and only that one, once the customer confirms.
+
+    A confirmation with nothing pending runs nothing. The pending action is the one stored when
+    the policy decided, on the charge identified then, so a "sí" can never widen it.
     """
-    on = datetime.fromisoformat(tx["timestamp"]).date()
-    local = local_currency(profile["country_code"])
-    rates = rates_near(session, on, {(tx["currency"], "USD"), (tx["currency"], local)})
-    tx["amount_usd"] = to_usd(tx["amount"], tx["currency"], on, rates)
-    tx["amount_display"] = asdict(display_amount(tx["amount"], tx["currency"], local, on, rates))
-    return tx["amount_usd"]
-
-
-def _escalate(
-    session: Session, case: Case, reason: str, recommended: str | None, facts: Facts
-) -> Facts:
-    T.escalate_to_human(session, case.id, reason, recommended)
-    facts["outcome"] = "escalated"
-    facts["escalation_reason"] = reason
-    facts["recommended_action"] = recommended
-    return facts
-
-
-def _base_facts(
-    ex: IntentExtraction, tx: dict[str, Any] | None, decision: PolicyDecision | None
-) -> Facts:
-    return {
-        "intent": ex.intent,
-        "transaction": tx,
-        "autonomy_level": decision.level if decision else "L0",
-        "actions_taken": [],
-    }
-
-
-# ---- sub-agents -------------------------------------------------------------------------
-
-
-def handle_blocked_purchase(
-    session: Session,
-    deps: AgentDeps,
-    case: Case,
-    ex: IntentExtraction,
-    profile: dict[str, Any],
-    confirm: bool,
-) -> Facts:
-    """Checks a blocked purchase and hands it to a human, who decides whether to release it.
-
-    All sub-agents share one contract: they receive the open session, the agent dependencies,
-    the case, the validated extraction, the customer profile and the confirmation flag, and
-    return the facts the reply is written from.
-
-    Returns:
-        Facts with at least intent, outcome, autonomy_level and actions_taken.
-    """
-    tx = _find_tx(session, deps, case, ex)
-    if tx is None:
-        facts = _base_facts(ex, None, None)
-        return _escalate(
-            session, case, "transaction not found for blocked_purchase", "manual lookup", facts
-        )
-    decision = _decide(session, deps, case, ex, tx, profile)
-    facts = _base_facts(ex, tx, decision)
-
-    if decision.escalate:
-        return _escalate(session, case, decision.reason, "review and unblock if legitimate", facts)
-    # The dataset records a blocked purchase as Declined.
-    if tx["status"] != "Declined":
-        facts["outcome"] = "inform"
-        facts["note"] = "transaction is not blocked"
-        case.status = "closed"
+    pending = case.recommended_action if case.status == "awaiting_confirmation" else None
+    write_audit(
+        session,
+        "agent",
+        "confirm",
+        case.id,
+        {"redacted_text": redacted[:500], "pii": pii_counts},
+        {"pending_action": pending, "transaction_id": case.transaction_id},
+    )
+    facts: Facts = {"intent": case.intent, "action": pending, "actions_taken": []}
+    if pending not in CONFIRMED_TOOLS or case.transaction_id is None:
+        facts["outcome"] = "no_pending_action"
         return facts
-    # No tool releases a blocked purchase, because releasing it moves money.
-    case.autonomy_level = facts["autonomy_level"] = "L3"
-    return _escalate(
-        session, case, "releasing a blocked purchase needs a human", "unblock if legitimate", facts
-    )
-
-
-def handle_unrecognized_charge(
-    session: Session,
-    deps: AgentDeps,
-    case: Case,
-    ex: IntentExtraction,
-    profile: dict[str, Any],
-    confirm: bool,
-) -> Facts:
-    """Freezes the card and opens a dispute, if policy allows.
-
-    All sub-agents share one contract: they receive the open session, the agent dependencies,
-    the case, the validated extraction, the customer profile and the confirmation flag, and
-    return the facts the reply is written from.
-
-    Returns:
-        Facts with at least intent, outcome, autonomy_level and actions_taken.
-    """
-    tx = _find_tx(session, deps, case, ex)
-    if tx is None:
-        facts = _base_facts(ex, None, None)
-        return _escalate(
-            session, case, "transaction not found for unrecognized_charge", "manual lookup", facts
-        )
-    decision = _decide(session, deps, case, ex, tx, profile)
-    facts = _base_facts(ex, tx, decision)
-    pol = deps.policy
-
-    # Freezing the card is reversible and protective: do it whenever allowed,
-    # even before escalating.
-    if pol.can_execute("freeze_card", decision):
-        T.freeze_card(session, case.customer_id, case.id, ex.intent)
-        facts["actions_taken"].append("freeze_card")
-    if pol.can_execute("open_dispute", decision):
-        T.open_dispute(
-            session, tx["tx_id"], case.id, ex.intent, "customer does not recognize charge"
-        )
-        facts["actions_taken"].append("open_dispute")
-
-    if decision.escalate:
-        return _escalate(session, case, decision.reason, "review dispute", facts)
-
-    facts["action_taken"] = "open_dispute"
-    facts["outcome"] = "auto_resolved"
-    case.status = "auto_resolved"
+    for tool in CONFIRMED_TOOLS[pending]:
+        if tool == "open_dispute":
+            res = T.open_dispute(
+                session, case.transaction_id, case.id, case.intent, f"customer confirmed {pending}"
+            )
+        else:
+            res = T.freeze_card(session, case.customer_id, case.id, case.intent)
+        if res.ok:
+            facts["actions_taken"].append(tool)
+    case.status = "registered"
+    facts["outcome"] = "registered"
     return facts
 
 
-def handle_duplicate_charge(
-    session: Session,
-    deps: AgentDeps,
-    case: Case,
-    ex: IntentExtraction,
-    profile: dict[str, Any],
-    confirm: bool,
-) -> Facts:
-    """Confirms two identical charges and hands the reversal to a human.
+# ---- helpers ----------------------------------------------------------------------------
 
-    All sub-agents share one contract: they receive the open session, the agent dependencies,
-    the case, the validated extraction, the customer profile and the confirmation flag, and
-    return the facts the reply is written from.
 
-    Returns:
-        Facts with at least intent, outcome, autonomy_level and actions_taken.
-    """
-    res = T.lookup_transaction(
-        session, deps.clock, case.customer_id, ex.amount, ex.merchant, case_id=case.id
-    )
-    matches = res.data.get("matches", []) if res.ok else []
-    if len(matches) < 2:
-        facts = _base_facts(ex, matches[0] if matches else None, None)
-        return _escalate(
-            session,
-            case,
-            "could not confirm two charges with same amount and merchant",
-            "manual review of duplicate",
-            facts,
+def _open_case(
+    session: Session, customer_id: str, case_id: str | None, intent: str, language: Language
+) -> Case:
+    if case_id is None:
+        case = Case(
+            id=f"CASE-{uuid.uuid4().hex[:10].upper()}",
+            customer_id=customer_id,
+            intent=intent,
+            language=language,
+            status="open",
+            trace_id=trace_id_var.get(),
         )
-    tx = matches[0]
-    case.transaction_id = tx["tx_id"]
-    decision = _decide(session, deps, case, ex, tx, profile)
-    facts = _base_facts(ex, tx, decision)
-    facts["duplicate_of"] = matches[1]["tx_id"]
-    if decision.escalate:
-        return _escalate(session, case, decision.reason, "reverse duplicate", facts)
-    # No tool reverses a charge, because reversing it moves money.
-    case.autonomy_level = facts["autonomy_level"] = "L3"
-    return _escalate(
-        session, case, "reversing a duplicate charge needs a human", "reverse duplicate", facts
-    )
+        session.add(case)
+        session.flush()
+        return case
+    case = _own_case(session, customer_id, case_id)
+    case.intent, case.language = intent, language
+    return case
 
 
-def handle_lost_or_stolen(
-    session: Session,
-    deps: AgentDeps,
-    case: Case,
-    ex: IntentExtraction,
-    profile: dict[str, Any],
-    confirm: bool,
-) -> Facts:
-    """Freezes the card; freezing is reversible and always protective.
-
-    All sub-agents share one contract: they receive the open session, the agent dependencies,
-    the case, the validated extraction, the customer profile and the confirmation flag, and
-    return the facts the reply is written from.
-
-    Returns:
-        Facts with at least intent, outcome, autonomy_level and actions_taken.
-    """
-    decision = _decide(session, deps, case, ex, None, profile)
-    # Freezing is reversible and protective, so it runs even when a hard rule would escalate.
-    facts = _base_facts(ex, None, decision)
-    T.freeze_card(session, case.customer_id, case.id, ex.intent)
-    facts["actions_taken"].append("freeze_card")
-    facts["action_taken"] = "freeze_card"
-    facts["outcome"] = "auto_resolved"
-    case.status = "auto_resolved"
-    case.autonomy_level = "L1"
-    return facts
+def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
+    found = session.get(Case, case_id)
+    # Same answer for "missing" and "not yours", so case ids cannot be probed.
+    if found is None or found.customer_id != customer_id:
+        raise AppError("case_not_found", f"Case {case_id} not found.", 404)
+    return found
 
 
-def handle_general_inquiry(
-    session: Session,
-    deps: AgentDeps,
-    case: Case,
-    ex: IntentExtraction,
-    profile: dict[str, Any],
-    confirm: bool,
-) -> Facts:
-    """Answers informational requests without taking any action (L0).
+def _reply(
+    deps: AgentDeps, redacted: str, facts: Facts, language: Language
+) -> tuple[str, LLMCallStats]:
+    # The urgent card block redirect must say the same thing every time, so it is not written
+    # by the LLM.
+    if facts.get("redirect") == "card_block":
+        return template_reply(facts, language), LLMCallStats(fallback=True)
+    return deps.llm.compose(redacted, _reply_facts(facts), language)
 
-    All sub-agents share one contract: they receive the open session, the agent dependencies,
-    the case, the validated extraction, the customer profile and the confirmation flag, and
-    return the facts the reply is written from.
 
-    Returns:
-        Facts with at least intent, outcome, autonomy_level and actions_taken.
-    """
-    facts = _base_facts(ex, None, None)
-    facts["outcome"] = "inform"
-    facts["profile_hint"] = {
-        "segment": profile.get("segment"),
-        "customer_status": profile.get("customer_status"),
+def _reply_facts(facts: Facts) -> Facts:
+    """What the reply is written from: what happened to the customer's case, never the policy
+    (rules, thresholds or autonomy levels), which the LLM does not see (TRZ-17 CA7)."""
+    tx = facts.get("transaction")
+    shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
+    return {
+        "outcome": facts["outcome"],
+        "action": facts.get("action"),
+        "transaction": shown or None,
+        "identification": facts.get("identification"),
+        "options": facts.get("options", []),
+        "actions_taken": facts["actions_taken"],
     }
-    case.status = "closed"
-    case.autonomy_level = "L0"
-    return facts
 
 
-SubAgent = Callable[[Session, AgentDeps, Case, IntentExtraction, dict[str, Any], bool], Facts]
-
-SUBAGENTS: dict[str, SubAgent] = {
-    "blocked_purchase": handle_blocked_purchase,
-    "unrecognized_charge": handle_unrecognized_charge,
-    "duplicate_charge": handle_duplicate_charge,
-    "lost_or_stolen_card": handle_lost_or_stolen,
-    "general_inquiry": handle_general_inquiry,
-    "unknown": handle_general_inquiry,
-}
-
-
-def _summary(ex: IntentExtraction, facts: Facts) -> str:
-    tx = facts.get("transaction") or {}
-    parts = [f"intent={ex.intent}"]
-    if tx:
-        parts.append(
-            f"tx={tx.get('tx_id')} {tx.get('amount')} {tx.get('currency')} at {tx.get('merchant')}"
-        )
-    parts.append(f"outcome={facts.get('outcome')}")
-    if facts.get("actions_taken"):
+def _summary(case: Case, facts: Facts) -> str:
+    parts = [f"intent={case.intent}", f"outcome={facts['outcome']}"]
+    if facts.get("action"):
+        parts.append(f"action={facts['action']}")
+    if case.transaction_id:
+        parts.append(f"tx={case.transaction_id}")
+    if facts["actions_taken"]:
         parts.append("actions=" + ",".join(facts["actions_taken"]))
-    if facts.get("escalation_reason"):
-        parts.append("reason=" + facts["escalation_reason"])
+    if case.escalation_reason:
+        parts.append("reason=" + case.escalation_reason)
     return " | ".join(parts)

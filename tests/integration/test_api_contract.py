@@ -105,7 +105,8 @@ def test_unhandled_error_hides_details(app: FastAPI, client: TestClient) -> None
 
 def test_customer_cannot_continue_another_customers_case(client: TestClient) -> None:
     first = client.post(
-        "/chat", json={"customer_id": "C1", "message": "my $5000 Walmart purchase was blocked"}
+        "/chat",
+        json={"customer_id": "C1", "message": "No reconozco un cargo de 5000 pesos en Walmart"},
     )
     assert first.status_code == 200
     r = client.post(
@@ -117,9 +118,11 @@ def test_customer_cannot_continue_another_customers_case(client: TestClient) -> 
 
 
 def test_operator_note_is_redacted_in_audit_log(client: TestClient, schema: SchemaUrls) -> None:
-    # 5000 USD is over the L2 limit, so the case is escalated and waits for a human.
+    # The only charge was declined, so it is not a candidate: no charge fits the clues, and the
+    # case is escalated and waits for a person.
     chat = client.post(
-        "/chat", json={"customer_id": "C1", "message": "my $5000 Walmart purchase was blocked"}
+        "/chat",
+        json={"customer_id": "C1", "message": "No reconozco un cargo de 5000 pesos en Walmart"},
     )
     assert chat.json()["outcome"] == "escalated"
     case_id = chat.json()["case_id"]
@@ -142,7 +145,8 @@ def test_operator_note_is_redacted_in_audit_log(client: TestClient, schema: Sche
 
 
 def test_decision_on_non_escalated_case_conflicts(client: TestClient) -> None:
-    chat = client.post("/chat", json={"customer_id": "C1", "message": "what is my balance?"})
+    chat = client.post("/chat", json={"customer_id": "C1", "message": "¿Cuál es mi saldo?"})
+    assert chat.json()["outcome"] == "abstained"
     r = client.post(f"/cases/{chat.json()['case_id']}/decision", json={"decision": "approve"})
     assert r.status_code == 409
     _assert_envelope(r.json(), "case_not_escalated")

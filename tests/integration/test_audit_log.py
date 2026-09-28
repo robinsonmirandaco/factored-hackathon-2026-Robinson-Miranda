@@ -2,14 +2,12 @@
 (CA2), the plain-language history (CA4) and the absence of model reasoning (CA5)."""
 
 import dataclasses
-import json
 import shutil
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,58 +18,32 @@ from app.adapters.db.audit import REASONING_KEYS
 from app.adapters.db.migrations import MIGRATIONS_DIR, apply_migrations
 from app.adapters.db.models import AuditRecord, Case
 from app.adapters.db.session import Database, SchemaUrls
-from app.adapters.llm import EXTRACT_SYSTEM, VALIDATE_SYSTEM, LLMClient
+from app.adapters.llm import load_comprehension_prompt
 from app.api.deps import get_analyst_session
 from app.core.config import Settings
 from app.main import create_app
+from tests.agent_support import fake_llm, llm_settings, reading
 from tests.serving_data import card, customer, load, transaction
 
 pytestmark = pytest.mark.integration
 
+PROMPT_VERSION = load_comprehension_prompt(Path("config/prompts/comprehension.yaml")).version
 MESSAGE = "No reconozco el cargo de 100 dólares en Walmart"
 
 
-def _fake_llm(settings: Settings) -> LLMClient:
-    def handler(request: httpx.Request) -> httpx.Response:
-        system = json.loads(request.content)["messages"][0]["content"]
-        if system.startswith(EXTRACT_SYSTEM[:40]):
-            content = json.dumps(
-                {
-                    "intent": "unrecognized_charge",
-                    "amount": 100,
-                    "merchant": "Walmart",
-                    "language": "es",
-                    "customer_claims_legitimate": False,
-                    "confidence": 0.9,
-                }
-            )
-        elif system.startswith(VALIDATE_SYSTEM[:40]):
-            content = '{"ok": true, "reason": ""}'
-        else:
-            content = "Bloqueamos la tarjeta y abrimos la disputa."
-        usage = {"prompt_tokens": 120, "completion_tokens": 30}
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": content}}], "usage": usage}
-        )
-
-    http = httpx.Client(base_url=settings.llm_base_url, transport=httpx.MockTransport(handler))
-    return LLMClient(settings, http_client=http)
+ANSWER = reading(
+    "unrecognized_charge",
+    amount={"value": 100, "currency": "USD", "approximate": False, "evidence": "100 dólares"},
+    merchant_hint={"value": "Walmart", "evidence": "en Walmart"},
+)
 
 
 @pytest.fixture
 def app(database_url: str, schema: SchemaUrls) -> FastAPI:
-    settings = Settings(
-        database_url=database_url,
-        llm_enabled=True,
-        llm_provider="local",
-        llm_base_url="http://llm.test/v1",
-        llm_model_primary="test-model",
-        anthropic_api_key="",
-        log_level="WARNING",
-    )
+    settings = llm_settings(database_url, log_level="WARNING")
     app = create_app(settings)
     runtime = app.state.runtime
-    agent = dataclasses.replace(runtime.agent, llm=_fake_llm(settings))
+    agent = dataclasses.replace(runtime.agent, llm=fake_llm(settings, ANSWER))
     app.state.runtime = dataclasses.replace(runtime, agent=agent)
     load(
         schema.admin,
@@ -109,7 +81,8 @@ def _two_turns(client: TestClient) -> tuple[str, str, str]:
     assert first.status_code == 200, first.text
     case_id = first.json()["case_id"]
     second = client.post(
-        "/chat", json={"customer_id": "C1", "message": "sí, confirmo", "case_id": case_id}
+        "/chat",
+        json={"customer_id": "C1", "message": "sí, confirmo", "case_id": case_id, "confirm": True},
     )
     assert second.status_code == 200, second.text
     return case_id, first.headers["x-trace-id"], second.headers["x-trace-id"]
@@ -146,12 +119,12 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
 ) -> None:
     case_id, _, _ = _two_turns(client)
     rows = _rows(schema, case_id)
-    llm_steps = {"extract", "compose"}
+    llm_steps = {"comprehend", "compose"}
 
-    assert {r.action for r in rows} >= {"extract", "decide", "freeze_card", "compose"}
+    assert {r.action for r in rows} >= {"comprehend", "decide", "confirm", "open_dispute"}
     for r in rows:
         assert r.actor and r.action and r.result is not None, r.action
-        assert r.policy_version == "1", r.action
+        assert r.policy_version == "2026.09.1", r.action
         assert r.verified is None  # the read-back arrives with TRZ-19
         if r.action in llm_steps:
             assert r.model == "test-model"
@@ -159,7 +132,9 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
             assert r.output_tokens and r.output_tokens > 0
             assert r.cost_usd and r.cost_usd > 0
             assert r.latency_ms is not None
-            assert r.prompt_version and r.prompt_version.startswith("sha256:")
+            # Comprehension cites its versioned prompt file; compose its content hash.
+            versioned = r.prompt_version == PROMPT_VERSION
+            assert versioned or (r.prompt_version or "").startswith("sha256:"), r.action
         else:
             assert (r.model, r.prompt_version, r.input_tokens, r.cost_usd) == (
                 None,
@@ -170,7 +145,7 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
     compose = next(r for r in rows if r.action == "compose")
     # Compose and its validator are two prompts, and the row cites both.
     assert "+" in (compose.prompt_version or "")
-    extract = next(r for r in rows if r.action == "extract")
+    extract = next(r for r in rows if r.action == "comprehend")
     assert extract.payload and "redacted_text" in extract.payload
 
 
@@ -237,7 +212,7 @@ def test_the_migration_keeps_rows_written_before_it(tmp_path: Path) -> None:
                 )
             )
 
-        assert apply_migrations(admin, app) == ["0005_audit_fields"]
+        assert apply_migrations(admin, app) == ["0005_audit_fields", "0006_case_language"]
 
         with engine.connect() as conn:
             row = conn.execute(
@@ -274,7 +249,7 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
         "O sistema entendeu a mensagem do cliente como «cobrança não reconhecida»."
     )
     decide = next(e for e in es.json() if e["action"] == "decide")
-    assert decide["text"].startswith("La política v1")
+    assert decide["text"].startswith("La política v2026.09.1")
     assert all(e["text"] != p["text"] for e, p in zip(es.json(), pt.json(), strict=True))
     assert "Walmart" not in es.text and "100" not in es.text
 

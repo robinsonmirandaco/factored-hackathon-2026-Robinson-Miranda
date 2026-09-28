@@ -3,17 +3,13 @@ or of the customer record reaches a prompt or the audit log."""
 
 import json
 
-import httpx
 import pytest
 from sqlalchemy import select
 
 from app.adapters.db.models import AuditRecord
 from app.adapters.db.session import Database, SchemaUrls
-from app.adapters.llm import EXTRACT_SYSTEM, VALIDATE_SYSTEM, LLMClient
-from app.core.config import Settings
-from app.domain.clock import SimulatedClock
-from app.domain.policy import PolicyEngine
-from app.services.agent import AgentDeps, handle_message
+from app.services.agent import handle_message
+from tests.agent_support import agent_deps, fake_llm, llm_settings, reading
 from tests.serving_data import card, customer, load, transaction
 
 pytestmark = pytest.mark.integration
@@ -35,43 +31,10 @@ MESSAGE_PII = [
 ]
 
 
-def _fake_llm(settings: Settings, sent: list[str]) -> LLMClient:
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        sent.append(json.dumps(body, ensure_ascii=False))
-        system = body["messages"][0]["content"]
-        if system.startswith(EXTRACT_SYSTEM[:40]):
-            content = json.dumps(
-                {
-                    "intent": "unrecognized_charge",
-                    "amount": 5000,
-                    "merchant": "Walmart",
-                    "language": "es",
-                    "customer_claims_legitimate": False,
-                    "confidence": 0.9,
-                }
-            )
-        elif system.startswith(VALIDATE_SYSTEM[:40]):
-            content = '{"ok": true, "reason": ""}'
-        else:
-            content = "Revisaremos el cargo y te avisaremos."
-        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
-
-    http = httpx.Client(base_url=settings.llm_base_url, transport=httpx.MockTransport(handler))
-    return LLMClient(settings, http_client=http)
-
-
 def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
     schema: SchemaUrls, database_url: str
 ) -> None:
-    settings = Settings(
-        database_url=database_url,
-        llm_enabled=True,
-        llm_provider="local",
-        llm_base_url="http://llm.test/v1",
-        llm_model_primary="test-model",
-        anthropic_api_key="",
-    )
+    settings = llm_settings(database_url)
     load(
         schema.admin,
         [customer("C1", first_name=FIRST_NAME, document_number=DOCUMENT_NUMBER)],
@@ -83,11 +46,12 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
         ],
     )
     sent: list[str] = []
-    deps = AgentDeps(
-        policy=PolicyEngine.from_file(settings.policy_path),
-        llm=_fake_llm(settings, sent),
-        clock=SimulatedClock(settings.trazo_now),
+    answer = reading(
+        "unrecognized_charge",
+        amount={"value": 5000, "currency": None, "approximate": False, "evidence": "5000"},
+        merchant_hint={"value": "Walmart", "evidence": "en Walmart"},
     )
+    deps = agent_deps(settings, fake_llm(settings, answer, sent))
     app_db = Database(schema.app)
     try:
         with app_db.session(customer_id="C1") as s:
@@ -96,7 +60,7 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
         app_db.dispose()
 
     assert not result.llm_fallback
-    assert len(sent) == 3  # extract, compose, validate
+    assert len(sent) == 3  # comprehend, compose, validate
     for body in sent:
         assert FIRST_NAME not in body
         assert DOCUMENT_NUMBER not in body
@@ -112,7 +76,7 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
                 .all()
             )
             logged = [json.dumps([r.payload, r.result], ensure_ascii=False) for r in rows]
-            extract_input = next(r.payload for r in rows if r.action == "extract")
+            extract_input = next(r.payload for r in rows if r.action == "comprehend")
     finally:
         owner.dispose()
 

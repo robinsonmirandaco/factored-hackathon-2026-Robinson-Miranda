@@ -44,8 +44,8 @@ def db(schema: SchemaUrls):
 
 def test_freeze_card_blocks_active_cards_once(db: Database) -> None:
     with db.session(customer_id="C1") as s:
-        first = freeze_card(s, "C1", "K1", "lost_or_stolen_card")
-        replay = freeze_card(s, "C1", "K1", "lost_or_stolen_card")
+        first = freeze_card(s, "C1", "K1", "unrecognized_charge")
+        replay = freeze_card(s, "C1", "K1", "unrecognized_charge")
     with db.session(customer_id="C1") as s:
         statuses = dict(s.execute(text("SELECT product_id, product_status FROM products")).all())
         blocks = s.execute(text("SELECT product_id, status_before FROM card_blocks")).all()
