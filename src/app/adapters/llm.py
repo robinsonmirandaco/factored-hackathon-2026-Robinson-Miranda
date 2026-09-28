@@ -559,7 +559,7 @@ class LLMClient:
 
 _REPLIES: dict[str, dict[str, str]] = {
     "es": {
-        "registered": "Registramos tu aclaración sobre el cargo con el folio {folio}.",
+        "registered_verified": "Registramos tu aclaración sobre el cargo con el folio {folio}.",
         "registered_block": (
             "Registramos tu aclaración sobre el cargo con el folio {folio} y bloqueamos la "
             "tarjeta de ese cargo."
@@ -573,6 +573,16 @@ _REPLIES: dict[str, dict[str, str]] = {
             "bloquear la tarjeta de ese cargo. Bloquéala de inmediato con la opción de bloqueo "
             "de la app de tu banco o llamando a la línea de bloqueo que aparece en el sitio "
             "oficial del banco."
+        ),
+        "failed": (
+            "No pudimos confirmar que tu aclaración quedara registrada, así que pasamos tu caso "
+            "a una analista con toda la información. Ella te contactará."
+        ),
+        "failed_card_block": (
+            "No pudimos confirmar que tu aclaración quedara registrada ni que tu tarjeta quedara "
+            "bloqueada, así que pasamos tu caso a una analista. Bloquea tu tarjeta de inmediato "
+            "con la opción de bloqueo de la app de tu banco o llamando a la línea de bloqueo que "
+            "aparece en el sitio oficial del banco."
         ),
         "confirm_register": "Responde sí para registrar la aclaración de este cargo.",
         "confirm_block": (
@@ -618,7 +628,9 @@ _REPLIES: dict[str, dict[str, str]] = {
         "no_pending_choice": "No hay opciones esperando tu elección en este caso.",
     },
     "pt": {
-        "registered": "Registramos a sua contestação da cobrança com o protocolo {folio}.",
+        "registered_verified": (
+            "Registramos a sua contestação da cobrança com o protocolo {folio}."
+        ),
         "registered_block": (
             "Registramos a sua contestação da cobrança com o protocolo {folio} e bloqueamos o "
             "cartão dessa cobrança."
@@ -632,6 +644,17 @@ _REPLIES: dict[str, dict[str, str]] = {
             "conseguimos bloquear o cartão dessa cobrança. Bloqueie-o agora mesmo pela opção de "
             "bloqueio do app do seu banco ou ligando para a central de bloqueio indicada no site "
             "oficial do banco."
+        ),
+        "failed": (
+            "Não conseguimos confirmar que a sua contestação ficou registrada, então "
+            "encaminhamos o seu caso a uma analista com todas as informações. Ela vai entrar em "
+            "contato."
+        ),
+        "failed_card_block": (
+            "Não conseguimos confirmar que a sua contestação ficou registrada nem que o seu "
+            "cartão ficou bloqueado, então encaminhamos o seu caso a uma analista. Bloqueie o "
+            "seu cartão agora mesmo pela opção de bloqueio do app do seu banco ou ligando para a "
+            "central de bloqueio indicada no site oficial do banco."
         ),
         "confirm_register": "Responda sim para registrar a contestação desta cobrança.",
         "confirm_block": (
@@ -693,7 +716,9 @@ def reply_key(facts: dict[str, Any]) -> str:
         A key of the reply table.
     """
     outcome = facts.get("outcome")
-    if outcome == "registered":
+    if outcome == "failed":
+        return "failed_card_block" if facts.get("redirect") == "card_block" else "failed"
+    if outcome == "registered_verified":
         if "block_card" in facts.get("actions_taken", []):
             return "registered_block"
         if facts.get("redirect") == "card_block":

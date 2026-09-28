@@ -52,6 +52,7 @@ def write_audit(
     idempotency_key: str | None = None,
     customer_id: str | None = None,
     llm: LLMCallStats | None = None,
+    verified: bool | None = None,
 ) -> AuditRecord:
     """Appends one row to the audit log under the current trace_id.
 
@@ -71,6 +72,7 @@ def write_audit(
         idempotency_key: Unique key for state-changing actions.
         customer_id: Customer the row is about; defaults to the customer of the session.
         llm: Usage of the LLM calls made by the step; None when the step made none.
+        verified: Outcome of reading an action back; None on rows that are not a read-back.
 
     Returns:
         The stored audit record.
@@ -92,6 +94,7 @@ def write_audit(
         latency_ms=latency_ms,
         idempotency_key=idempotency_key,
         policy_version=session.info.get("policy_version"),
+        verified=verified,
     )
     if llm is not None:
         # Cached prompt tokens are still prompt tokens; the cost already prices them apart.

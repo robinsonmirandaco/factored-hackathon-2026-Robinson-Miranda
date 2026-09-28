@@ -54,7 +54,7 @@ turns:
   confirm: true
   expect:
     intent: billing_error_duplicate
-    outcome: registered
+    outcome: registered_verified
     autonomy_level: L1
     actions_taken:
     - register_dispute

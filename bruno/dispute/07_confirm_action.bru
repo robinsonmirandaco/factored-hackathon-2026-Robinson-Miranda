@@ -25,7 +25,7 @@ script:post-response {
 tests {
   test("registered with a folio", function() {
     expect(res.getStatus()).to.equal(200);
-    expect(res.getBody().outcome).to.equal("registered");
+    expect(res.getBody().outcome).to.equal("registered_verified");
     expect(res.getBody().actions_taken).to.eql(["register_dispute"]);
     expect(res.getBody().dispute_folio).to.match(/^DSP-2026-\d{5}$/);
   });

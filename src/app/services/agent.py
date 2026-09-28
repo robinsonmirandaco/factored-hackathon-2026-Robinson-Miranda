@@ -10,7 +10,8 @@
   5. recognition (design 6.4): an unrecognized charge is shown in detail from the database,
      and the customer says whether they recognize it before anything is decided
   6. policy decision on the identified charge, compared in USD
-  7. nothing runs until the customer confirms the exact pending action of the case
+  7. nothing runs until the customer confirms the exact pending action of the case; each action
+     is read back from the database, and only a verified one is confirmed to the customer
   8. reply from the facts; every step lands in the audit log under one trace_id
 
 The LLM never picks tools nor decides: tool selection is code and the decision is the policy.
@@ -59,6 +60,7 @@ from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
 from app.services.identification import candidate_of, identify_charge, load_candidates
 from app.services.recognition import charge_detail
+from app.services.verification import verify_block, verify_dispute
 
 Facts = dict[str, Any]
 
@@ -66,6 +68,8 @@ Facts = dict[str, Any]
 UNREAD_INTENT = "unread"
 # The option a customer picks when none of the charges shown is the one.
 NONE_OF_THESE = "none"
+# Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
+VERIFICATION_FAILED_REASON = "verification.registration_failed"
 
 # The actions that wait for the customer's confirmation, and whether confirming blocks the card
 # of the charge. The offered block is not run by the "sí": the customer asks for it apart.
@@ -716,6 +720,11 @@ def _confirm(
     case runs nothing. One already executed runs its tools again, which return their stored
     results: the same folio, no new rows (CA4). The action row is locked, so two confirmations
     sent at once run one after the other.
+
+    Every action that reported success is read back (TRZ-19). When all match, the case is
+    `registered_verified`. When one does not, the case is `failed` and escalated, and the
+    customer gets no confirmation; without the card and without a verified block, the reply
+    still sends the customer to block it.
     """
     row = session.execute(
         select(CaseAction).where(CaseAction.id == action_id).with_for_update()
@@ -765,21 +774,51 @@ def _confirm(
             )
     except T.OwnershipError:
         return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
-    facts["actions_taken"].append("register_dispute")
-    facts["dispute"] = {"folio": dispute.data["folio"], "due_date": dispute.data["due_date"]}
-    if block is not None:
-        if block.ok:
-            facts["actions_taken"].append("block_card")
-        else:
+    backed = _deadline(deps, customer, language)(deps.clock.now.date())
+    checks = [
+        verify_dispute(
+            session,
+            case.id,
+            customer.customer_id,
+            row.transaction_id,
+            case.intent,
+            deps.clock.now,
+            backed.due if isinstance(backed, PolicyDeadline) else None,
+            str(dispute.data.get("folio", "")),
+        )
+    ]
+    if block is not None and block.ok:
+        checks.append(
+            verify_block(
+                session,
+                case.id,
+                str(block.data.get("product_id", "")),
+                str(block.data.get("status_before", "")),
+            )
+        )
+    verified = [c.action for c in checks if c.verified]
+    if block is not None and "block_card" not in verified:
+        if not block.ok:
             facts["card_not_blocked"] = block.message
-            # Without the card and without a block, the customer still has to stop the card.
-            if case.card_in_possession is False:
-                facts["redirect"] = "card_block"
+        # Without the card and without a verified block, the customer still has to stop it.
+        if case.card_in_possession is False:
+            facts["redirect"] = "card_block"
     # A replay reports what was done and leaves the case as later turns left it.
-    if row.status == "pending":
+    first_run = row.status == "pending"
+    if first_run:
         row.status, row.resolved_at = "executed", utcnow()
-        case.status = "registered"
-    facts["outcome"] = "registered"
+    if len(verified) < len(checks):
+        # Nothing is confirmed to the customer: the case goes to a person with the reason.
+        case.autonomy_level = deps.policy.config.action_level["escalate"]
+        T.escalate_to_human(session, case.id, VERIFICATION_FAILED_REASON, status="failed")
+        facts["unverified"] = [c.action for c in checks if not c.verified]
+        facts["outcome"] = "failed"
+        return facts
+    facts["actions_taken"] = verified
+    facts["dispute"] = {"folio": dispute.data["folio"], "due_date": dispute.data["due_date"]}
+    if first_run:
+        case.status = "registered_verified"
+    facts["outcome"] = "registered_verified"
     return facts
 
 
@@ -837,9 +876,10 @@ def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
 def _reply(
     deps: AgentDeps, redacted: str, facts: Facts, language: Language
 ) -> tuple[str, LLMCallStats]:
-    # The urgent card block redirect must say the same thing every time, and a security stop
-    # must not send the text of the turn to the LLM, so neither is written by it.
-    if facts.get("redirect") == "card_block" or facts["outcome"] == "security_blocked":
+    # The urgent card block redirect must say the same thing every time, a security stop must
+    # not send the text of the turn to the LLM, and a failed read-back confirms nothing, so none
+    # of them is written by it.
+    if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
         return template_reply(facts, language), LLMCallStats(fallback=True)
     # The recognition step is written by code by design (TRZ-16), not as an LLM fallback.
     if facts["outcome"] == "recognizing":

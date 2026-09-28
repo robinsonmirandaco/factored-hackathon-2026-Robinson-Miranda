@@ -60,7 +60,7 @@ turns:
   confirm: true
   expect:
     intent: unrecognized_charge
-    outcome: registered
+    outcome: registered_verified
     autonomy_level: L2
     actions_taken:
     - register_dispute

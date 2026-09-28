@@ -83,8 +83,8 @@ class Case(Base):
     transaction_id: Mapped[str | None] = mapped_column(Text)
     intent: Mapped[str] = mapped_column(Text)
     # open | identifying | recognizing | recognized_closed | awaiting_confirmation |
-    # registered | pending_analyst_approval | escalated | security_blocked | abstained |
-    # closed | approved | rejected | expired
+    # registered_verified | failed | pending_analyst_approval | escalated | security_blocked |
+    # abstained | closed | approved | rejected | expired
     status: Mapped[str] = mapped_column(Text, default="open")
     # es or pt; with the intent, the autonomy cell of the case.
     language: Mapped[str | None] = mapped_column(Text)
@@ -118,6 +118,7 @@ class Dispute(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     amount: Mapped[float | None] = mapped_column(Money)
     currency: Mapped[str | None] = mapped_column(Text)
+    # opened | verification_failed (the read-back after registering did not match)
     status: Mapped[str] = mapped_column(Text, default="opened")
     due_date: Mapped[date | None] = mapped_column(Date)
     # Simulated "now" of the case at registration; the open-dispute rule counts on it.
@@ -173,7 +174,7 @@ class AuditRecord(Base):
     result: Mapped[dict | None] = mapped_column(JSON)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    # Null until the post-action read-back exists (TRZ-19).
+    # Outcome of a read-back after acting (TRZ-19); null on every other row.
     verified: Mapped[bool | None] = mapped_column(Boolean)
     input_tokens: Mapped[int | None] = mapped_column(Integer)
     output_tokens: Mapped[int | None] = mapped_column(Integer)

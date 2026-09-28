@@ -132,7 +132,7 @@ def test_a_customer_who_switches_language_is_answered_in_the_new_one(
             "confirm_action_id": pending["pending_action"]["action_id"],
         },
     ).json()
-    assert third["outcome"] == "registered"
+    assert third["outcome"] == "registered_verified"
     assert _in(third["reply"], "pt")
 
     stored, decisions = _case(schema, case_id)

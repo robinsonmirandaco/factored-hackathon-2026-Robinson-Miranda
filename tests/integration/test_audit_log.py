@@ -148,11 +148,13 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
         "decide",
         "confirm",
         "register_dispute",
+        "verify_action",
     }
     for r in rows:
         assert r.actor and r.action and r.result is not None, r.action
         assert r.policy_version == "2026.09.1", r.action
-        assert r.verified is None  # the read-back arrives with TRZ-19
+        # Only the read-back after acting says whether an action was verified (TRZ-19).
+        assert r.verified is (True if r.action == "verify_action" else None), r.action
         if by_llm(r):
             assert r.model == "test-model"
             assert r.input_tokens and r.input_tokens > 0

@@ -17,9 +17,9 @@ _HISTORY = text(
     "FROM case_history WHERE case_id = :case_id ORDER BY id"
 )
 
-# A person decides these cases: an escalation, an action prepared for analyst approval, and a
-# case stopped by a security rule.
-HANDOFF_STATUSES = ("escalated", "pending_analyst_approval", "security_blocked")
+# A person decides these cases: an escalation, an action prepared for analyst approval, a case
+# stopped by a security rule, and an action whose read-back did not match.
+HANDOFF_STATUSES = ("escalated", "pending_analyst_approval", "security_blocked", "failed")
 
 _STATUS_AFTER_DECISION = {
     "approve": "approved",

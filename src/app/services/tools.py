@@ -36,7 +36,7 @@ from app.domain.clock import SimulatedClock
 from app.domain.policy_passages import PolicyDeadline, Unsupported
 
 CARD_TYPES = ("credit_card", "debit_card")
-HandoffStatus = Literal["escalated", "pending_analyst_approval", "security_blocked"]
+HandoffStatus = Literal["escalated", "pending_analyst_approval", "security_blocked", "failed"]
 # Complaint subcategories that are transaction disputes (design 2.1).
 DISPUTE_SUBCATEGORIES = ("Cargo no reconocido", "Cobro indebido")
 
@@ -387,8 +387,8 @@ def escalate_to_human(
         case_id: Case to escalate; also the idempotency key.
         reason: Why it was escalated, truncated to 256 characters.
         recommended_action: What the system suggests the operator do.
-        status: escalated, pending_analyst_approval (the analyst approves a prepared action)
-            or security_blocked.
+        status: escalated, pending_analyst_approval (the analyst approves a prepared action),
+            security_blocked, or failed (an action whose read-back did not match).
 
     Returns:
         The escalation, or the stored result on a replay.

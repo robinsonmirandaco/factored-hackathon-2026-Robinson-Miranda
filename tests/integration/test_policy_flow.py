@@ -373,7 +373,7 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
     }
     second = rules_client.post("/chat", json=confirm)
     assert (second.json()["outcome"], second.json()["actions_taken"]) == (
-        "registered",
+        "registered_verified",
         ["register_dispute"],
     )
 
@@ -511,4 +511,4 @@ def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
 
     # The owner's pending action is intact: only C1 can confirm it.
     own = two_customers.post("/chat", json=confirm).json()
-    assert (own["outcome"], own["actions_taken"]) == ("registered", ["register_dispute"])
+    assert (own["outcome"], own["actions_taken"]) == ("registered_verified", ["register_dispute"])

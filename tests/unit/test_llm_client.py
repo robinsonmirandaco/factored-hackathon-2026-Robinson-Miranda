@@ -245,13 +245,13 @@ def test_complete_sends_the_temperature_to_both_providers() -> None:
     ids=["register", "register and block", "card not blocked"],
 )
 def test_the_registration_reply_gives_the_folio(facts: dict, expected: str) -> None:
-    facts = {"outcome": "registered", "dispute": {"folio": "DSP-2026-00007"}, **facts}
+    facts = {"outcome": "registered_verified", "dispute": {"folio": "DSP-2026-00007"}, **facts}
     assert template_reply(facts, "es") == expected
 
 
 def test_without_card_and_without_block_the_reply_sends_the_customer_to_block_it() -> None:
     facts = {
-        "outcome": "registered",
+        "outcome": "registered_verified",
         "actions_taken": ["register_dispute"],
         "card_not_blocked": "card_not_active",
         "redirect": "card_block",
@@ -260,3 +260,14 @@ def test_without_card_and_without_block_the_reply_sends_the_customer_to_block_it
     reply = template_reply(facts, "pt")
     assert "protocolo DSP-2026-00007" in reply
     assert "central de bloqueio" in reply
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+@pytest.mark.parametrize("redirect", [None, "card_block"])
+def test_a_failed_read_back_confirms_nothing(language: str, redirect: str | None) -> None:
+    facts = {"outcome": "failed", "actions_taken": [], "redirect": redirect}
+    reply = template_reply(facts, language)
+    assert "DSP-" not in reply
+    assert ("analista" in reply) and ("Registramos" not in reply)
+    blocking = "línea de bloqueo" if language == "es" else "central de bloqueio"
+    assert (blocking in reply) == (redirect == "card_block")
