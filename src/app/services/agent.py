@@ -45,6 +45,7 @@ from app.domain.identification import (
 )
 from app.domain.language import LanguageDecision
 from app.domain.language import decide as decide_language
+from app.domain.out_of_scope import topic as out_of_scope_topic
 from app.domain.pii import redact
 from app.domain.policy import (
     AutonomyLookup,
@@ -308,6 +309,8 @@ def _understand_and_decide(
         facts = _apply(session, case, screened, None)
         if screened.action == "report_claim_status":
             facts = _claim_status(session, deps, customer, case, language, facts)
+        elif screened.action == "abstain_and_redirect" and screened.redirect is None:
+            facts["topic"] = out_of_scope_topic(redacted)
         return case, language, facts, stats
 
     policy = deps.policy.config
@@ -967,9 +970,12 @@ def _reply(
     # of them is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
-    # The recognition step is written by code by design (TRZ-16), not as an LLM fallback.
+    # The recognition step is written by code by design (TRZ-16), not as an LLM fallback. So is
+    # the redirect of a request out of scope (TRZ-23): where to go is never left to the LLM.
     if facts["outcome"] == "recognizing":
         return recognition_text(facts["charge"], language), LLMCallStats()
+    if facts["outcome"] == "abstained":
+        return template_reply(facts, language), LLMCallStats()
     body, stats = deps.llm.compose(redacted, _reply_facts(facts), language)
     text = _joined(body, note)
     if stats.fallback:

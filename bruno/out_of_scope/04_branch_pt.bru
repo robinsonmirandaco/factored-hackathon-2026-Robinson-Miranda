@@ -1,0 +1,31 @@
+meta {
+  name: a branch question in Portuguese
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Qual o horário da agência do centro?"}
+}
+
+tests {
+  test("abstained with where to go, no action", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(body.intent).to.equal("out_of_scope");
+    expect(body.outcome).to.equal("abstained");
+    expect(body.autonomy_level).to.equal("L0");
+    expect(body.actions_taken).to.eql([]);
+    expect(body.reply).to.include("site oficial");
+  });
+}

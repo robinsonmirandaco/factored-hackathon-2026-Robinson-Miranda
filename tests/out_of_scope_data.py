@@ -1,0 +1,25 @@
+"""Requests this channel does not serve, in Spanish and Portuguese (TRZ-23 CA3): two per topic,
+written for these tests and checked not to repeat any message of the evaluation splits."""
+
+PHRASES = [
+    ("es", "loan", "Quiero pedir un préstamo personal"),
+    ("es", "loan", "¿Me pueden dar un crédito hipotecario para mi casa?"),
+    ("es", "branch", "¿A qué hora abre la sucursal del centro?"),
+    ("es", "branch", "Necesito saber dónde queda la oficina más cercana"),
+    ("es", "app", "La app no me deja iniciar sesión desde ayer"),
+    ("es", "app", "No puedo entrar a la aplicación del banco"),
+    ("es", "personal_data", "Quiero cambiar mi correo registrado"),
+    ("es", "personal_data", "Necesito actualizar mi dirección y mi teléfono"),
+    ("es", "investment", "¿Cómo puedo invertir en un plazo fijo?"),
+    ("es", "investment", "Quiero abrir un CDT a seis meses"),
+    ("pt", "loan", "Quero pedir um empréstimo pessoal"),
+    ("pt", "loan", "Vocês fazem financiamento de carro?"),
+    ("pt", "branch", "Qual o horário da agência do centro?"),
+    ("pt", "branch", "Onde fica a agência mais próxima?"),
+    ("pt", "app", "Não consigo entrar no aplicativo do banco"),
+    ("pt", "app", "O app trava toda vez que abro"),
+    ("pt", "personal_data", "Quero trocar o meu e-mail do cadastro"),
+    ("pt", "personal_data", "Preciso atualizar o meu endereço e o telefone"),
+    ("pt", "investment", "Como faço para investir no CDB?"),
+    ("pt", "investment", "Quero saber sobre investimentos em renda fixa"),
+]

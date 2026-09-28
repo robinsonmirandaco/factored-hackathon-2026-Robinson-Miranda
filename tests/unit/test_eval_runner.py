@@ -19,7 +19,8 @@ def test_every_skipped_case_names_the_story_that_rewrites_it():
 
 def test_no_golden_case_is_skipped_or_a_known_failure():
     # TRZ-17 CA8: every case is rewritten for the intents and the policy of design 8; TRZ-16
-    # adds the recognition step and cases 23 to 25; TRZ-22 the claim status cases 26 to 29.
+    # adds the recognition step and cases 23 to 25; TRZ-22 the claim status cases 26 to 29;
+    # TRZ-23 case 30.
     cases = load_cases(CASES)
-    assert len(cases) == 29
+    assert len(cases) == 30
     assert [c["id"] for c in cases if "skip" in c or "known_failure" in c] == []

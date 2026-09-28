@@ -531,6 +531,9 @@ class LLMClient:
         return reply.strip(), stats
 
 
+_HERE_ES = " Por aquí atiendo aclaraciones de cargos y el estado de tus reclamos."
+_HERE_PT = " Por aqui eu atendo contestações de cobranças e o status das suas reclamações."
+
 # Words of a claim's status and last step in the fixed reply (TRZ-22).
 _CLAIM_WORDS: dict[str, dict[str, str]] = {
     "es": {
@@ -611,6 +614,28 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Uno de los dos cargos todavía está pendiente: suele ser una retención temporal "
             "que no se cobra. Si al liquidarse sigue apareciendo dos veces, escríbenos."
         ),
+        "out_of_scope_loan": (
+            "Por este canal no puedo tramitar préstamos ni créditos. Para solicitarlo, usa la "
+            "sección de préstamos de la app de tu banco o acude a una sucursal."
+            f"{_HERE_ES}"
+        ),
+        "out_of_scope_investment": (
+            "Por este canal no puedo asesorarte sobre inversiones. Para eso, habla con un asesor "
+            f"de tu banco desde la app o en una sucursal.{_HERE_ES}"
+        ),
+        "out_of_scope_branch": (
+            "Por este canal no tengo información de sucursales ni de sus horarios. Consúltala en "
+            f"el sitio oficial o en la app de tu banco.{_HERE_ES}"
+        ),
+        "out_of_scope_personal_data": (
+            "Por este canal no puedo cambiar tus datos personales. Actualízalos en la app de tu "
+            f"banco o en una sucursal.{_HERE_ES}"
+        ),
+        "out_of_scope_app": (
+            "Por este canal no puedo resolver problemas de la app ni de ingreso. Para eso, usa la "
+            "opción de ayuda de la app o la línea de atención que aparece en el sitio oficial de "
+            f"tu banco.{_HERE_ES}"
+        ),
         "claim_none": "No encuentro reclamos abiertos a tu nombre.",
         "claim_one": (
             "Tu reclamo {claim_id}, abierto el {opened}, está {status}. Último paso: {step}, el "
@@ -689,6 +714,28 @@ _REPLIES: dict[str, dict[str, str]] = {
             "que não é cobrada. Se depois de liquidada ela continuar aparecendo duas vezes, "
             "fale com a gente."
         ),
+        "out_of_scope_loan": (
+            "Por este canal não consigo contratar empréstimos nem financiamentos. Para isso, use "
+            "a área de empréstimos do app do seu banco ou vá a uma agência."
+            f"{_HERE_PT}"
+        ),
+        "out_of_scope_investment": (
+            "Por este canal não consigo orientar sobre investimentos. Para isso, fale com um "
+            f"assessor do seu banco pelo app ou em uma agência.{_HERE_PT}"
+        ),
+        "out_of_scope_branch": (
+            "Por este canal não tenho informações de agências nem dos seus horários. Consulte no "
+            f"site oficial ou no app do seu banco.{_HERE_PT}"
+        ),
+        "out_of_scope_personal_data": (
+            "Por este canal não consigo alterar os seus dados pessoais. Atualize-os no app do seu "
+            f"banco ou em uma agência.{_HERE_PT}"
+        ),
+        "out_of_scope_app": (
+            "Por este canal não consigo resolver problemas do app nem de acesso. Para isso, use "
+            "a opção de ajuda do app ou a central de atendimento indicada no site oficial do seu "
+            f"banco.{_HERE_PT}"
+        ),
         "claim_none": "Não encontrei reclamações abertas em seu nome.",
         "claim_one": (
             "A sua reclamação {claim_id}, aberta em {opened}, está {status}. Última etapa: "
@@ -729,7 +776,10 @@ def reply_key(facts: dict[str, Any]) -> str:
         block = facts.get("action") == "register_and_block"
         return "confirm_block" if block else "confirm_register"
     if outcome == "abstained":
-        return "card_block" if facts.get("redirect") == "card_block" else "out_of_scope"
+        if facts.get("redirect") == "card_block":
+            return "card_block"
+        topic = facts.get("topic")
+        return f"out_of_scope_{topic}" if topic and topic != "other" else "out_of_scope"
     if outcome == "identifying":
         return str(facts.get("identification", "show_options"))
     if outcome == "informed":

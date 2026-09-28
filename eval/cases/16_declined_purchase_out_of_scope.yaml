@@ -38,3 +38,5 @@ turns:
     actions_taken: []
     policy_action: abstain_and_redirect
     policy_rule: routing.out_of_scope
+    reply_contains:
+    - usa la app o la línea de atención de tu banco
