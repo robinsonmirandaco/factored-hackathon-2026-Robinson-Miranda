@@ -43,6 +43,10 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "abstained": "fuera de alcance, cliente redirigido",
         "informed": "informado al cliente",
         "no_pending_action": "no había nada que confirmar",
+        "recognizing": "mostrando el detalle del cargo al cliente",
+        "recognized_closed": "el cliente reconoció el cargo, caso cerrado sin acción",
+        "no_pending_recognition": "no había ningún cargo esperando respuesta",
+        "no_pending_choice": "no había opciones esperando elección",
     },
     "pt": {
         "identifying": "buscando a cobrança com o cliente",
@@ -54,6 +58,10 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "abstained": "fora do escopo, cliente redirecionado",
         "informed": "informado ao cliente",
         "no_pending_action": "não havia nada para confirmar",
+        "recognizing": "mostrando o detalhe da cobrança ao cliente",
+        "recognized_closed": "o cliente reconheceu a cobrança, caso encerrado sem ação",
+        "no_pending_recognition": "não havia nenhuma cobrança aguardando resposta",
+        "no_pending_choice": "não havia opções aguardando escolha",
     },
 }
 
@@ -224,9 +232,70 @@ def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 
 
 def _security_event(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if p.get("reason") == "option_not_shown":
+        if lang == "es":
+            return (
+                "El cliente eligió un cargo que no estaba entre las opciones: evento de seguridad."
+            )
+        return (
+            "O cliente escolheu uma cobrança que não estava entre as opções: evento de segurança."
+        )
     if lang == "es":
         return "La petición intentó llegar a datos de otro cliente: evento de seguridad."
     return "A solicitação tentou acessar dados de outro cliente: evento de segurança."
+
+
+def _show_charge(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    notes = []
+    if r.get("status") == "Pending":
+        notes.append("pendiente" if lang == "es" else "pendente")
+    if r.get("twin"):
+        notes.append("con un cargo gemelo" if lang == "es" else "com uma cobrança gêmea")
+    if r.get("earlier_months"):
+        n = len(r["earlier_months"])
+        notes.append(
+            f"meses anteriores del comercio: {n}"
+            if lang == "es"
+            else f"meses anteriores do estabelecimento: {n}"
+        )
+    extra = f" ({', '.join(notes)})" if notes else ""
+    if lang == "es":
+        return f"El sistema mostró al cliente el detalle del cargo para reconocerlo{extra}."
+    return f"O sistema mostrou ao cliente o detalhe da cobrança para reconhecê-la{extra}."
+
+
+def _recognize(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if not r.get("waiting"):
+        if lang == "es":
+            return "El cliente respondió al reconocimiento, pero no había ningún cargo esperando."
+        return "O cliente respondeu ao reconhecimento, mas não havia cobrança aguardando."
+    recognized = r.get("choice") == "recognized"
+    if lang == "es":
+        return (
+            "El cliente dijo: «Ya lo reconozco»."
+            if recognized
+            else ("El cliente dijo: «Sigo sin reconocerlo».")
+        )
+    return (
+        "O cliente disse: «Já reconheço»."
+        if recognized
+        else ("O cliente disse: «Continuo sem reconhecer».")
+    )
+
+
+def _choose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    option = r.get("option")
+    if option == "none":
+        if lang == "es":
+            return "El cliente dijo que ninguna de las opciones es el cargo."
+        return "O cliente disse que nenhuma das opções é a cobrança."
+    if option is None:
+        if lang == "es":
+            return "El cliente eligió un cargo que no estaba entre las opciones mostradas."
+        return "O cliente escolheu uma cobrança que não estava entre as opções mostradas."
+    if lang == "es":
+        return f"El cliente eligió una de las {r.get('shown', 0)} opciones mostradas."
+    return f"O cliente escolheu uma das {r.get('shown', 0)} opções mostradas."
 
 
 def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -262,6 +331,9 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "open_dispute"): _dispute,
     ("tool", "escalate_to_human"): _escalate,
     ("agent", "security_event"): _security_event,
+    ("agent", "recognize"): _recognize,
+    ("agent", "choose"): _choose,
+    ("tool", "show_charge_detail"): _show_charge,
     ("auth", "case_expired"): _case_expired,
     ("auth", "document_locked"): _document_locked,
 }

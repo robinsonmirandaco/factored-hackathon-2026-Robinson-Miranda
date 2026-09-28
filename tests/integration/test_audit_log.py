@@ -78,30 +78,42 @@ def _rows(schema: SchemaUrls, case_id: str) -> list[AuditRecord]:
     return rows
 
 
-def _two_turns(client: TestClient) -> tuple[str, str, str]:
+def _dispute_turns(client: TestClient) -> tuple[str, list[str]]:
+    """Message, "Sigo sin reconocerlo" and confirmation: the case id and each request's trace."""
     first = client.post("/chat", json={"message": MESSAGE})
     assert first.status_code == 200, first.text
     case_id = first.json()["case_id"]
     second = client.post(
         "/chat",
-        json={"message": "sí, confirmo", "case_id": case_id, "confirm": True},
+        json={
+            "message": "Sigo sin reconocerlo",
+            "case_id": case_id,
+            "recognition": "not_recognized",
+        },
     )
     assert second.status_code == 200, second.text
-    return case_id, first.headers["x-trace-id"], second.headers["x-trace-id"]
+    third = client.post(
+        "/chat",
+        json={"message": "sí, confirmo", "case_id": case_id, "confirm": True},
+    )
+    assert third.status_code == 200, third.text
+    return case_id, [r.headers["x-trace-id"] for r in (first, second, third)]
 
 
 def test_every_row_of_a_case_carries_the_trace_id_of_its_request(
     client: TestClient, schema: SchemaUrls
 ) -> None:
-    case_id, first, second = _two_turns(client)
+    case_id, traces = _dispute_turns(client)
     rows = _rows(schema, case_id)
+    first = traces[0]
 
-    assert first != second
-    by_trace = {t: [r for r in rows if r.trace_id == t] for t in (first, second)}
-    assert by_trace[first] and by_trace[second]
-    assert len(by_trace[first]) + len(by_trace[second]) == len(rows)
-    # Rows of the first request were all written before any row of the second.
-    assert max(r.id for r in by_trace[first]) < min(r.id for r in by_trace[second])
+    assert len(set(traces)) == 3
+    by_trace = {t: [r for r in rows if r.trace_id == t] for t in traces}
+    assert all(by_trace.values())
+    assert sum(map(len, by_trace.values())) == len(rows)
+    # Rows of each request were all written before any row of the next.
+    for earlier, later in zip(traces, traces[1:], strict=False):
+        assert max(r.id for r in by_trace[earlier]) < min(r.id for r in by_trace[later])
 
     owner = Database(schema.admin)
     with owner.session() as s:
@@ -109,7 +121,7 @@ def test_every_row_of_a_case_carries_the_trace_id_of_its_request(
         assert case is not None and case.trace_id == first
         outside = s.execute(
             select(AuditRecord).where(
-                AuditRecord.trace_id.in_([first, second]), AuditRecord.case_id != case_id
+                AuditRecord.trace_id.in_(traces), AuditRecord.case_id != case_id
             )
         ).all()
     owner.dispose()
@@ -119,16 +131,28 @@ def test_every_row_of_a_case_carries_the_trace_id_of_its_request(
 def test_each_step_records_actor_input_result_latency_cost_and_versions(
     client: TestClient, schema: SchemaUrls
 ) -> None:
-    case_id, _, _ = _two_turns(client)
+    case_id, _ = _dispute_turns(client)
     rows = _rows(schema, case_id)
-    llm_steps = {"comprehend", "compose"}
 
-    assert {r.action for r in rows} >= {"comprehend", "decide", "confirm", "open_dispute"}
+    def by_llm(r: AuditRecord) -> bool:
+        # The recognition step is written by code (TRZ-16), so its compose row has no model.
+        if r.action == "compose":
+            return (r.payload or {})["facts"]["outcome"] != "recognizing"
+        return r.action == "comprehend"
+
+    assert {r.action for r in rows} >= {
+        "comprehend",
+        "show_charge_detail",
+        "recognize",
+        "decide",
+        "confirm",
+        "open_dispute",
+    }
     for r in rows:
         assert r.actor and r.action and r.result is not None, r.action
         assert r.policy_version == "2026.09.1", r.action
         assert r.verified is None  # the read-back arrives with TRZ-19
-        if r.action in llm_steps:
+        if by_llm(r):
             assert r.model == "test-model"
             assert r.input_tokens and r.input_tokens > 0
             assert r.output_tokens and r.output_tokens > 0
@@ -144,7 +168,7 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
                 None,
                 None,
             ), r.action
-    compose = next(r for r in rows if r.action == "compose")
+    compose = next(r for r in rows if r.action == "compose" and by_llm(r))
     # Compose and its validator are two prompts, and the row cites both.
     assert "+" in (compose.prompt_version or "")
     extract = next(r for r in rows if r.action == "comprehend")
@@ -152,7 +176,7 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
 
 
 def test_no_row_stores_model_reasoning(client: TestClient, schema: SchemaUrls) -> None:
-    case_id, _, _ = _two_turns(client)
+    case_id, _ = _dispute_turns(client)
 
     def keys(value: Any) -> set[str]:
         if isinstance(value, dict):
@@ -236,6 +260,14 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
 ) -> None:
     first = client.post("/chat", json={"message": MESSAGE})
     case_id = first.json()["case_id"]
+    second = client.post(
+        "/chat",
+        json={
+            "message": "Sigo sin reconocerlo",
+            "case_id": case_id,
+            "recognition": "not_recognized",
+        },
+    )
     rows = _rows(schema, case_id)
 
     analyst = analyst_headers(client)
@@ -244,17 +276,24 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
 
     assert es.status_code == 200 and pt.status_code == 200
     assert [e["id"] for e in es.json()] == [r.id for r in rows]
-    assert {e["trace_id"] for e in es.json()} == {first.headers["x-trace-id"]}
+    traces = {first.headers["x-trace-id"], second.headers["x-trace-id"]}
+    assert {e["trace_id"] for e in es.json()} == traces
     assert es.json()[0]["text"] == (
         "El sistema entendió el mensaje del cliente como «cargo no reconocido»."
     )
     assert pt.json()[0]["text"] == (
         "O sistema entendeu a mensagem do cliente como «cobrança não reconhecida»."
     )
+    shown = next(e for e in es.json() if e["action"] == "show_charge_detail")
+    assert shown["text"] == "El sistema mostró al cliente el detalle del cargo para reconocerlo."
+    said = next(e for e in pt.json() if e["action"] == "recognize")
+    assert said["text"] == "O cliente disse: «Continuo sem reconhecer»."
     decide = next(e for e in es.json() if e["action"] == "decide")
     assert decide["text"].startswith("La política v2026.09.1")
     assert all(e["text"] != p["text"] for e, p in zip(es.json(), pt.json(), strict=True))
-    assert "Walmart" not in es.text and "100" not in es.text
+    # Only the sentences: timestamps and trace ids can contain "100" by chance.
+    texts = " ".join(e["text"] for e in es.json())
+    assert "Walmart" not in texts and "100" not in texts
 
 
 def test_history_of_an_unknown_case_is_404(client: TestClient) -> None:

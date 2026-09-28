@@ -87,6 +87,31 @@ def test_an_identification_line_gives_the_size_of_the_set() -> None:
     )
 
 
+def test_recognition_lines_say_what_was_shown_and_chosen() -> None:
+    shown = {"status": "Pending", "twin": {"status": "Approved"}, "earlier_months": ["2026-04"]}
+    assert describe("tool", "show_charge_detail", None, shown, "1", "es") == (
+        "El sistema mostró al cliente el detalle del cargo para reconocerlo "
+        "(pendiente, con un cargo gemelo, meses anteriores del comercio: 1)."
+    )
+    said = {"waiting": True, "choice": "recognized"}
+    assert describe("agent", "recognize", None, said, "1", "pt") == (
+        "O cliente disse: «Já reconheço»."
+    )
+
+
+def test_choice_lines_never_name_the_id_chosen() -> None:
+    assert describe("agent", "choose", None, {"option": "TX1", "shown": 2}, "1", "es") == (
+        "El cliente eligió una de las 2 opciones mostradas."
+    )
+    assert describe("agent", "choose", None, {"option": None, "shown": 2}, "1", "es") == (
+        "El cliente eligió un cargo que no estaba entre las opciones mostradas."
+    )
+    event = {"reason": "option_not_shown"}
+    assert describe("agent", "security_event", event, {}, "1", "pt") == (
+        "O cliente escolheu uma cobrança que não estava entre as opções: evento de segurança."
+    )
+
+
 def test_a_step_with_no_template_still_gets_a_line() -> None:
     assert describe("system", "new_step", None, None, None, "es") == "Paso «new_step» de system."
     assert describe("system", "new_step", None, None, None, "pt") == "Etapa «new_step» de system."

@@ -597,6 +597,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "app o con una persona."
         ),
         "no_pending_action": "No hay ninguna acción pendiente de confirmar en este caso.",
+        "recognized_closed": (
+            "Listo: cerramos el caso sin registrar nada. Si ves otro cargo que no reconoces, "
+            "escríbenos."
+        ),
+        "no_pending_recognition": "No hay ningún cargo esperando tu respuesta en este caso.",
+        "no_pending_choice": "No hay opciones esperando tu elección en este caso.",
     },
     "pt": {
         "registered": "Registramos a sua contestação da cobrança.",
@@ -641,6 +647,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "no app ou com uma pessoa."
         ),
         "no_pending_action": "Não há nenhuma ação pendente de confirmação neste caso.",
+        "recognized_closed": (
+            "Pronto: encerramos o caso sem registrar nada. Se você vir outra cobrança que não "
+            "reconhece, fale com a gente."
+        ),
+        "no_pending_recognition": "Não há nenhuma cobrança aguardando a sua resposta neste caso.",
+        "no_pending_choice": "Não há opções aguardando a sua escolha neste caso.",
     },
 }
 
@@ -671,6 +683,9 @@ def reply_key(facts: dict[str, Any]) -> str:
         "pending_analyst_approval": "approval",
         "security_blocked": "security",
         "no_pending_action": "no_pending_action",
+        "recognized_closed": "recognized_closed",
+        "no_pending_recognition": "no_pending_recognition",
+        "no_pending_choice": "no_pending_choice",
     }.get(str(outcome), "escalated")
 
 

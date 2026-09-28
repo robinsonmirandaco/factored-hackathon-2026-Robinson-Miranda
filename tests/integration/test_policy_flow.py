@@ -20,7 +20,13 @@ from app.domain.clock import SimulatedClock
 from app.main import create_app
 from app.services.agent import handle_message
 from app.services.tools import get_customer_profile
-from tests.agent_support import agent_deps, fake_llm, llm_settings, reading
+from tests.agent_support import (
+    agent_deps,
+    fake_llm,
+    llm_settings,
+    reading,
+    still_not_recognized,
+)
 from tests.auth_support import analyst_headers, customer_headers
 from tests.serving_data import card, customer, load, transaction
 
@@ -144,6 +150,7 @@ def _turn(
     message: str,
     sent=None,
     security_event: bool = False,
+    not_recognized: bool = False,
 ):
     settings = llm_settings(database_url)
     deps = agent_deps(settings, fake_llm(settings, answer, sent))
@@ -151,6 +158,15 @@ def _turn(
     try:
         with db.session(customer_id="C1") as s:
             result = handle_message(s, deps, "C1", message, security_event=security_event)
+            if not_recognized:
+                result = handle_message(
+                    s,
+                    deps,
+                    "C1",
+                    "Sigo sin reconocerlo",
+                    case_id=result.case_id,
+                    recognition="not_recognized",
+                )
     finally:
         db.dispose()
     owner = Database(schema.admin)
@@ -256,10 +272,16 @@ def test_no_llm_call_carries_the_policy(schema: SchemaUrls, database_url: str) -
     )
     sent: list[str] = []
     result, rows, _ = _turn(
-        schema, database_url, answer, "No reconozco un cargo de 120 dólares en Netflix", sent
+        schema,
+        database_url,
+        answer,
+        "No reconozco un cargo de 120 dólares en Netflix",
+        sent,
+        not_recognized=True,
     )
     assert result.outcome == "awaiting_confirmation"
-    assert len(sent) == 3  # comprehend, compose, validate
+    # comprehend; the recognition step is written by code; then compose and validate
+    assert len(sent) == 3
 
     policy = yaml.safe_load(POLICY.read_text(encoding="utf-8"))
     decide = next(r for r in rows if r.action == "decide")
@@ -323,7 +345,7 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
         json={"message": "No reconozco un cargo de 120 dólares en Netflix"},
     )
     assert first.status_code == 200
-    body = first.json()
+    body = still_not_recognized(rules_client, first.json()["case_id"])
     assert (body["intent"], body["outcome"], body["autonomy_level"], body["actions_taken"]) == (
         "unrecognized_charge",
         "awaiting_confirmation",
@@ -371,7 +393,7 @@ def test_chat_with_the_llm_down_decides_on_the_rules(
     assert r.status_code == 200
     body = r.json()
     assert body["llm_fallback"] is True
-    assert (body["intent"], body["outcome"]) == ("unrecognized_charge", "awaiting_confirmation")
+    assert (body["intent"], body["outcome"]) == ("unrecognized_charge", "recognizing")
     assert json.dumps(body)  # the reply is the fixed template, still a valid response
 
 
@@ -400,8 +422,8 @@ def test_an_analyst_decision_on_a_security_stop_runs_no_pending_action(
     rules_client: TestClient, netflix_customer: SchemaUrls
 ) -> None:
     first = rules_client.post("/chat", json={"message": NETFLIX}).json()
-    assert first["outcome"] == "awaiting_confirmation"
     case_id = first["case_id"]
+    assert still_not_recognized(rules_client, case_id)["outcome"] == "awaiting_confirmation"
 
     # The next turn of the same case names another customer while the registration is pending.
     stopped = rules_client.post(
@@ -454,8 +476,8 @@ def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
     two_customers: TestClient, schema: SchemaUrls
 ) -> None:
     first = two_customers.post("/chat", json={"message": NETFLIX}).json()
-    assert first["outcome"] == "awaiting_confirmation"
     case_id = first["case_id"]
+    assert still_not_recognized(two_customers, case_id)["outcome"] == "awaiting_confirmation"
 
     r = two_customers.post(
         "/chat",

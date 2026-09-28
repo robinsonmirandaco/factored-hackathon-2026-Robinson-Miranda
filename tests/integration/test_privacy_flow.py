@@ -55,12 +55,22 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
     app_db = Database(schema.app)
     try:
         with app_db.session(customer_id="C1") as s:
-            result = handle_message(s, deps, "C1", MESSAGE)
+            shown = handle_message(s, deps, "C1", MESSAGE)
+            assert shown.outcome == "recognizing"
+            result = handle_message(
+                s,
+                deps,
+                "C1",
+                "Sigo sin reconocerlo",
+                case_id=shown.case_id,
+                recognition="not_recognized",
+            )
     finally:
         app_db.dispose()
 
     assert not result.llm_fallback
-    assert len(sent) == 3  # comprehend, compose, validate
+    # comprehend; the recognition step is written by code; then compose and validate
+    assert len(sent) == 3
     for body in sent:
         assert FIRST_NAME not in body
         assert DOCUMENT_NUMBER not in body

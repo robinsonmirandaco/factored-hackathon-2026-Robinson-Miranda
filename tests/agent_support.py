@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 import httpx
+from fastapi.testclient import TestClient
 
 from app.adapters.llm import VALIDATE_SYSTEM, LLMClient
 from app.core.config import Settings
@@ -77,3 +78,20 @@ def agent_deps(settings: Settings, llm: LLMClient) -> AgentDeps:
         identification=load_identification(settings, policy),
         autonomy=initial_autonomy(policy.config),
     )
+
+
+def still_not_recognized(
+    client: TestClient, case_id: str, headers: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Presses "Sigo sin reconocerlo" on the recognition step of a case through /chat."""
+    r = client.post(
+        "/chat",
+        json={
+            "message": "Sigo sin reconocerlo",
+            "case_id": case_id,
+            "recognition": "not_recognized",
+        },
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()

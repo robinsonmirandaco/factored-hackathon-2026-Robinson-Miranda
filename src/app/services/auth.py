@@ -44,7 +44,7 @@ Role = Literal["customer", "analyst"]
 
 # Statuses in which a case still waits on the customer. When the session ends, such a case is
 # expired and its pending action dropped, so a "sí" after logging in again runs nothing.
-WAITING_STATUSES = frozenset({"open", "identifying", "awaiting_confirmation"})
+WAITING_STATUSES = frozenset({"open", "identifying", "recognizing", "awaiting_confirmation"})
 
 MIN_SECRET_LENGTH = 32
 

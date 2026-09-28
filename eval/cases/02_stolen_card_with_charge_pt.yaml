@@ -38,6 +38,14 @@ turns:
 - message: Roubaram meu cartão e fizeram uma compra de 80 dólares na Amazon que não fiz
   expect:
     intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Continuo sem reconhecer
+  recognition: not_recognized
+  expect:
+    intent: unrecognized_charge
     outcome: awaiting_confirmation
     autonomy_level: L2
     actions_taken: []

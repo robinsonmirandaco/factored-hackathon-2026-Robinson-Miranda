@@ -1,0 +1,28 @@
+meta {
+  name: an id that was not shown is a security event
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Ese", "case_id": "{{foreignCase}}", "option": "T00001013"}
+}
+
+tests {
+  test("security_blocked, nothing revealed", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("security_blocked");
+    expect(res.getBody().charge).to.equal(null);
+    expect(res.getBody().reply).to.not.contain("T00001013");
+  });
+}

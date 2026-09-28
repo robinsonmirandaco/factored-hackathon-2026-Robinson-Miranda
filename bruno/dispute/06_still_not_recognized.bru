@@ -1,0 +1,27 @@
+meta {
+  name: TRZ-16 CA5 Sigo sin reconocerlo goes straight to the policy
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Sigo sin reconocerlo", "case_id": "{{disputeCase}}", "recognition": "not_recognized"}
+}
+
+tests {
+  test("the policy offers the registration", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("awaiting_confirmation");
+    expect(res.getBody().autonomy_level).to.equal("L1");
+  });
+}

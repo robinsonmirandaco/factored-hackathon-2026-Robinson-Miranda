@@ -34,6 +34,14 @@ turns:
 - message: No reconozco el cargo de 500 dólares en Liverpool
   expect:
     intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Sigo sin reconocerlo
+  recognition: not_recognized
+  expect:
+    intent: unrecognized_charge
     outcome: awaiting_confirmation
     autonomy_level: L1
     actions_taken: []

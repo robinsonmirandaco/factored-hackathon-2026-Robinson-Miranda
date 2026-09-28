@@ -31,6 +31,9 @@ of the dataset, dated `days_ago` before the case "now") and `exchange_rates` (da
 A turn may expect `policy_action` and `policy_rule`: the policy decision written during that turn,
 read from the case trace; `policy_action: null` expects that the policy did not decide.
 
+A turn may press a button instead of writing: `recognition: not_recognized | recognized` answers
+the recognition step, and `option: <transaction_id> | none` chooses among the options shown.
+
 Exit code: 0 if every non-known-failure case passes, 1 otherwise.
 """
 
@@ -257,6 +260,7 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
                 "message": turn["message"],
                 "confirm": bool(turn.get("confirm", False)),
                 "case_id": case_id if turn.get("same_case", True) else None,
+                **{k: turn[k] for k in ("recognition", "option") if k in turn},
             }
             r = client.post("/chat", json=body)
             if r.status_code != 200:

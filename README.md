@@ -64,9 +64,9 @@ curl -s -X POST localhost:8000/auth/otp/verify \
   -d '{"document_type": "Pasaporte", "document_number": "SYN0000001", "code": "482913"}'
 ```
 
-The first call answers the same for any document, whether a customer has it or not. The second returns `access_token`; the examples below call it `$TOKEN`. Without demo mode the code is random and only appears in the API log when `APP_ENV=local`. Three wrong codes lock the document for 15 minutes. A session expires after 15 idle minutes or 2 hours, whichever comes first, and `POST /auth/logout` closes it. A case left waiting for confirmation when its session ends is expired and keeps no pending action.
+The first call answers the same for any document, whether a customer has it or not. The second returns `access_token`; the examples below call it `$TOKEN`. Without demo mode the code is random and only appears in the API log when `APP_ENV=local`. Three wrong codes lock the document for 15 minutes. A session expires after 15 idle minutes or 2 hours, whichever comes first, and `POST /auth/logout` closes it. A case left waiting for the customer when its session ends is expired and keeps no pending action.
 
-A charge the customer does not recognize. The policy decides; nothing runs until the customer confirms:
+A charge the customer does not recognize. Before anything is decided, the charge is shown as the database records it:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
@@ -74,7 +74,15 @@ curl -s -X POST localhost:8000/chat \
   -d '{"message": "No reconozco un cargo de 40.92 dólares en Claro"}'
 ```
 
-The response has `outcome` `awaiting_confirmation` and a `case_id`. Confirm the pending action of that case:
+The response has `outcome` `recognizing`, a `case_id`, the `charge` (merchant, city, channel, date and time, the last four digits of the card and status) and two `choices`. "Ya lo reconozco" (`"recognition": "recognized"`) closes the case with nothing done. "Sigo sin reconocerlo" goes to the policy:
+
+```bash
+curl -s -X POST localhost:8000/chat \
+  -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
+  -d '{"message": "Sigo sin reconocerlo", "case_id": "<case_id>", "recognition": "not_recognized"}'
+```
+
+The outcome is `awaiting_confirmation`: nothing runs until the customer confirms the pending action of that case:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
@@ -83,6 +91,8 @@ curl -s -X POST localhost:8000/chat \
 ```
 
 The outcome is `registered` and `actions_taken` is `["open_dispute"]`. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
+
+When several charges fit, as with `"No reconozco un cargo en Avianca"`, the outcome is `identifying` with the `options`. Send the `transaction_id` of one of them as `"option"` to go on to the recognition step, or `"option": "none"` when none is the charge, which sends the case to an analyst. An id that was not among the options shown stops the case as a security event.
 
 The customer is always the one of the session. A `customer_id` in the body is ignored, and one that names another customer stops the case as a security event. Messages can be in Spanish or Portuguese, and each reply follows the language of the message it answers.
 
@@ -96,7 +106,7 @@ curl -s -X POST localhost:8000/auth/analyst/login \
 curl -s localhost:8000/cases/<case_id>/trace -H "authorization: Bearer <analyst access_token>"
 ```
 
-A customer token gets 403 on the analyst endpoints, and an analyst token gets 403 on `/chat`. The Bruno collection in `bruno/auth` runs these checks against a running API.
+A customer token gets 403 on the analyst endpoints, and an analyst token gets 403 on `/chat`. The Bruno collection in `bruno/auth` and `bruno/dispute` runs these checks against a running API.
 
 ## Test and evaluate
 

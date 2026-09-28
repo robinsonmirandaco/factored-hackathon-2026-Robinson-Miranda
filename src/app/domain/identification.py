@@ -415,18 +415,17 @@ def dates_of(candidates: Iterable[Candidate]) -> tuple[date, date] | None:
     return (min(days), max(days)) if days else None
 
 
-def duplicate_twin(charge: Candidate, candidates: Iterable[Candidate]) -> DuplicateTwin | None:
-    """Status of a charge and its twin: another charge of the same merchant, amount and currency.
+def find_twin(charge: Candidate, candidates: Iterable[Candidate]) -> Candidate | None:
+    """The twin of a charge: another charge of the same merchant, amount and currency.
 
     When there are several twins, the closest in time is the one charged twice.
 
     Args:
-        charge: The charge the customer says was duplicated.
+        charge: The charge the customer is looking at.
         candidates: The customer's other disputable charges.
 
     Returns:
-        one_pending when either of the two is still pending (a temporary hold), both_approved
-        when both are settled, None when the charge has no twin.
+        The twin, or None when the charge has none.
     """
     twins = [
         c
@@ -439,5 +438,21 @@ def duplicate_twin(charge: Candidate, candidates: Iterable[Candidate]) -> Duplic
     ]
     if not twins:
         return None
-    twin = min(twins, key=lambda c: (abs(c.timestamp - charge.timestamp), c.transaction_id))
+    return min(twins, key=lambda c: (abs(c.timestamp - charge.timestamp), c.transaction_id))
+
+
+def duplicate_twin(charge: Candidate, candidates: Iterable[Candidate]) -> DuplicateTwin | None:
+    """Status of a charge and its twin (see `find_twin`).
+
+    Args:
+        charge: The charge the customer says was duplicated.
+        candidates: The customer's other disputable charges.
+
+    Returns:
+        one_pending when either of the two is still pending (a temporary hold), both_approved
+        when both are settled, None when the charge has no twin.
+    """
+    twin = find_twin(charge, candidates)
+    if twin is None:
+        return None
     return "one_pending" if "Pending" in (charge.status, twin.status) else "both_approved"

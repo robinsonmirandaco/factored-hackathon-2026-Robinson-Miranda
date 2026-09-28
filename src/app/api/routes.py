@@ -13,9 +13,11 @@ from app.api.deps import (
     SessionDep,
 )
 from app.domain.history import Lang
+from app.domain.recognition import ChargeDetail
 from app.schemas.api import (
     AnalystLoginIn,
     CaseOut,
+    ChargeOut,
     ChatIn,
     ChatOut,
     HealthOut,
@@ -139,6 +141,8 @@ def chat(
         body.confirm,
         body.case_id,
         security_event=foreign,
+        recognition=body.recognition,
+        option=body.option,
     )
     auth.remember_case(session, customer, r.case_id)
     return ChatOut(
@@ -152,6 +156,30 @@ def chat(
         llm_fallback=r.llm_fallback,
         tokens=r.tokens,
         latency_ms=r.latency_ms,
+        charge=_charge_out(r.facts["charge"]) if "charge" in r.facts else None,
+        choices=r.facts.get("choices", []),
+        options=r.facts.get("options", []),
+    )
+
+
+def _charge_out(d: ChargeDetail) -> ChargeOut:
+    return ChargeOut(
+        transaction_id=d.transaction_id,
+        transaction_type=d.transaction_type,
+        merchant=d.merchant,
+        amount=d.amount.amount,
+        currency=d.amount.currency,
+        converted_amount=d.amount.converted_amount,
+        converted_currency=d.amount.converted_currency,
+        converted_label=d.amount.label,
+        at=d.at,
+        channel=d.channel,
+        city=d.city,
+        product_type=d.product_type,
+        last4=d.last4,
+        status=d.status,
+        twin={"at": d.twin.at, "status": d.twin.status} if d.twin else None,
+        earlier_months=[m.strftime("%Y-%m") for m in d.earlier_months],
     )
 
 

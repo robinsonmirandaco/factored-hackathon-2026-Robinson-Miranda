@@ -56,12 +56,13 @@ def test_wrong_policy_rule_is_reported_as_failure(tmp_path):
     d = _one_case(tmp_path, "03_amount_500_edge.yaml")
     case_file = d / "03_amount_500_edge.yaml"
     case = yaml.safe_load(case_file.read_text())
-    case["turns"][0]["expect"]["policy_rule"] = "approval.amount_above_auto_register"
+    # The policy decides on the turn after the recognition step.
+    case["turns"][1]["expect"]["policy_rule"] = "approval.amount_above_auto_register"
     case_file.write_text(yaml.safe_dump(case))
 
     results, _ = run(d, tmp_path / "reports")
     assert results[0].status == "fail"
-    assert results[0].turns[0].mismatches == [
+    assert results[0].turns[1].mismatches == [
         "policy_rule: expected 'approval.amount_above_auto_register', "
         "got 'routing.unrecognized_charge.card_in_possession'"
     ]
@@ -78,7 +79,7 @@ def test_complaint_fixture_counts_for_the_open_dispute_rule(tmp_path):
     results, _ = run(d, tmp_path / "reports")
     assert (
         "policy_rule: expected 'escalate.open_dispute_last_90d'"
-        in results[0].turns[0].mismatches[-1]
+        in results[0].turns[1].mismatches[-1]
     )
 
 

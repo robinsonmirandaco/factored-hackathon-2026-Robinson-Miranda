@@ -5,10 +5,13 @@
      and the language the turn is answered in (rules, with the LLM's variant)
   3. policy screen, before any identification: security first, then the routes that need no
      charge (out of scope, lost card without a charge, claim status)
-  4. identification of the disputed charge with its conformal set
-  5. policy decision on the identified charge, compared in USD
-  6. nothing runs until the customer confirms the exact pending action of the case
-  7. reply from the facts; every step lands in the audit log under one trace_id
+  4. identification of the disputed charge with its conformal set; several charges are shown
+     as options, and a choice is accepted only when it names one of them
+  5. recognition (design 6.4): an unrecognized charge is shown in detail from the database,
+     and the customer says whether they recognize it before anything is decided
+  6. policy decision on the identified charge, compared in USD
+  7. nothing runs until the customer confirms the exact pending action of the case
+  8. reply from the facts; every step lands in the audit log under one trace_id
 
 The LLM never picks tools nor decides: tool selection is code and the decision is the policy.
 """
@@ -21,7 +24,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
-from app.adapters.db.models import Case, Customer
+from app.adapters.db.models import Case, Customer, Transaction
 from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMCallStats, LLMClient, template_reply
 from app.core.errors import AppError
@@ -46,14 +49,18 @@ from app.domain.policy import (
     PolicyEngine,
     PolicyError,
 )
+from app.domain.recognition import Choice, choices, recognition_text
 from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
-from app.services.identification import identify_charge
+from app.services.identification import candidate_of, identify_charge, load_candidates
+from app.services.recognition import charge_detail
 
 Facts = dict[str, Any]
 
 # Intent of a new case stopped for security before its message was read.
 UNREAD_INTENT = "unread"
+# The option a customer picks when none of the charges shown is the one.
+NONE_OF_THESE = "none"
 
 # What confirming each pending action runs. The folio, blocking only the card of the charge and
 # the read-back come with TRZ-18 and TRZ-19.
@@ -83,6 +90,19 @@ class AgentDeps:
     autonomy: AutonomyLookup
 
 
+@dataclass(frozen=True)
+class Said:
+    """What the customer wrote in a turn, redacted, and the language it was read in."""
+
+    redacted: str
+    pii_counts: dict[str, int]
+    spoken: LanguageDecision
+
+    def audit(self) -> dict[str, Any]:
+        """The redacted message as the audit log keeps it."""
+        return {"redacted_text": self.redacted[:500], "pii": self.pii_counts}
+
+
 @dataclass
 class AgentResponse:
     """Result of one customer turn."""
@@ -108,6 +128,8 @@ def handle_message(
     confirm: bool = False,
     case_id: str | None = None,
     security_event: bool = False,
+    recognition: Choice | None = None,
+    option: str | None = None,
 ) -> AgentResponse:
     """Handles one customer turn end to end.
 
@@ -121,6 +143,9 @@ def handle_message(
         security_event: True when the request tried to reach another customer's data. The
             message is not read and no LLM is called: the policy stops the case, and a pending
             confirmation is not run.
+        recognition: The customer's answer to the recognition step of `case_id`.
+        option: The charge the customer chose among the options shown in `case_id`, or
+            `none` when none of them is the one.
 
     Returns:
         What the system did and replied.
@@ -140,13 +165,20 @@ def handle_message(
                 session, deps, customer, case_id, redacted, pii_counts
             )
             stats = LLMCallStats()
-        elif confirm and case_id is not None:
+        elif case_id is not None and (confirm or recognition or option):
             case = _own_case(session, customer_id, case_id)
-            # No LLM call on a confirmation: a short "sí" or "sim" keeps the case's language.
+            # No LLM call on a confirmation or a button: a short "sí" or "sim" keeps the case's
+            # language.
             spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
             language: Language = spoken.language
             case.language = language
-            facts = _confirm(session, case, redacted, pii_counts, spoken)
+            said = Said(redacted, pii_counts, spoken)
+            if confirm:
+                facts = _confirm(session, case, said)
+            elif recognition:
+                facts = _recognize(session, deps, customer, case, language, recognition, said)
+            else:
+                facts = _choose(session, deps, customer, case, language, str(option), said)
             stats = LLMCallStats()
         else:
             case, language, facts, stats = _understand_and_decide(
@@ -155,15 +187,23 @@ def handle_message(
 
         reply, rstats = _reply(deps, redacted, facts, language)
         stats.add(rstats)
+        # The charge detail and the recognition text carry the last four digits of the card:
+        # shown to the customer, never written to the audit log. The show_charge_detail row
+        # says what was shown.
+        recognizing = facts["outcome"] == "recognizing"
         write_audit(
             session,
             "agent",
             "compose",
             case.id,
-            {"facts": facts},
-            {"reply": reply, "fallback": rstats.fallback, "error": rstats.error},
+            {"facts": {k: v for k, v in facts.items() if k != "charge"}},
+            {
+                "reply": None if recognizing else reply,
+                "fallback": rstats.fallback,
+                "error": rstats.error,
+            },
             rstats.latency_ms,
-            llm=rstats,
+            llm=None if recognizing else rstats,
         )
         case.summary = _summary(case, facts)
         session.flush()
@@ -237,6 +277,7 @@ def _understand_and_decide(
     )
 
     card = clues.card_in_possession.value if clues.card_in_possession else None
+    case.card_in_possession = card
     screened = deps.policy.screen(clues.intent, language, card, False)
     if screened is not None:
         _audit_decision(
@@ -262,25 +303,83 @@ def _understand_and_decide(
     charge, twin = _chosen(clues, found)
     if charge is None and found.decision in ("show_options", "ask_for_detail"):
         return case, language, _identifying(case, found), stats
+    said = Said(redacted, pii_counts, spoken)
+    if charge is None:
+        return case, language, _decide_on_charge(session, deps, customer, case, language), stats
+    return (
+        case,
+        language,
+        _identified(session, deps, customer, case, language, charge, twin, said),
+        stats,
+    )
 
+
+def _identified(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    charge: Candidate,
+    twin: DuplicateTwin | None,
+    said: Said,
+) -> Facts:
+    """Once the charge is known: an unrecognized one is shown for recognition first (TRZ-16);
+    a billing error, which the customer already recognizes, goes to the policy."""
+    case.transaction_id = charge.transaction_id
+    if case.intent != "unrecognized_charge":
+        return _decide_on_charge(session, deps, customer, case, language, charge, twin)
+    detail = charge_detail(
+        session,
+        deps.clock,
+        customer.customer_id,
+        charge.transaction_id,
+        local_currency(customer.country_code),
+        deps.policy.config.dispute_window_days,
+        case.id,
+    )
+    if detail is None:
+        return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
+    case.status, case.autonomy_level, case.recommended_action = "recognizing", "L0", None
+    return {
+        "intent": case.intent,
+        "outcome": "recognizing",
+        "charge": detail,
+        "choices": choices(language),
+        "actions_taken": [],
+    }
+
+
+def _decide_on_charge(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    charge: Candidate | None = None,
+    twin: DuplicateTwin | None = None,
+    note: dict[str, Any] | None = None,
+) -> Facts:
+    """The policy decision on the identified charge, or on no charge at all."""
+    policy = deps.policy.config
     profile = T.get_customer_profile(
         session, deps.clock, customer.customer_id, policy.open_dispute_lookback_days, case.id
     ).data
-    tx = _charge_facts(session, charge, local) if charge else None
+    tx = _charge_facts(session, charge, local_currency(customer.country_code)) if charge else None
     if charge is not None:
         case.transaction_id = charge.transaction_id
     ctx = PolicyContext(
-        intent=clues.intent,
+        intent=case.intent,
         language=language,
         amount_usd=tx["amount_usd"] if tx else None,
-        card_in_possession=card,
+        card_in_possession=case.card_in_possession,
         open_dispute_last_90d=bool(profile.get("open_dispute_last_90d")),
         conformal_set_size=1 if charge else 0,
         duplicate_twin=twin,
     )
     decision = deps.policy.decide(ctx, deps.autonomy)
-    _audit_decision(session, case, asdict(ctx), decision)
-    return case, language, _apply(session, case, decision, tx), stats
+    _audit_decision(session, case, {**asdict(ctx), **(note or {})}, decision)
+    return _apply(session, case, decision, tx)
 
 
 def _chosen(
@@ -331,6 +430,8 @@ def _identifying(case: Case, found: Identification) -> Facts:
     by_id = {s.candidate.transaction_id: s.candidate for s in found.scored}
     case.status = "identifying"
     case.autonomy_level = "L0"
+    shown = found.decision == "show_options"
+    case.shown_options = list(found.conformal_set) if shown else None
     return {
         "intent": case.intent,
         "outcome": "identifying",
@@ -346,7 +447,7 @@ def _identifying(case: Case, found: Identification) -> Facts:
             }
             for c in (by_id[i] for i in found.conformal_set)
         ]
-        if found.decision == "show_options"
+        if shown
         else [],
         "actions_taken": [],
     }
@@ -436,14 +537,30 @@ def _stop_for_security(
     else:
         case = _own_case(session, customer.customer_id, case_id)
         case.language = language
-    # The other customer's id is not stored: this trail belongs to the session customer.
+    said = Said(redacted, pii_counts, spoken)
+    return (
+        case,
+        language,
+        _security_stop(session, deps, case, language, said, "foreign_customer_id"),
+    )
+
+
+def _security_stop(
+    session: Session, deps: AgentDeps, case: Case, language: Language, said: Said, reason: str
+) -> Facts:
+    """Stops a case whose turn named a customer or a charge that is not the session's.
+
+    The foreign id is not stored: this trail belongs to the session customer. The reply says
+    nothing about whether the id exists.
+    """
+    case.shown_options = None
     write_audit(
         session,
         "agent",
         "security_event",
         case.id,
-        {"reason": "foreign_customer_id", "redacted_text": redacted[:500], "pii": pii_counts},
-        {"language_decision": asdict(spoken)},
+        {"reason": reason, **said.audit()},
+        {"language_decision": asdict(said.spoken)},
     )
     screened = deps.policy.screen(None, language, None, True)
     if screened is None:  # screen raises before returning None without an intent
@@ -451,19 +568,125 @@ def _stop_for_security(
     _audit_decision(
         session, case, {"intent": None, "language": language, "security_event": True}, screened
     )
-    return case, language, _apply(session, case, screened, None)
+    return _apply(session, case, screened, None)
+
+
+# ---- choosing and recognizing -------------------------------------------------------------
+
+
+def _choose(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    option: str,
+    said: Said,
+) -> Facts:
+    """Takes the charge the customer chose among the options shown in this case.
+
+    Only an id of the options shown is accepted: any other id, even one of the customer's own
+    charges, is treated as foreign and stops the case for security. "None of these" escalates,
+    because no charge fits.
+    """
+    shown = list(case.shown_options or []) if case.status == "identifying" else []
+    known = option == NONE_OF_THESE or option in shown
+    write_audit(
+        session,
+        "agent",
+        "choose",
+        case.id,
+        said.audit(),
+        {
+            "option": option if known else None,
+            "shown": len(shown),
+            "language_decision": asdict(said.spoken),
+        },
+    )
+    case.shown_options = None
+    if option == NONE_OF_THESE:
+        if not shown:
+            return {"intent": case.intent, "outcome": "no_pending_choice", "actions_taken": []}
+        return _decide_on_charge(
+            session, deps, customer, case, language, note={"customer_choice": NONE_OF_THESE}
+        )
+    if option not in shown:
+        return _security_stop(session, deps, case, language, said, "option_not_shown")
+    tx = session.get(Transaction, option)
+    if tx is None or tx.customer_id != customer.customer_id:
+        return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
+    charge = candidate_of(tx)
+    twin = None
+    if case.intent == "billing_error_duplicate":
+        twin = duplicate_twin(charge, _candidates(session, deps, customer))
+    return _identified(session, deps, customer, case, language, charge, twin, said)
+
+
+def _recognize(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    choice: Choice,
+    said: Said,
+) -> Facts:
+    """The customer's answer to the recognition step (TRZ-16 CA5 and CA7).
+
+    "Ya lo reconozco" closes the case with nothing done. "Sigo sin reconocerlo" goes straight to
+    the policy, with no further question. A charge with an identical twin that is also approved
+    is decided as a duplicate charge when the customer has the card; without the card it stays
+    on the fraud path, which blocks it.
+    """
+    waiting = case.status == "recognizing" and case.transaction_id is not None
+    write_audit(
+        session,
+        "agent",
+        "recognize",
+        case.id,
+        said.audit(),
+        {
+            "choice": choice,
+            "transaction_id": case.transaction_id if waiting else None,
+            "waiting": waiting,
+            "language_decision": asdict(said.spoken),
+        },
+    )
+    if not waiting:
+        return {"intent": case.intent, "outcome": "no_pending_recognition", "actions_taken": []}
+    if choice == "recognized":
+        case.status, case.autonomy_level = "recognized_closed", "L0"
+        return {"intent": case.intent, "outcome": "recognized_closed", "actions_taken": []}
+    tx = session.get(Transaction, case.transaction_id)
+    if tx is None or tx.customer_id != customer.customer_id:
+        return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
+    charge = candidate_of(tx)
+    twin = duplicate_twin(charge, _candidates(session, deps, customer))
+    if twin == "both_approved" and case.card_in_possession is not False:
+        case.intent = "billing_error_duplicate"
+        return _decide_on_charge(
+            session,
+            deps,
+            customer,
+            case,
+            language,
+            charge,
+            twin,
+            note={"rerouted_from": "unrecognized_charge"},
+        )
+    return _decide_on_charge(session, deps, customer, case, language, charge)
+
+
+def _candidates(session: Session, deps: AgentDeps, customer: Customer) -> list[Candidate]:
+    return load_candidates(
+        session, customer.customer_id, deps.clock, deps.policy.config.dispute_window_days
+    )
 
 
 # ---- confirmation -----------------------------------------------------------------------
 
 
-def _confirm(
-    session: Session,
-    case: Case,
-    redacted: str,
-    pii_counts: dict[str, int],
-    spoken: LanguageDecision,
-) -> Facts:
+def _confirm(session: Session, case: Case, said: Said) -> Facts:
     """Runs the pending action of the case, and only that one, once the customer confirms.
 
     A confirmation with nothing pending runs nothing. The pending action is the one stored when
@@ -475,11 +698,11 @@ def _confirm(
         "agent",
         "confirm",
         case.id,
-        {"redacted_text": redacted[:500], "pii": pii_counts},
+        said.audit(),
         {
             "pending_action": pending,
             "transaction_id": case.transaction_id,
-            "language_decision": asdict(spoken),
+            "language_decision": asdict(said.spoken),
         },
     )
     facts: Facts = {"intent": case.intent, "action": pending, "actions_taken": []}
@@ -542,6 +765,9 @@ def _reply(
     # must not send the text of the turn to the LLM, so neither is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] == "security_blocked":
         return template_reply(facts, language), LLMCallStats(fallback=True)
+    # The recognition step is written by code by design (TRZ-16), not as an LLM fallback.
+    if facts["outcome"] == "recognizing":
+        return recognition_text(facts["charge"], language), LLMCallStats()
     return deps.llm.compose(redacted, _reply_facts(facts), language)
 
 

@@ -18,7 +18,7 @@ from app.adapters.db.session import Database, SchemaUrls
 from app.core.config import Settings
 from app.main import create_app
 from app.services import auth as auth_module
-from tests.agent_support import fake_llm, llm_settings, reading
+from tests.agent_support import fake_llm, llm_settings, reading, still_not_recognized
 from tests.auth_support import (
     DEMO_CODE,
     TEST_ANALYST_PASSWORD,
@@ -363,7 +363,9 @@ def test_a_session_expires_after_15_idle_minutes_and_its_case_is_expired(
 ) -> None:
     headers = customer_headers(client, "C1")
     first = client.post("/chat", json={"message": NETFLIX}, headers=headers).json()
-    assert first["outcome"] == "awaiting_confirmation"
+    assert first["outcome"] == "recognizing"
+    pending = still_not_recognized(client, first["case_id"], headers)
+    assert pending["outcome"] == "awaiting_confirmation"
 
     clock.advance(15.5)
     late = client.post(
@@ -398,6 +400,8 @@ def test_a_new_login_expires_the_case_of_a_session_left_idle(
     first = client.post(
         "/chat", json={"message": NETFLIX}, headers=customer_headers(client, "C1")
     ).json()
+    # Left at the recognition step, which also waits on the customer.
+    assert first["outcome"] == "recognizing"
     clock.advance(20)
     # The old token is never used again; the new login alone ends that session.
     again = client.post(
@@ -513,7 +517,7 @@ def test_the_customer_id_of_the_session_itself_in_the_body_is_just_ignored(
         json={"customer_id": "C1", "message": NETFLIX},
         headers=customer_headers(client, "C1"),
     )
-    assert r.json()["outcome"] == "awaiting_confirmation"
+    assert r.json()["outcome"] == "recognizing"
 
 
 def test_another_customers_case_id_is_not_found(client: TestClient) -> None:

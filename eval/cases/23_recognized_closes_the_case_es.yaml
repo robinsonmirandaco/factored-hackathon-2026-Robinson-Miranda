@@ -1,49 +1,50 @@
-# Just above 500 USD: an analyst approves before registering.
-description: 'Unrecognized charge of 500.01 USD: analyst_approval'
+# TRZ-16 CA7: "Ya lo reconozco" closes the case with nothing done.
+description: 'The customer sees the charge detail and recognizes it: the case closes as recognized_closed,
+  no policy decision, no action'
 tags:
 - golden
 - unrecognized_charge
-- amount_band
+- recognition
+- multi_turn
 fixtures:
   customer:
-    customer_id: EVC04
+    customer_id: EVC23
     document_type: Pasaporte
-    document_number: EVC04-DOC
+    document_number: EVC23-DOC
     first_name: Eval
     country: México
     country_code: MX
     timezone: America/Mexico_City
     segment: Basic
   products:
-  - product_id: P04
+  - product_id: P23
     product_type: credit_card
     currency: USD
     product_status: Active
   transactions:
-  - transaction_id: EVTX04
+  - transaction_id: EVTX23
     transaction_type: Purchase
-    amount: 500.01
+    amount: 60.0
     currency: USD
-    merchant_name: Liverpool
-    merchant_category: Other
+    merchant_name: Spotify
+    merchant_category: Entertainment
     transaction_country: MX
     channel: Web
     transaction_status: Approved
     hours_ago: 20
 turns:
-- message: No reconozco el cargo de 500.01 dólares en Liverpool
+- message: No reconozco un cargo de 60 dólares en Spotify
   expect:
     intent: unrecognized_charge
     outcome: recognizing
     autonomy_level: L0
     actions_taken: []
     policy_action: null
-- message: Sigo sin reconocerlo
-  recognition: not_recognized
+- message: Ya lo reconozco
+  recognition: recognized
   expect:
     intent: unrecognized_charge
-    outcome: pending_analyst_approval
-    autonomy_level: L3
+    outcome: recognized_closed
+    autonomy_level: L0
     actions_taken: []
-    policy_action: analyst_approval
-    policy_rule: approval.amount_above_auto_register
+    policy_action: null

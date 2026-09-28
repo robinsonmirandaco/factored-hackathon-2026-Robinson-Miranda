@@ -1,26 +1,28 @@
-description: 'Two charges at the same merchant fit a clue without amount: show them as options; the
-  customer chooses one, which goes to the recognition step and then to the policy'
+# "Ninguno es" among the options shown: no charge fits, so the case goes to a person.
+description: 'Two charges shown as options; the customer says none of them is the one: escalated'
 tags:
 - golden
 - unrecognized_charge
 - identification
+- escalation
+- multi_turn
 fixtures:
   customer:
-    customer_id: EVC20
+    customer_id: EVC25
     document_type: Pasaporte
-    document_number: EVC20-DOC
+    document_number: EVC25-DOC
     first_name: Eval
     country: México
     country_code: MX
     timezone: America/Mexico_City
     segment: Basic
   products:
-  - product_id: P20
+  - product_id: P25
     product_type: credit_card
     currency: USD
     product_status: Active
   transactions:
-  - transaction_id: EVTX20A
+  - transaction_id: EVTX25A
     transaction_type: Purchase
     amount: 45.0
     currency: USD
@@ -30,7 +32,7 @@ fixtures:
     channel: POS
     transaction_status: Approved
     hours_ago: 5
-  - transaction_id: EVTX20B
+  - transaction_id: EVTX25B
     transaction_type: Purchase
     amount: 47.0
     currency: USD
@@ -48,20 +50,12 @@ turns:
     autonomy_level: L0
     actions_taken: []
     policy_action: null
-- message: El de 45 dólares
-  option: EVTX20A
+- message: Ninguno es
+  option: none
   expect:
     intent: unrecognized_charge
-    outcome: recognizing
-    autonomy_level: L0
+    outcome: escalated
+    autonomy_level: L3
     actions_taken: []
-    policy_action: null
-- message: Sigo sin reconocerlo
-  recognition: not_recognized
-  expect:
-    intent: unrecognized_charge
-    outcome: awaiting_confirmation
-    autonomy_level: L1
-    actions_taken: []
-    policy_action: register_and_offer_block
-    policy_rule: routing.unrecognized_charge.card_in_possession
+    policy_action: escalate
+    policy_rule: escalate.conformal_set_empty

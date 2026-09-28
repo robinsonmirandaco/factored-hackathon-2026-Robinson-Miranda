@@ -1,0 +1,32 @@
+meta {
+  name: several charges are shown as options
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "No reconozco un cargo en Avianca"}
+}
+
+script:post-response {
+  bru.setVar("optionsCase", res.getBody().case_id);
+  bru.setVar("firstOption", res.getBody().options[0].transaction_id);
+}
+
+tests {
+  test("identifying with three options", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("identifying");
+    expect(res.getBody().options.length).to.equal(3);
+  });
+}
