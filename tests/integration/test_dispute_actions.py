@@ -209,10 +209,27 @@ def test_a_foreign_id_found_by_a_tool_stops_the_case_and_leaves_nothing(
     # When the block fails, the dispute written just before is rolled back with it.
     assert _counts(schema) == (0, 0)
     assert _query(schema, "SELECT status FROM case_actions") == [("canceled",)]
-    events = _query(
-        schema, "SELECT payload->>'reason' FROM audit_log WHERE action = 'security_event'"
+    # Only the savepoint is undone: the security stop is committed with the rest of the turn.
+    case_id = pending["case_id"]
+    assert _query(schema, f"SELECT status FROM cases WHERE id = '{case_id}'") == [
+        ("security_blocked",)
+    ]
+    trail = _query(
+        schema,
+        f"SELECT actor, action, payload->>'reason', result->>'rule', result->>'status' "
+        f"FROM audit_log WHERE case_id = '{case_id}' AND id > (SELECT max(id) FROM audit_log "
+        f"WHERE case_id = '{case_id}' AND action = 'confirm') ORDER BY id",
     )
-    assert events == [("foreign_transaction_id",)]
+    assert trail[:3] == [
+        ("agent", "security_event", "foreign_transaction_id", None, None),
+        ("policy", "decide", None, "security.security_event", None),
+        ("tool", "escalate_to_human", "security.security_event", None, "security_blocked"),
+    ]
+    # The dispute row and its audit row were rolled back together: no folio was kept.
+    written = _query(
+        schema, "SELECT count(*) FROM audit_log WHERE action IN ('register_dispute', 'block_card')"
+    )
+    assert written == [(0,)]
 
 
 # ---- D5: a card that cannot be blocked -----------------------------------------------------
