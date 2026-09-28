@@ -404,7 +404,16 @@ def _recognize(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     )
 
 
+def _open_claims(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    n = r.get("count", 0)
+    if lang == "es":
+        return f"El sistema leyó los reclamos abiertos del cliente: {n}."
+    return f"O sistema leu as reclamações abertas do cliente: {n}."
+
+
 def _choose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if r.get("kind") == "claim":
+        return _choose_claim(lang, r)
     option = r.get("option")
     if option == "none":
         if lang == "es":
@@ -417,6 +426,20 @@ def _choose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return f"El cliente eligió una de las {r.get('shown', 0)} opciones mostradas."
     return f"O cliente escolheu uma das {r.get('shown', 0)} opções mostradas."
+
+
+def _choose_claim(lang: Lang, r: Fields) -> str:
+    if r.get("option") == "none":
+        if lang == "es":
+            return "El cliente dijo que ninguno de los reclamos mostrados es el suyo."
+        return "O cliente disse que nenhuma das reclamações mostradas é a dele."
+    if r.get("option") is None:
+        if lang == "es":
+            return "El cliente eligió un reclamo que no estaba entre los mostrados."
+        return "O cliente escolheu uma reclamação que não estava entre as mostradas."
+    if lang == "es":
+        return f"El cliente eligió uno de los {r.get('shown', 0)} reclamos mostrados."
+    return f"O cliente escolheu uma das {r.get('shown', 0)} reclamações mostradas."
 
 
 def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -448,6 +471,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,
     ("tool", "list_recent_transactions"): _recent,
+    ("tool", "get_open_claims"): _open_claims,
     ("tool", "lookup_transaction"): _lookup,
     ("tool", "freeze_card"): _freeze,
     ("tool", "open_dispute"): _dispute,

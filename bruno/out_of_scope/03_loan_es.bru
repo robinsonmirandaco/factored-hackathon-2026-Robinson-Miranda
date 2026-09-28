@@ -1,0 +1,31 @@
+meta {
+  name: a loan request in Spanish
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Quiero pedir un préstamo personal"}
+}
+
+tests {
+  test("abstained with where to go, no action", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(body.intent).to.equal("out_of_scope");
+    expect(body.outcome).to.equal("abstained");
+    expect(body.autonomy_level).to.equal("L0");
+    expect(body.actions_taken).to.eql([]);
+    expect(body.reply).to.include("sección de préstamos de la app");
+  });
+}

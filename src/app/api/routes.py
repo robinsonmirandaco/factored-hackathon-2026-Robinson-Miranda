@@ -159,6 +159,7 @@ def chat(
         charge=_charge_out(r.facts["charge"]) if "charge" in r.facts else None,
         choices=r.facts.get("choices", []),
         options=r.facts.get("options", []),
+        claims=r.facts.get("claims", []),
         pending_action=r.facts.get("pending_action"),
         dispute_folio=(r.facts.get("dispute") or {}).get("folio"),
     )

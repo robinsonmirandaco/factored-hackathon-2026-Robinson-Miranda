@@ -5,7 +5,7 @@ actions verified and policy passages cited. The checker reads the final text wit
 expressions, never with a model, and names each element that no fact backs.
 
 What it reads, in this order, each span taken once:
-  folios and ids       DSP-2026-00042, CASE-..., ACT-...
+  folios and ids       DSP-2026-00042, CMP-..., CASE-..., ACT-...
   passages             §2.1
   dates                2026-06-17, 17/06/2026, 17/06, 17 de junio (de 2026), 8 jun, 8 de julho
   card digits          terminada en 1234, com final 1234, ****1234
@@ -69,14 +69,15 @@ class VerifiedFacts:
     Attributes:
         amounts: Amounts of the records read, registered and converted.
         dates: Dates of the records read, of the registration and of its deadline.
-        folios: Folios of the actions verified.
+        folios: Folios of the actions verified and ids of the claims read.
         passages: Citations of the passages backing the turn, such as "§2.1".
         deadlines: Days those passages set.
         last4: Last four digits of the card of the records read.
         merchants: Merchants of the records read, casefolded.
         known_merchants: Every merchant of the customer's transactions, casefolded; the closed
             list a mentioned merchant is looked for in.
-        actions: Actions verified in the turn, such as register_dispute and block_card.
+        actions: Actions verified in the turn, such as register_dispute and block_card, and
+            the registration of a dispute reported in a claim status turn.
         counts: How many records were shown, such as the number of options to choose from.
     """
 
@@ -113,7 +114,7 @@ def _month_pattern() -> tuple[str, dict[str, int]]:
 
 _MONTH_RE, _MONTH_NUMBER = _month_pattern()
 
-_FOLIO = re.compile(r"\b(?:DSP|CASE|ACT)-[0-9A-Z-]*[0-9A-Z]", re.IGNORECASE)
+_FOLIO = re.compile(r"\b(?:DSP|CMP|CASE|ACT)-[0-9A-Z-]*[0-9A-Z]", re.IGNORECASE)
 _PASSAGE = re.compile(r"§\s?(\d+(?:\.\d+)*)")
 _ISO_DATE = re.compile(r"\b(\d{4})-(\d{1,2})-(\d{1,2})\b")
 _NUMERIC_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?\b")

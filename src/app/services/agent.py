@@ -45,6 +45,7 @@ from app.domain.identification import (
 )
 from app.domain.language import LanguageDecision
 from app.domain.language import decide as decide_language
+from app.domain.out_of_scope import topic as out_of_scope_topic
 from app.domain.pii import redact
 from app.domain.policy import (
     AutonomyLookup,
@@ -305,7 +306,12 @@ def _understand_and_decide(
             {"intent": clues.intent, "language": language, "card_in_possession": card},
             screened,
         )
-        return case, language, _apply(session, case, screened, None), stats
+        facts = _apply(session, case, screened, None)
+        if screened.action == "report_claim_status":
+            facts = _claim_status(session, deps, customer, case, language, facts)
+        elif screened.action == "abstain_and_redirect" and screened.redirect is None:
+            facts["topic"] = out_of_scope_topic(redacted)
+        return case, language, facts, stats
 
     policy = deps.policy.config
     params = deps.identification["rules" if stats.fallback else "llm"]
@@ -331,6 +337,31 @@ def _understand_and_decide(
         _identified(session, deps, customer, case, language, charge, twin, said),
         stats,
     )
+
+
+def _claim_status(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    facts: Facts,
+) -> Facts:
+    """Reads the open claims of the customer (TRZ-22). Read only: nothing is written but the
+    audit row. One claim is reported; several are shown as options to choose from."""
+    claims = T.get_open_claims(
+        session, deps.clock, _deadline(deps, customer, language), customer.customer_id, case.id
+    ).data["claims"]
+    if len(claims) > 1:
+        case.status = "identifying"
+        case.shown_options = [c["claim_id"] for c in claims]
+        return {
+            **facts,
+            "outcome": "identifying",
+            "identification": "show_claims",
+            "claims": claims,
+        }
+    return {**facts, "claim": claims[0] if claims else None}
 
 
 def _identified(
@@ -622,6 +653,7 @@ def _choose(
         {
             "option": option if known else None,
             "shown": len(shown),
+            "kind": "claim" if case.intent == "claim_status" else "charge",
             "language_decision": asdict(said.spoken),
         },
     )
@@ -629,11 +661,21 @@ def _choose(
     if option == NONE_OF_THESE:
         if not shown:
             return {"intent": case.intent, "outcome": "no_pending_choice", "actions_taken": []}
+        if case.intent == "claim_status":
+            case.status = "closed"
+            return _claim_facts(case, None)
         return _decide_on_charge(
             session, deps, customer, case, language, note={"customer_choice": NONE_OF_THESE}
         )
     if option not in shown:
         return _security_stop(session, deps, case, language, said, "option_not_shown")
+    if case.intent == "claim_status":
+        claims = T.get_open_claims(
+            session, deps.clock, _deadline(deps, customer, language), customer.customer_id, case.id
+        ).data["claims"]
+        case.status = "closed"
+        # A claim closed since it was shown is no longer open: none of the shown ones is left.
+        return _claim_facts(case, next((c for c in claims if c["claim_id"] == option), None))
     tx = session.get(Transaction, option)
     if tx is None or tx.customer_id != customer.customer_id:
         return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
@@ -697,6 +739,19 @@ def _recognize(
             note={"rerouted_from": "unrecognized_charge"},
         )
     return _decide_on_charge(session, deps, customer, case, language, charge)
+
+
+def _claim_facts(case: Case, claim: Facts | None) -> Facts:
+    """The claim chosen among the ones shown, or none of them: then a person is offered."""
+    return {
+        "intent": case.intent,
+        "action": "report_claim_status",
+        "outcome": "informed",
+        "claim": claim,
+        "other_claim": claim is None,
+        "redirect": None,
+        "actions_taken": [],
+    }
 
 
 def _candidates(session: Session, deps: AgentDeps, customer: Customer) -> list[Candidate]:
@@ -915,9 +970,12 @@ def _reply(
     # of them is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
-    # The recognition step is written by code by design (TRZ-16), not as an LLM fallback.
+    # The recognition step is written by code by design (TRZ-16), not as an LLM fallback. So is
+    # the redirect of a request out of scope (TRZ-23): where to go is never left to the LLM.
     if facts["outcome"] == "recognizing":
         return recognition_text(facts["charge"], language), LLMCallStats()
+    if facts["outcome"] == "abstained":
+        return template_reply(facts, language), LLMCallStats()
     body, stats = deps.llm.compose(redacted, _reply_facts(facts), language)
     text = _joined(body, note)
     if stats.fallback:
@@ -941,7 +999,13 @@ def _reply_facts(facts: Facts) -> Facts:
     tx = facts.get("transaction")
     shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
     dispute = facts.get("dispute")
+    claims = [facts["claim"]] if facts.get("claim") else facts.get("claims", [])
+    # A claim status turn always says which claims are open, even none: without the empty list
+    # the LLM does not know there is nothing to report and asks the customer which claim.
+    asked = "claim" in facts or "claims" in facts
     return {
+        **({"claims": [_claim_shown(c) for c in claims]} if asked else {}),
+        **({"other_claim": True} if facts.get("other_claim") else {}),
         "outcome": facts["outcome"],
         "action": facts.get("action"),
         "transaction": shown or None,
@@ -951,6 +1015,11 @@ def _reply_facts(facts: Facts) -> Facts:
         "dispute": {"folio": dispute["folio"]} if dispute else None,
         "card_not_blocked": facts.get("card_not_blocked"),
     }
+
+
+def _claim_shown(claim: Facts) -> Facts:
+    # The deadline is written by code with its citation, never by the LLM.
+    return {k: claim[k] for k in ("claim_id", "opened_on", "status", "last_step")}
 
 
 def _summary(case: Case, facts: Facts) -> str:

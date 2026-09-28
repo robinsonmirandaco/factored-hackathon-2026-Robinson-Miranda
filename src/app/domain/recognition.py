@@ -200,6 +200,20 @@ class ChargeDetail:
     earlier_months: tuple[date, ...]
 
 
+def long_date(day: date, language: str) -> str:
+    """A date as the customer reads it: "8 de julio de 2026", "8 de julho de 2026".
+
+    Args:
+        day: The date.
+        language: "pt" for Portuguese, anything else for Spanish.
+
+    Returns:
+        The date in words.
+    """
+    months = MONTHS["pt" if language == "pt" else "es"]
+    return f"{day.day} de {months[day.month - 1]} de {day.year}"
+
+
 def choices(language: Language) -> list[dict[str, str]]:
     """The two choices of the step, the primary one first (CA5).
 

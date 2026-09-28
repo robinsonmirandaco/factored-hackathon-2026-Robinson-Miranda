@@ -1,25 +1,27 @@
-description: 'Claim status with no open claim, in Portuguese: said so, read only (L0)'
+description: 'One open dispute complaint: status, last step and the deadline cited from the passage'
 tags:
 - golden
 - claim_status
-- portuguese
 fixtures:
   customer:
-    customer_id: EVC18
+    customer_id: EVC26
     document_type: Pasaporte
-    document_number: EVC18-DOC
+    document_number: EVC26-DOC
     first_name: Eval
     country: México
     country_code: MX
     timezone: America/Mexico_City
     segment: Basic
   products:
-  - product_id: P18
+  - product_id: P26
     product_type: credit_card
     currency: USD
     product_status: Active
+  complaints:
+  - complaint_id: CMP-EVC26CLAIM00000001
+    days_ago: 5
 turns:
-- message: Como vai minha reclamação?
+- message: ¿Cómo va mi reclamo?
   expect:
     intent: claim_status
     outcome: informed
@@ -28,4 +30,5 @@ turns:
     policy_action: report_claim_status
     policy_rule: routing.claim_status
     reply_contains:
-    - Não encontrei reclamações abertas
+    - CMP-EVC26CLAIM00000001
+    - 15 días hábiles según el §2.1

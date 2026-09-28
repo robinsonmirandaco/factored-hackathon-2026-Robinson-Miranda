@@ -35,9 +35,9 @@ class ChatIn(BaseModel):
             action that was replaced, cancelled or belongs to another case runs nothing; one
             already executed returns the same result again.
         recognition: The button pressed at the recognition step of `case_id`.
-        option: The `transaction_id` of the option chosen in `case_id`, or `none` when none of
-            the options shown is the charge. Any id that was not shown stops the case for
-            security.
+        option: The `transaction_id` of the option chosen in `case_id` (the `claim_id` in a
+            claim status case), or `none` when none of the options shown is the one. Any id that
+            was not shown stops the case for security.
     """
 
     customer_id: str | None = Field(default=None, max_length=64)
@@ -179,6 +179,20 @@ class OptionOut(BaseModel):
     date: str
 
 
+class ClaimOut(BaseModel):
+    """An open claim shown as an option; send its `claim_id` as `option` to choose it.
+
+    Attributes:
+        claim_id: Folio of a dispute (DSP-...) or id of a complaint (CMP-...).
+        source: Table the claim was read from, disputes or complaints.
+        opened_on: Day it was registered or created.
+    """
+
+    claim_id: str
+    source: str
+    opened_on: str
+
+
 class PendingActionOut(BaseModel):
     """An action waiting for the customer's confirmation.
 
@@ -198,6 +212,7 @@ class ChatOut(BaseModel):
         charge: The charge to recognize, when `outcome` is recognizing.
         choices: The buttons of the recognition step, primary first.
         options: The charges to choose from, when several fit.
+        claims: The open claims to choose from, when the customer has several.
         pending_action: The action to confirm, when `outcome` is awaiting_confirmation.
         dispute_folio: Folio DSP-AAAA-NNNNN of the dispute registered in this turn.
     """
@@ -215,6 +230,7 @@ class ChatOut(BaseModel):
     charge: ChargeOut | None = None
     choices: list[ChoiceOut] = Field(default_factory=list)
     options: list[OptionOut] = Field(default_factory=list)
+    claims: list[ClaimOut] = Field(default_factory=list)
     pending_action: PendingActionOut | None = None
     dispute_folio: str | None = None
 

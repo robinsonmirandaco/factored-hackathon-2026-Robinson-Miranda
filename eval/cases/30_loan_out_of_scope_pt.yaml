@@ -1,25 +1,25 @@
-# Replaces 10.
-description: 'Balance question: abstain and redirect, no tool'
+description: 'A loan request in Portuguese: abstain, say it is not served here and where to go, no tool'
 tags:
 - golden
 - out_of_scope
+- portuguese
 fixtures:
   customer:
-    customer_id: EVC17
+    customer_id: EVC30
     document_type: Pasaporte
-    document_number: EVC17-DOC
+    document_number: EVC30-DOC
     first_name: Eval
     country: México
     country_code: MX
     timezone: America/Mexico_City
     segment: Basic
   products:
-  - product_id: P17
+  - product_id: P30
     product_type: credit_card
     currency: USD
     product_status: Active
 turns:
-- message: Quiero saber mi saldo
+- message: Quero contratar um empréstimo para reformar a casa
   expect:
     intent: out_of_scope
     outcome: abstained
@@ -28,4 +28,5 @@ turns:
     policy_action: abstain_and_redirect
     policy_rule: routing.out_of_scope
     reply_contains:
-    - usa la app o la línea de atención de tu banco
+    - não consigo contratar empréstimos
+    - área de empréstimos do app

@@ -1,0 +1,34 @@
+description: 'A fee complaint has no passage that backs a deadline: none is stated and a person is offered'
+tags:
+- golden
+- claim_status
+fixtures:
+  customer:
+    customer_id: EVC29
+    document_type: Pasaporte
+    document_number: EVC29-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P29
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  complaints:
+  - complaint_id: CMP-EVC29CLAIM00000001
+    category: Fees
+    subcategory: Cobro de comisión
+    days_ago: 4
+turns:
+- message: ¿Cómo va mi reclamo?
+  expect:
+    intent: claim_status
+    outcome: informed
+    autonomy_level: L0
+    actions_taken: []
+    reply_contains:
+    - No tengo un plazo de respuesta respaldado por la política
+    - te comunico con una persona

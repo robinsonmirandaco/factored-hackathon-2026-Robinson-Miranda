@@ -6,12 +6,13 @@ from datetime import date
 
 import pytest
 
-from app.adapters.llm import _REPLIES
+from app.adapters.llm import _CLAIM_WORDS, _REPLIES
 from app.domain.fact_check import VerifiedFacts, amount_fact, extract, unsupported
 from app.domain.policy_passages import Passage
 from app.services.replies import deadline_note, long_date
 
 FOLIO = "DSP-2026-00042"
+CLAIM = "CMP-TEST000000000000001"
 FACTS = VerifiedFacts(
     amounts=frozenset({amount_fact(120.0), amount_fact(2400.5)}),
     dates=frozenset({date(2026, 6, 16), date(2026, 6, 17), date(2026, 7, 9)}),
@@ -202,8 +203,77 @@ def test_offering_an_action_is_not_claiming_it() -> None:
 @pytest.mark.parametrize("key", sorted(_REPLIES["es"]))
 def test_every_fixed_reply_passes_the_checker(language: str, key: str) -> None:
     done = {"register_dispute", "block_card"} if key.startswith("registered") else set()
-    facts = VerifiedFacts(folios=frozenset({FOLIO}), actions=frozenset(done))
-    assert _kinds(_REPLIES[language][key].format(folio=FOLIO), facts) == []
+    facts = VerifiedFacts(
+        folios=frozenset({FOLIO, CLAIM}),
+        dates=frozenset({date(2026, 6, 12), date(2026, 6, 13)}),
+        actions=frozenset(done),
+    )
+    words = _CLAIM_WORDS[language]
+    text = _REPLIES[language][key].format(
+        folio=FOLIO,
+        claim_id=CLAIM,
+        opened=long_date(date(2026, 6, 12), language),
+        status=words["in_review"],
+        step=words["assigned"],
+        step_on=long_date(date(2026, 6, 13), language),
+    )
+    assert _kinds(text, facts) == []
+
+
+def _claim(**extra: object) -> dict:
+    return {
+        "outcome": "informed",
+        "action": "report_claim_status",
+        "claim": {
+            "claim_id": CLAIM,
+            "opened_on": "2026-06-12",
+            "last_step": {"step": "created", "on": "2026-06-12"},
+            "due_date": "2026-07-06",
+            "passage_id": "§2.1",
+            "overdue": False,
+            **extra,
+        },
+    }
+
+
+CLAIM_FACTS = VerifiedFacts(
+    folios=frozenset({CLAIM}),
+    dates=frozenset({date(2026, 6, 12), date(2026, 7, 6)}),
+    passages=frozenset({"§2.1"}),
+    deadlines=frozenset({15}),
+)
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_the_claim_note_cites_its_source_and_deadline_and_passes_the_checker(
+    language: str,
+) -> None:
+    note = deadline_note(_claim(), {"response_deadline": PASSAGE}, language)
+    assert CLAIM in note and "§2.1" in note and long_date(date(2026, 7, 6), language) in note
+    assert _kinds(note, CLAIM_FACTS) == []
+
+
+@pytest.mark.parametrize(("language", "word"), [("es", "venció"), ("pt", "venceu")])
+def test_an_overdue_claim_note_says_the_deadline_passed(language: str, word: str) -> None:
+    note = deadline_note(_claim(overdue=True), {"response_deadline": PASSAGE}, language)
+    assert word in note and "§2.1" in note
+    assert _kinds(note, CLAIM_FACTS) == []
+
+
+@pytest.mark.parametrize(("language", "person"), [("es", "una persona"), ("pt", "uma pessoa")])
+def test_a_claim_without_a_backing_passage_gets_no_deadline_and_a_person(
+    language: str, person: str
+) -> None:
+    note = deadline_note(_claim(due_date=None, passage_id=None), {}, language)
+    assert CLAIM in note and person in note
+    assert not [c for c in extract(note) if c.kind in ("date", "deadline", "passage")]
+    assert _kinds(note, VerifiedFacts(folios=frozenset({CLAIM}))) == []
+
+
+def test_no_claim_note_without_a_claim_and_a_person_when_none_of_them_is_the_one() -> None:
+    none = {"outcome": "informed", "action": "report_claim_status", "claim": None}
+    assert deadline_note(none, {}, "es") == ""
+    assert deadline_note({**none, "other_claim": True}, {}, "es").endswith("una persona.")
 
 
 @pytest.mark.parametrize("language", ["es", "pt"])
