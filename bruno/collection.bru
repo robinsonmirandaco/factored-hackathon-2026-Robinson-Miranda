@@ -10,7 +10,7 @@ docs {
   
   ## How to run
   
-  1. Start the local stack with `docker compose up`. The API listens on `http://localhost:8000` by default.
+  1. Set `DEMO_MODE=true` in the root `.env`, then start a stack whose database holds the synthetic fixture: a fresh `docker compose up` seeds it on an empty database, or run `make seed-synthetic`. The demo customer does not exist in the real cohort. The API listens on `http://localhost:8000` by default.
   2. Select the `local` environment (top right). If you run a parallel stack on another port, change `baseUrl` locally but **do not commit** that change to `environments/local.bru`.
   3. Create `bruno/.env` with one line:
   
@@ -66,4 +66,5 @@ docs {
   | `401` | No session, wrong or expired session (`session_expired`) |
   | `403` | Customer token on an analyst route, or analyst token on a customer route |
   | `404` | Unknown route or resource |
+  | `429` | Three wrong codes lock the document for 15 minutes (`document_locked`), or too many code requests (`code_requests_limited`) |
 }
