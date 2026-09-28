@@ -1018,8 +1018,8 @@ def _reply_facts(facts: Facts) -> Facts:
 
 
 def _claim_shown(claim: Facts) -> Facts:
-    # The deadline is written by code with its citation, never by the LLM.
-    return {k: claim[k] for k in ("claim_id", "opened_on", "status", "last_step")}
+    # Status, last step and deadline are written by code in a closed vocabulary, never by the LLM.
+    return {k: claim[k] for k in ("claim_id", "opened_on")}
 
 
 def _summary(case: Case, facts: Facts) -> str:

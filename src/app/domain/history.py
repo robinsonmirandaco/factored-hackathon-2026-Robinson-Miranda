@@ -306,6 +306,7 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "merchant": "comercio",
         "number": "número",
         "forbidden_request": "pedido prohibido",
+        "contact_promise": "promesa de contacto",
         "action_claim": "acción no realizada",
     },
     "pt": {
@@ -318,6 +319,7 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "merchant": "estabelecimento",
         "number": "número",
         "forbidden_request": "pedido proibido",
+        "contact_promise": "promessa de contato",
         "action_claim": "ação não realizada",
     },
 }

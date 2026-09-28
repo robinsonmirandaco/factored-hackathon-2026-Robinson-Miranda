@@ -29,6 +29,10 @@ _NOTES: dict[str, dict[str, str]] = {
             "No tengo un plazo de respuesta respaldado por la política para esta aclaración. "
             "Si quieres, te comunico con una persona."
         ),
+        "claim_status": (
+            "Tu reclamo {claim_id}, abierto el {opened}, está {status}. Último paso: {step}, "
+            "el {step_on}."
+        ),
         "claim_source": "Fuente: registro del reclamo {claim_id}.",
         "claim_overdue": (
             "El plazo de respuesta venció el {due}: {days} {unit} según el {passage} ({label})."
@@ -47,6 +51,10 @@ _NOTES: dict[str, dict[str, str]] = {
             "Não tenho um prazo de resposta respaldado pela política para esta contestação. "
             "Se quiser, eu coloco você em contato com uma pessoa."
         ),
+        "claim_status": (
+            "A sua reclamação {claim_id}, aberta em {opened}, está {status}. Última etapa: "
+            "{step}, em {step_on}."
+        ),
         "claim_source": "Fonte: registro da reclamação {claim_id}.",
         "claim_overdue": (
             "O prazo de resposta venceu em {due}: {days} {unit} conforme o {passage} ({label})."
@@ -60,9 +68,32 @@ _NOTES: dict[str, dict[str, str]] = {
 }
 
 
+# The closed vocabulary of a claim's status and last step: the LLM never words them (TRZ-22).
+STATUS_WORDS: dict[str, dict[str, str]] = {
+    "es": {
+        "received": "recibido",
+        "in_review": "en revisión",
+        "answered": "con una primera respuesta del banco, pendiente de resolución",
+        "created": "su creación",
+        "assigned": "la asignación a una analista",
+        "first_response": "la primera respuesta del banco",
+        "registered": "el registro de la aclaración",
+    },
+    "pt": {
+        "received": "recebida",
+        "in_review": "em análise",
+        "answered": "com uma primeira resposta do banco, aguardando solução",
+        "created": "a abertura",
+        "assigned": "a atribuição a uma analista",
+        "first_response": "a primeira resposta do banco",
+        "registered": "o registro da contestação",
+    },
+}
+
+
 def deadline_note(facts: dict[str, Any], passages: dict[str, Passage], language: str) -> str:
-    """The deadline of a verified registration or of the claim reported, with its citation, or
-    the offer of a person when no passage backs it.
+    """The deadline of a verified registration with its citation; for the claim reported, its
+    status, last step, source and deadline; or the offer of a person when no passage backs it.
 
     Args:
         facts: Facts of the turn.
@@ -88,12 +119,22 @@ def deadline_note(facts: dict[str, Any], passages: dict[str, Passage], language:
 def _claim_note(
     facts: dict[str, Any], passages: dict[str, Passage], language: str, notes: dict[str, str]
 ) -> str:
-    """Source and deadline of the claim reported (TRZ-22 CA2, CA4 and CA6)."""
+    """Status, last step, source and deadline of the claim reported (TRZ-22 CA2, CA4 and CA6),
+    in the closed vocabulary of each status."""
     claim = facts.get("claim")
     if claim is None:
         # None of the claims shown is the one the customer means.
         return notes["person"] if facts.get("other_claim") else ""
-    source = notes["claim_source"].format(claim_id=claim["claim_id"])
+    lang = "pt" if language == "pt" else "es"
+    words = STATUS_WORDS[lang]
+    status = notes["claim_status"].format(
+        claim_id=claim["claim_id"],
+        opened=long_date(date.fromisoformat(claim["opened_on"]), lang),
+        status=words[claim["status"]],
+        step=words[claim["last_step"]["step"]],
+        step_on=long_date(date.fromisoformat(claim["last_step"]["on"]), lang),
+    )
+    source = f"{status} " + notes["claim_source"].format(claim_id=claim["claim_id"])
     passage = _passage(passages, claim.get("passage_id"))
     if not claim.get("due_date") or passage is None or language not in passage.label:
         return f"{source} {notes['claim_no_deadline']}"

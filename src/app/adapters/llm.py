@@ -17,7 +17,6 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +29,6 @@ from app.core.config import Settings
 from app.core.logging import get_logger
 from app.domain.clock import SimulatedClock
 from app.domain.comprehension_rules import comprehend_rules
-from app.domain.recognition import long_date
 from app.schemas.comprehension import (
     Comprehension,
     ComprehensionContext,
@@ -222,8 +220,9 @@ language, in 2 to 4 short sentences, plain and warm. Use only the facts you are 
 amount, date, folio, duration, card digits or merchant that is not in them, and state as done
 only the actions listed in actions_taken. Never promise refunds or cancellations. Never ask for
 or mention passwords, PINs, security codes, card numbers or identity documents. Do not state
-response deadlines nor cite policy: they are added after your text. Do not mention internal
-scores, rules or system names."""
+response deadlines nor cite policy, and do not describe the status or the steps of a claim:
+they are added after your text. Never promise to contact the customer or to send news. Do not
+mention internal scores, rules or system names."""
 
 
 class LLMClient:
@@ -534,28 +533,6 @@ class LLMClient:
 _HERE_ES = " Por aquí atiendo aclaraciones de cargos y el estado de tus reclamos."
 _HERE_PT = " Por aqui eu atendo contestações de cobranças e o status das suas reclamações."
 
-# Words of a claim's status and last step in the fixed reply (TRZ-22).
-_CLAIM_WORDS: dict[str, dict[str, str]] = {
-    "es": {
-        "received": "recibido",
-        "in_review": "en revisión",
-        "answered": "con una primera respuesta del banco, pendiente de resolución",
-        "created": "su creación",
-        "assigned": "la asignación a una analista",
-        "first_response": "la primera respuesta del banco",
-        "registered": "el registro de la aclaración",
-    },
-    "pt": {
-        "received": "recebida",
-        "in_review": "em análise",
-        "answered": "com uma primeira resposta do banco, aguardando solução",
-        "created": "a abertura",
-        "assigned": "a atribuição a uma analista",
-        "first_response": "a primeira resposta do banco",
-        "registered": "o registro da contestação",
-    },
-}
-
 _REPLIES: dict[str, dict[str, str]] = {
     "es": {
         "registered_verified": "Registramos tu aclaración sobre el cargo con el folio {folio}.",
@@ -637,10 +614,7 @@ _REPLIES: dict[str, dict[str, str]] = {
             f"tu banco.{_HERE_ES}"
         ),
         "claim_none": "No encuentro reclamos abiertos a tu nombre.",
-        "claim_one": (
-            "Tu reclamo {claim_id}, abierto el {opened}, está {status}. Último paso: {step}, el "
-            "{step_on}."
-        ),
+        "claim_one": "Esto es lo que veo de tu reclamo.",
         "claim_other": "No veo otro reclamo abierto a tu nombre.",
         "show_claims": "Tienes varios reclamos abiertos. Elige cuál quieres consultar.",
         "no_pending_action": "No hay ninguna acción pendiente de confirmar en este caso.",
@@ -737,10 +711,7 @@ _REPLIES: dict[str, dict[str, str]] = {
             f"banco.{_HERE_PT}"
         ),
         "claim_none": "Não encontrei reclamações abertas em seu nome.",
-        "claim_one": (
-            "A sua reclamação {claim_id}, aberta em {opened}, está {status}. Última etapa: "
-            "{step}, em {step_on}."
-        ),
+        "claim_one": "Veja como está a sua reclamação.",
         "claim_other": "Não vejo outra reclamação aberta em seu nome.",
         "show_claims": "Você tem várias reclamações abertas. Escolha qual quer consultar.",
         "no_pending_action": "Não há nenhuma ação pendente de confirmação neste caso.",
@@ -809,18 +780,9 @@ def template_reply(facts: dict[str, Any], language: str) -> str:
     Returns:
         The reply text.
     """
-    lang = "pt" if language == "pt" else "es"
-    fields = {"folio": (facts.get("dispute") or {}).get("folio", "")}
-    if claim := facts.get("claim"):
-        words = _CLAIM_WORDS[lang]
-        fields |= {
-            "claim_id": claim["claim_id"],
-            "opened": long_date(date.fromisoformat(claim["opened_on"]), lang),
-            "status": words[claim["status"]],
-            "step": words[claim["last_step"]["step"]],
-            "step_on": long_date(date.fromisoformat(claim["last_step"]["on"]), lang),
-        }
-    return _REPLIES[lang][reply_key(facts)].format(**fields)
+    table = _REPLIES["pt" if language == "pt" else "es"]
+    folio = (facts.get("dispute") or {}).get("folio", "")
+    return table[reply_key(facts)].format(folio=folio)
 
 
 def _strip_fence(s: str) -> str:

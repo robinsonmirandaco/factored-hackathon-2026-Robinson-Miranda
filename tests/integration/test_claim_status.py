@@ -396,3 +396,51 @@ def test_a_claim_that_was_not_shown_stops_the_case_for_security(
     _, stopped = _turns(schema, _deps(settings), {"option": "CMP-NOTSHOWN0000000000"})
 
     assert stopped.outcome == "security_blocked"
+
+
+# ---- the status is written by code; the LLM only goes with it ---------------------------------
+
+
+def _opened(now: datetime, days: int) -> str:
+    return (now - timedelta(days=days)).date().isoformat()
+
+
+def test_the_llm_gets_no_status_and_the_reply_carries_the_status_written_by_code(
+    schema: SchemaUrls, settings: Settings
+) -> None:
+    now = settings.trazo_now
+    _complaint(
+        schema,
+        "CMP-TEST000000000000008",
+        now - timedelta(days=5),
+        assignment_date=now - timedelta(days=4),
+    )
+    sent: list[str] = []
+
+    r = _ask(schema, _deps(settings, sent=sent))
+
+    user = json.loads(sent[-1])["messages"][1]["content"]
+    shown = json.loads(user.split("Facts (JSON): ", 1)[1])["claims"]
+    assert shown == [{"claim_id": "CMP-TEST000000000000008", "opened_on": _opened(now, 5)}]
+    assert "está en revisión. Último paso: la asignación a una analista, el" in r.reply
+    assert _fact_check_passed(schema, r.case_id) is True
+
+
+def test_a_contact_promise_of_the_llm_is_blocked(schema: SchemaUrls, settings: Settings) -> None:
+    _complaint(schema, "CMP-TEST000000000000009", settings.trazo_now - timedelta(days=3))
+    answer = reading("claim_status", "pt-BR")
+    llm = fake_llm(
+        settings, answer, reply="Sua reclamação está em análise, em breve teremos notícias."
+    )
+
+    r = _ask(schema, agent_deps(settings, llm), "pt")
+
+    assert r.llm_fallback is True and "em breve" not in r.reply
+    assert r.reply.startswith("Veja como está a sua reclamação. A sua reclamação")
+    blocked = _scalar(
+        schema,
+        "SELECT result->'unsupported' FROM audit_log WHERE case_id = :c "
+        "AND action = 'fact_check' ORDER BY id DESC LIMIT 1",
+        c=r.case_id,
+    )
+    assert blocked == [{"kind": "contact_promise", "value": "em breve"}]
