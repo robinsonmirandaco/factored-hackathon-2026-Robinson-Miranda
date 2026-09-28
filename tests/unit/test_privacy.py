@@ -7,7 +7,7 @@ from datetime import datetime
 import httpx
 import pytest
 
-from app.adapters.llm import VALIDATE_SYSTEM, LLMClient
+from app.adapters.llm import LLMClient
 from app.core.config import Settings
 from app.domain.pii import ACCOUNT, CARD, DOCUMENT, EMAIL, NAME, PHONE, redact
 from app.schemas.comprehension import ComprehensionContext
@@ -207,8 +207,6 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
                     "language": "es-MX",
                 }
             )
-        elif system.startswith(VALIDATE_SYSTEM[:40]):
-            content = '{"ok": true, "reason": ""}'
         else:
             content = "Bloqueamos tu tarjeta y abrimos la disputa."
         return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
@@ -233,7 +231,7 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
     llm.compose(redacted, {"outcome": "escalated"}, "es")
 
     assert not stats.fallback
-    assert len(sent) == 3  # comprehend, compose, validate
+    assert len(sent) == 2  # comprehend, compose
     for body in sent:
         for secret in SECRETS:
             assert secret not in body

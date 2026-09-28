@@ -4,9 +4,9 @@ An AI-first intake assistant for disputed card transactions, built for the Facto
 
 ## Status
 
-Prototype in progress. The service runs end to end on synthetic data. A customer turn follows the dispute workflow of the design up to the registration: the LLM reads the intent and the clues (the rules baseline answers when it fails), and the charge is identified with a conformal set. When several charges fit, the customer picks one among the options shown. The customer then sees the charge as the database records it and says whether they recognize it, and the business policy of `config/policy.yaml` decides. Registering a dispute, with a folio, or blocking the card of the charge runs only after the customer confirms that exact pending action.
+Prototype in progress. The service runs end to end on synthetic data. A customer turn follows the dispute workflow of the design up to the registration: the LLM reads the intent and the clues (the rules baseline answers when it fails), and the charge is identified with a conformal set. When several charges fit, the customer picks one among the options shown. The customer then sees the charge as the database records it and says whether they recognize it, and the business policy of `config/policy.yaml` decides. Registering a dispute, with a folio, or blocking the card of the charge runs only after the customer confirms that exact pending action. Each action is then read back from the database; only a verified one is confirmed to the customer, and a mismatch sends the case to an analyst. Every reply the LLM writes goes through a deterministic fact checker, and the receipt cites the policy passage behind its deadline, or offers a person when no passage backs one.
 
-Not built yet: the read-back check after acting, the fact checker of replies, the analyst dossier and queue with priority, and autonomy levels per cell (every cell starts at A0). `make eval` runs 25 golden cases, none skipped.
+Not built yet: the analyst dossier and queue with priority, and autonomy levels per cell (every cell starts at A0). `make eval` runs 25 golden cases, none skipped.
 
 ## Requirements
 

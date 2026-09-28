@@ -147,18 +147,14 @@ def test_slow_server_is_cut_at_the_wall_clock_deadline() -> None:
     assert elapsed < 1.0  # deadline 0.2 s x 2 attempts, far below the 2 s server delay
 
 
-def test_reply_rejected_by_validator_uses_template() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        system = json.loads(request.content)["messages"][0]["content"]
-        if "check a bank's customer reply" in system:
-            return _completion('{"ok": false, "reason": "promises a refund"}')
-        return _completion("We refunded you 1000 USD.")
+def test_compose_makes_one_call_and_leaves_the_check_to_the_caller() -> None:
+    calls: list[str] = []
+    llm = _client(lambda _r: _completion("  Pasamos tu caso a una analista.  "), calls)
 
-    reply, stats = _client(handler, []).compose("refund me", {"outcome": "escalated"}, "es")
+    reply, stats = llm.compose("ayuda", {"outcome": "escalated"}, "es")
 
-    assert stats.fallback
-    assert reply == template_reply({"outcome": "escalated"}, "es")
-    assert "1000" not in reply
+    # No second LLM judges the reply: the fact checker of TRZ-20 does, deterministically.
+    assert (reply, stats.fallback, stats.calls) == ("Pasamos tu caso a una analista.", False, 1)
 
 
 def test_malformed_provider_response_falls_back() -> None:
@@ -245,13 +241,13 @@ def test_complete_sends_the_temperature_to_both_providers() -> None:
     ids=["register", "register and block", "card not blocked"],
 )
 def test_the_registration_reply_gives_the_folio(facts: dict, expected: str) -> None:
-    facts = {"outcome": "registered", "dispute": {"folio": "DSP-2026-00007"}, **facts}
+    facts = {"outcome": "registered_verified", "dispute": {"folio": "DSP-2026-00007"}, **facts}
     assert template_reply(facts, "es") == expected
 
 
 def test_without_card_and_without_block_the_reply_sends_the_customer_to_block_it() -> None:
     facts = {
-        "outcome": "registered",
+        "outcome": "registered_verified",
         "actions_taken": ["register_dispute"],
         "card_not_blocked": "card_not_active",
         "redirect": "card_block",
@@ -260,3 +256,14 @@ def test_without_card_and_without_block_the_reply_sends_the_customer_to_block_it
     reply = template_reply(facts, "pt")
     assert "protocolo DSP-2026-00007" in reply
     assert "central de bloqueio" in reply
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+@pytest.mark.parametrize("redirect", [None, "card_block"])
+def test_a_failed_read_back_confirms_nothing(language: str, redirect: str | None) -> None:
+    facts = {"outcome": "failed", "actions_taken": [], "redirect": redirect}
+    reply = template_reply(facts, language)
+    assert "DSP-" not in reply
+    assert ("analista" in reply) and ("Registramos" not in reply)
+    blocking = "línea de bloqueo" if language == "es" else "central de bloqueio"
+    assert (blocking in reply) == (redirect == "card_block")

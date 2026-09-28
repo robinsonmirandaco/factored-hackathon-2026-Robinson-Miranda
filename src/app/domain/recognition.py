@@ -57,7 +57,8 @@ _STATUSES: dict[Language, dict[str, str]] = {
     "pt": {"Approved": "aprovada", "Pending": "pendente"},
 }
 
-_MONTHS: dict[Language, tuple[str, ...]] = {
+# Month names by language, also used to read and write dates in replies (TRZ-20).
+MONTHS: dict[Language, tuple[str, ...]] = {
     "es": (
         "enero",
         "febrero",
@@ -268,7 +269,7 @@ def _when(at: datetime, language: Language) -> str:
 
 def _months(months: tuple[date, ...], language: Language) -> str:
     """Month names joined as a sentence; the year is said once when all share it."""
-    t, names = _TEXT[language], _MONTHS[language]
+    t, names = _TEXT[language], MONTHS[language]
     ordered = sorted(months)
     one_year = len({m.year for m in ordered}) == 1
     words = [

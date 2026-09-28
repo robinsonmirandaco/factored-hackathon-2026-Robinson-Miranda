@@ -158,7 +158,7 @@ def test_no_request_asks_the_model_for_its_reasoning() -> None:
             "language": "es-MX",
         }
     )
-    llm = _anthropic_client([reading, "Te ayudo con eso.", '{"ok": true}'], requests)
+    llm = _anthropic_client([reading, "Te ayudo con eso."], requests)
     context = ComprehensionContext(
         now=datetime(2026, 6, 17, 10, 0), country_code="MX", local_currency="MXN"
     )
@@ -166,18 +166,7 @@ def test_no_request_asks_the_model_for_its_reasoning() -> None:
     llm.comprehend("quiero un préstamo", context)
     llm.compose("quiero un préstamo", {"outcome": "abstained"}, "es")
 
-    assert len(requests) == 3
+    assert len(requests) == 2
     for request in requests:
         assert "thinking" not in request
         assert "thinking" not in json.dumps(request.get("extra_body", {}))
-
-
-def test_a_rejected_reply_keeps_the_outcome_not_the_validators_words() -> None:
-    requests: list[dict[str, Any]] = []
-    verdict = json.dumps({"ok": False, "reason": "the reply promises a refund"})
-    llm = _anthropic_client(["We will refund you.", verdict], requests)
-
-    _, stats = llm.compose("charge", {"outcome": "informed"}, "es")
-
-    assert stats.fallback
-    assert stats.error == "validator_rejected"

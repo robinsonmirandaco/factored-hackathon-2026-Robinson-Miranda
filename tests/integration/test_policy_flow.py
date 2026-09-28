@@ -293,8 +293,8 @@ def test_no_llm_call_carries_the_policy(schema: SchemaUrls, database_url: str) -
         not_recognized=True,
     )
     assert result.outcome == "awaiting_confirmation"
-    # comprehend; the recognition step is written by code; then compose and validate
-    assert len(sent) == 3
+    # comprehend; the recognition step is written by code; then compose, checked by code
+    assert len(sent) == 2
 
     policy = yaml.safe_load(POLICY.read_text(encoding="utf-8"))
     decide = next(r for r in rows if r.action == "decide")
@@ -373,7 +373,7 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
     }
     second = rules_client.post("/chat", json=confirm)
     assert (second.json()["outcome"], second.json()["actions_taken"]) == (
-        "registered",
+        "registered_verified",
         ["register_dispute"],
     )
 
@@ -511,4 +511,4 @@ def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
 
     # The owner's pending action is intact: only C1 can confirm it.
     own = two_customers.post("/chat", json=confirm).json()
-    assert (own["outcome"], own["actions_taken"]) == ("registered", ["register_dispute"])
+    assert (own["outcome"], own["actions_taken"]) == ("registered_verified", ["register_dispute"])

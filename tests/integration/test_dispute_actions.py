@@ -108,7 +108,7 @@ def test_a_confirmation_runs_the_action_it_names(client: TestClient, schema: Sch
     done = _confirm(client, pending["case_id"], pending["pending_action"]["action_id"])
 
     assert (done["outcome"], done["actions_taken"]) == (
-        "registered",
+        "registered_verified",
         ["register_dispute", "block_card"],
     )
     assert re.fullmatch(r"DSP-2026-\d{5}", done["dispute_folio"])
@@ -137,7 +137,7 @@ def test_a_replaced_action_runs_nothing(client: TestClient, schema: SchemaUrls) 
         None,
     )
     assert _counts(schema) == (0, 0)
-    assert _confirm(client, first["case_id"], new)["outcome"] == "registered"
+    assert _confirm(client, first["case_id"], new)["outcome"] == "registered_verified"
     assert _query(schema, f"SELECT status FROM case_actions WHERE id = '{old}'") == [("replaced",)]
 
 
@@ -150,7 +150,7 @@ def test_a_double_send_returns_the_same_folio_and_writes_nothing(
     twice = _confirm(client, pending["case_id"], action_id)
 
     assert (twice["outcome"], twice["actions_taken"], twice["dispute_folio"]) == (
-        "registered",
+        "registered_verified",
         once["actions_taken"],
         once["dispute_folio"],
     )
@@ -251,7 +251,7 @@ def test_without_the_card_and_without_a_block_the_customer_is_sent_to_block_it(
 ) -> None:
     pending = _pending(blocked_card, STOLEN)
     r = _confirm(blocked_card, pending["case_id"], pending["pending_action"]["action_id"])
-    assert (r["outcome"], r["actions_taken"]) == ("registered", ["register_dispute"])
+    assert (r["outcome"], r["actions_taken"]) == ("registered_verified", ["register_dispute"])
     assert r["dispute_folio"] in r["reply"]
     assert "no pudimos bloquear la tarjeta" in r["reply"]
     assert "línea de bloqueo" in r["reply"]

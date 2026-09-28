@@ -10,7 +10,8 @@
   5. recognition (design 6.4): an unrecognized charge is shown in detail from the database,
      and the customer says whether they recognize it before anything is decided
   6. policy decision on the identified charge, compared in USD
-  7. nothing runs until the customer confirms the exact pending action of the case
+  7. nothing runs until the customer confirms the exact pending action of the case; each action
+     is read back from the database, and only a verified one is confirmed to the customer
   8. reply from the facts; every step lands in the audit log under one trace_id
 
 The LLM never picks tools nor decides: tool selection is code and the decision is the policy.
@@ -59,6 +60,8 @@ from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
 from app.services.identification import candidate_of, identify_charge, load_candidates
 from app.services.recognition import charge_detail
+from app.services.replies import check_reply, deadline_note, verified_facts
+from app.services.verification import verify_block, verify_dispute
 
 Facts = dict[str, Any]
 
@@ -66,6 +69,8 @@ Facts = dict[str, Any]
 UNREAD_INTENT = "unread"
 # The option a customer picks when none of the charges shown is the one.
 NONE_OF_THESE = "none"
+# Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
+VERIFICATION_FAILED_REASON = "verification.registration_failed"
 
 # The actions that wait for the customer's confirmation, and whether confirming blocks the card
 # of the charge. The offered block is not run by the "sí": the customer asks for it apart.
@@ -88,6 +93,7 @@ class AgentDeps:
         autonomy: Autonomy level of each intent x language cell.
         passages: Demo policy passages by rule, which back the response deadline.
         calendars: Bank holiday calendars by country code.
+        fact_check: False turns the fact checker into an observer (ablation, TRZ-20 CA6).
     """
 
     policy: PolicyEngine
@@ -97,6 +103,7 @@ class AgentDeps:
     autonomy: AutonomyLookup
     passages: Mapping[str, Passage]
     calendars: Mapping[str, HolidayCalendar]
+    fact_check: bool = True
 
 
 @dataclass(frozen=True)
@@ -197,7 +204,7 @@ def handle_message(
             if facts["outcome"] != "awaiting_confirmation":
                 T.settle_pending_action(session, case.id, "canceled")
 
-        reply, rstats = _reply(deps, redacted, facts, language)
+        reply, rstats = _reply(session, deps, customer, case, redacted, facts, language)
         stats.add(rstats)
         # The charge detail and the recognition text carry the last four digits of the card:
         # shown to the customer, never written to the audit log. The show_charge_detail row
@@ -716,6 +723,11 @@ def _confirm(
     case runs nothing. One already executed runs its tools again, which return their stored
     results: the same folio, no new rows (CA4). The action row is locked, so two confirmations
     sent at once run one after the other.
+
+    Every action that reported success is read back (TRZ-19). When all match, the case is
+    `registered_verified`. When one does not, the case is `failed` and escalated, and the
+    customer gets no confirmation; without the card and without a verified block, the reply
+    still sends the customer to block it.
     """
     row = session.execute(
         select(CaseAction).where(CaseAction.id == action_id).with_for_update()
@@ -765,21 +777,73 @@ def _confirm(
             )
     except T.OwnershipError:
         return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
-    facts["actions_taken"].append("register_dispute")
-    facts["dispute"] = {"folio": dispute.data["folio"], "due_date": dispute.data["due_date"]}
-    if block is not None:
-        if block.ok:
-            facts["actions_taken"].append("block_card")
-        else:
+    backed = _deadline(deps, customer, language)(deps.clock.now.date())
+    checks = [
+        verify_dispute(
+            session,
+            case.id,
+            customer.customer_id,
+            row.transaction_id,
+            case.intent,
+            deps.clock.now,
+            backed.due if isinstance(backed, PolicyDeadline) else None,
+            str(dispute.data.get("folio", "")),
+        )
+    ]
+    if block is not None and block.ok:
+        checks.append(
+            verify_block(
+                session,
+                case.id,
+                str(block.data.get("product_id", "")),
+                str(block.data.get("status_before", "")),
+            )
+        )
+    verified = [c.action for c in checks if c.verified]
+    if block is not None and "block_card" not in verified:
+        if not block.ok:
             facts["card_not_blocked"] = block.message
-            # Without the card and without a block, the customer still has to stop the card.
-            if case.card_in_possession is False:
-                facts["redirect"] = "card_block"
+        # Without the card and without a verified block, the customer still has to stop it.
+        if case.card_in_possession is False:
+            facts["redirect"] = "card_block"
     # A replay reports what was done and leaves the case as later turns left it.
-    if row.status == "pending":
+    first_run = row.status == "pending"
+    if first_run:
         row.status, row.resolved_at = "executed", utcnow()
-        case.status = "registered"
-    facts["outcome"] = "registered"
+    if len(verified) < len(checks):
+        # Nothing is confirmed to the customer: the case goes to a person with the reason.
+        case.autonomy_level = deps.policy.config.action_level["escalate"]
+        handoff = T.escalate_to_human(session, case.id, VERIFICATION_FAILED_REASON, status="failed")
+        if handoff.message:
+            # The case was escalated before: its queue entry stays one, but the failure still
+            # moves the case to failed and is written down with its reason.
+            case.status, case.escalation_reason = "failed", VERIFICATION_FAILED_REASON
+            write_audit(
+                session,
+                "agent",
+                "verification_failed",
+                case.id,
+                {"unverified": [c.action for c in checks if not c.verified]},
+                {"status": "failed", "reason": VERIFICATION_FAILED_REASON},
+            )
+        facts["unverified"] = [c.action for c in checks if not c.verified]
+        facts["outcome"] = "failed"
+        return facts
+    facts["actions_taken"] = verified
+    facts["dispute"] = {
+        "folio": dispute.data["folio"],
+        "registered_on": deps.clock.now.date().isoformat(),
+        "due_date": dispute.data.get("due_date"),
+        "passage": dispute.data.get("due_date_passage"),
+    }
+    tx = session.get(Transaction, row.transaction_id)
+    if tx is not None:
+        facts["transaction"] = _charge_facts(
+            session, candidate_of(tx), local_currency(customer.country_code)
+        )
+    if first_run:
+        case.status = "registered_verified"
+    facts["outcome"] = "registered_verified"
     return facts
 
 
@@ -835,23 +899,48 @@ def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
 
 
 def _reply(
-    deps: AgentDeps, redacted: str, facts: Facts, language: Language
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    redacted: str,
+    facts: Facts,
+    language: Language,
 ) -> tuple[str, LLMCallStats]:
-    # The urgent card block redirect must say the same thing every time, and a security stop
-    # must not send the text of the turn to the LLM, so neither is written by it.
-    if facts.get("redirect") == "card_block" or facts["outcome"] == "security_blocked":
-        return template_reply(facts, language), LLMCallStats(fallback=True)
+    """The reply of the turn. The LLM writes it from the facts; code adds the deadline note,
+    and the fact checker decides whether the LLM text is sent or the fixed reply instead."""
+    note = deadline_note(facts, dict(deps.passages), language)
+    # The urgent card block redirect must say the same thing every time, a security stop must
+    # not send the text of the turn to the LLM, and a failed read-back confirms nothing, so none
+    # of them is written by it.
+    if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
+        return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
     # The recognition step is written by code by design (TRZ-16), not as an LLM fallback.
     if facts["outcome"] == "recognizing":
         return recognition_text(facts["charge"], language), LLMCallStats()
-    return deps.llm.compose(redacted, _reply_facts(facts), language)
+    body, stats = deps.llm.compose(redacted, _reply_facts(facts), language)
+    text = _joined(body, note)
+    if stats.fallback:
+        return text, stats
+    verified = verified_facts(session, customer.customer_id, facts, dict(deps.passages))
+    if check_reply(session, case.id, text, verified, deps.fact_check):
+        return text, stats
+    stats.fallback = True
+    stats.error = "fact_check_blocked"
+    return _joined(template_reply(facts, language), note), stats
+
+
+def _joined(body: str, note: str) -> str:
+    return f"{body} {note}" if note else body
 
 
 def _reply_facts(facts: Facts) -> Facts:
     """What the reply is written from: what happened to the customer's case, never the policy
-    (rules, thresholds or autonomy levels), which the LLM does not see (TRZ-17 CA7)."""
+    (rules, thresholds or autonomy levels), which the LLM does not see (TRZ-17 CA7). Nor the
+    deadline: code writes it with its citation after the LLM text."""
     tx = facts.get("transaction")
     shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
+    dispute = facts.get("dispute")
     return {
         "outcome": facts["outcome"],
         "action": facts.get("action"),
@@ -859,7 +948,7 @@ def _reply_facts(facts: Facts) -> Facts:
         "identification": facts.get("identification"),
         "options": facts.get("options", []),
         "actions_taken": facts["actions_taken"],
-        "dispute": facts.get("dispute"),
+        "dispute": {"folio": dispute["folio"]} if dispute else None,
         "card_not_blocked": facts.get("card_not_blocked"),
     }
 

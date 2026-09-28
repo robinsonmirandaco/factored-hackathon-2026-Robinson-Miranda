@@ -37,6 +37,8 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "identifying": "buscando el cargo con el cliente",
         "awaiting_confirmation": "esperando la confirmación del cliente",
         "registered": "aclaración registrada",
+        "registered_verified": "aclaración registrada y verificada en la base",
+        "failed": "verificación de registro fallida, enviado a una analista",
         "pending_analyst_approval": "esperando la aprobación de una analista",
         "escalated": "enviado a una analista",
         "security_blocked": "detenido por seguridad",
@@ -52,6 +54,8 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "identifying": "buscando a cobrança com o cliente",
         "awaiting_confirmation": "aguardando a confirmação do cliente",
         "registered": "contestação registrada",
+        "registered_verified": "contestação registrada e verificada na base",
+        "failed": "verificação de registro falhou, enviado a uma analista",
         "pending_analyst_approval": "aguardando a aprovação de uma analista",
         "escalated": "enviado a uma analista",
         "security_blocked": "interrompido por segurança",
@@ -268,6 +272,80 @@ def _block(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return "O cartão da cobrança não estava ativo: nada foi bloqueado."
 
 
+_VERIFIED_ACTIONS: dict[Lang, dict[str, str]] = {
+    "es": {"register_dispute": "el registro de la aclaración", "block_card": "el bloqueo"},
+    "pt": {"register_dispute": "o registro da contestação", "block_card": "o bloqueio"},
+}
+
+
+def _verify(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    action = _label(_VERIFIED_ACTIONS, lang, p.get("action"))
+    if lang == "es":
+        if r.get("verified"):
+            return f"El sistema releyó la base y confirmó {action}."
+        return (
+            f"El sistema releyó la base y {action} no coincide con lo esperado: verificación de "
+            "registro fallida."
+        )
+    if r.get("verified"):
+        return f"O sistema releu a base e confirmou {action}."
+    return (
+        f"O sistema releu a base e {action} não confere com o esperado: verificação de registro "
+        "falhou."
+    )
+
+
+_CLAIM_KINDS: dict[Lang, dict[str, str]] = {
+    "es": {
+        "folio": "folio",
+        "passage": "pasaje de política",
+        "date": "fecha",
+        "card_digits": "dígitos de tarjeta",
+        "deadline": "plazo",
+        "amount": "monto",
+        "merchant": "comercio",
+        "number": "número",
+        "forbidden_request": "pedido prohibido",
+        "action_claim": "acción no realizada",
+    },
+    "pt": {
+        "folio": "protocolo",
+        "passage": "trecho da política",
+        "date": "data",
+        "card_digits": "dígitos do cartão",
+        "deadline": "prazo",
+        "amount": "valor",
+        "merchant": "estabelecimento",
+        "number": "número",
+        "forbidden_request": "pedido proibido",
+        "action_claim": "ação não realizada",
+    },
+}
+
+
+def _fact_check(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    kinds = sorted({_label(_CLAIM_KINDS, lang, c.get("kind")) for c in r.get("unsupported", [])})
+    if lang == "es":
+        if not kinds:
+            return "El verificador de hechos aprobó la respuesta: cada dato tiene respaldo."
+        what = ", ".join(kinds)
+        if r.get("sent"):
+            return f"El verificador encontró datos sin respaldo ({what}), en modo de observación."
+        return f"El verificador bloqueó la respuesta por datos sin respaldo ({what})."
+    if not kinds:
+        return "O verificador de fatos aprovou a resposta: cada dado tem respaldo."
+    what = ", ".join(kinds)
+    if r.get("sent"):
+        return f"O verificador encontrou dados sem respaldo ({what}), em modo de observação."
+    return f"O verificador bloqueou a resposta por dados sem respaldo ({what})."
+
+
+def _verification_failed(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El caso ya estaba en la cola: queda como verificación de registro fallida."
+    return "O caso já estava na fila: fica como verificação de registro falhou."
+
+
 def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "El sistema envió el caso a una analista."
@@ -376,6 +454,9 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "register_dispute"): _register,
     ("tool", "block_card"): _block,
     ("tool", "escalate_to_human"): _escalate,
+    ("agent", "verify_action"): _verify,
+    ("agent", "fact_check"): _fact_check,
+    ("agent", "verification_failed"): _verification_failed,
     ("agent", "security_event"): _security_event,
     ("agent", "recognize"): _recognize,
     ("agent", "choose"): _choose,

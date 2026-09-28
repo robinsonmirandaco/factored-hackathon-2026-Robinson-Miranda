@@ -87,6 +87,7 @@ def build_runtime(settings: Settings) -> Runtime:
                 settings.policy_passages_path, policy.config.dispute_window_days
             ),
             calendars=load_calendars(settings.holidays_path),
+            fact_check=settings.fact_check_enabled,
         ),
     )
 

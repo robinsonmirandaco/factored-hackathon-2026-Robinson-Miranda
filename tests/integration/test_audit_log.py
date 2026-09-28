@@ -148,11 +148,13 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
         "decide",
         "confirm",
         "register_dispute",
+        "verify_action",
     }
     for r in rows:
         assert r.actor and r.action and r.result is not None, r.action
         assert r.policy_version == "2026.09.1", r.action
-        assert r.verified is None  # the read-back arrives with TRZ-19
+        # Only the read-back after acting says whether an action was verified (TRZ-19).
+        assert r.verified is (True if r.action == "verify_action" else None), r.action
         if by_llm(r):
             assert r.model == "test-model"
             assert r.input_tokens and r.input_tokens > 0
@@ -170,8 +172,9 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
                 None,
             ), r.action
     compose = next(r for r in rows if r.action == "compose" and by_llm(r))
-    # Compose and its validator are two prompts, and the row cites both.
-    assert "+" in (compose.prompt_version or "")
+    # One prompt writes the reply; no second model judges it (TRZ-20).
+    assert (compose.prompt_version or "").startswith("sha256:")
+    assert "+" not in (compose.prompt_version or "")
     extract = next(r for r in rows if r.action == "comprehend")
     assert extract.payload and "redacted_text" in extract.payload
 

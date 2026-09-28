@@ -1,12 +1,13 @@
 """A simulated LLM and the agent dependencies for integration tests of full customer turns."""
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 from fastapi.testclient import TestClient
 
-from app.adapters.llm import VALIDATE_SYSTEM, LLMClient
+from app.adapters.llm import LLMClient
 from app.core.config import Settings
 from app.domain.business_days import load_calendars
 from app.domain.clock import SimulatedClock
@@ -44,9 +45,10 @@ def fake_llm(
     settings: Settings,
     answer: dict,
     sent: list[str] | None = None,
-    reply: str = "Revisaremos el cargo.",
+    reply: str | Callable[[dict[str, Any]], str] = "Revisaremos el cargo.",
 ) -> LLMClient:
-    """An LLM that reads every message as `answer`, writes `reply` and approves it."""
+    """An LLM that reads every message as `answer` and writes `reply`, or what `reply` writes
+    from the facts it is given."""
     client: LLMClient
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -56,8 +58,9 @@ def fake_llm(
         system = body["messages"][0]["content"]
         if system.startswith(client.comprehension_prompt.system[:40]):
             content = json.dumps(answer)
-        elif system.startswith(VALIDATE_SYSTEM[:40]):
-            content = '{"ok": true, "reason": ""}'
+        elif callable(reply):
+            user = body["messages"][1]["content"]
+            content = reply(json.loads(user.split("Facts (JSON): ", 1)[1]))
         else:
             content = reply
         usage = {"prompt_tokens": 120, "completion_tokens": 30}

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # USD per million tokens of the primary model, for the cost of each call (Haiku 4.5 list price).
     llm_price_input_per_mtok: float = 1.0
     llm_price_output_per_mtok: float = 5.0
+    # False turns the fact checker of replies into an observer (ablation, TRZ-20 CA6): it still
+    # counts unsupported claims in the audit log, but the LLM reply reaches the customer.
+    fact_check_enabled: bool = True
 
     # Sessions (TRZ-09). Every time here is the real clock, never trazo_now (design 5.1).
     # No usable default for the secret: the API refuses to start without a generated one.

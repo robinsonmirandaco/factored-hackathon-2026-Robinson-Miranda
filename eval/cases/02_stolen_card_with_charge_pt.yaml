@@ -60,9 +60,13 @@ turns:
   confirm: true
   expect:
     intent: unrecognized_charge
-    outcome: registered
+    outcome: registered_verified
     autonomy_level: L2
     actions_taken:
     - register_dispute
     - block_card
     dispute_folio: DSP-2026-\d{5}
+    reply_contains:
+    - 15 dias úteis
+    - §2.1
+    - política de demonstração, não do banco

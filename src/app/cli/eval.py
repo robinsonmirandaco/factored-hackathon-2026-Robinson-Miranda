@@ -31,6 +31,12 @@ of the dataset, dated `days_ago` before the case "now") and `exchange_rates` (da
 A turn may expect `policy_action` and `policy_rule`: the policy decision written during that turn,
 read from the case trace; `policy_action: null` expects that the policy did not decide.
 
+A turn may expect `reply_contains`, a list of fragments the reply must hold.
+
+Every turn also counts the fact checker's rows (TRZ-20): replies checked, blocked, and sent with
+unsupported claims. With FACT_CHECK_ENABLED=false the checker only observes, so the last count is
+the unsupported claims that reach the customer (the ablation of CA6).
+
 A turn may press a button instead of writing: `recognition: not_recognized | recognized` answers
 the recognition step, and `option: <transaction_id> | none` chooses among the options shown.
 `confirm: true` confirms the pending action the previous turn offered, by its `action_id`; with
@@ -208,12 +214,24 @@ def _analyst_headers(client: TestClient, settings: Settings) -> dict[str, str]:
 def _turn_decision(
     client: TestClient, analyst: dict[str, str], case_id: str, after: int
 ) -> tuple[dict[str, Any], int]:
-    """The policy decision written after audit row `after`, and the last row id of the case."""
+    """The policy decision and the fact checks written after audit row `after`, and the last
+    row id of the case."""
     rows = client.get(f"/cases/{case_id}/trace", headers=analyst).json()
-    new = [r for r in rows if r["id"] > after and (r["actor"], r["action"]) == ("policy", "decide")]
+    turn = [r for r in rows if r["id"] > after]
+    new = [r for r in turn if (r["actor"], r["action"]) == ("policy", "decide")]
     last = new[-1]["result"] if new else {}
+    checks = [r["result"] for r in turn if (r["actor"], r["action"]) == ("agent", "fact_check")]
     return (
-        {"policy_action": last.get("action"), "policy_rule": last.get("rule")},
+        {
+            "policy_action": last.get("action"),
+            "policy_rule": last.get("rule"),
+            "fact_check": {
+                "checked": len(checks),
+                "blocked": sum(not c["sent"] for c in checks),
+                "unsupported_sent": sum(len(c["unsupported"]) for c in checks if c["sent"]),
+                "unsupported": [u for c in checks for u in c["unsupported"]],
+            },
+        },
         max((r["id"] for r in rows), default=after),
     )
 
@@ -311,6 +329,7 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
                 "escalation_reason",
                 "dispute_folio",
                 "reply",
+                "fact_check",
             )
         },
     )
@@ -320,6 +339,9 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
     folio = exp.get("dispute_folio")
     if folio and not re.fullmatch(folio, out.get("dispute_folio") or ""):
         tr.mismatches.append(f"dispute_folio: expected {folio!r}, got {out.get('dispute_folio')!r}")
+    for fragment in exp.get("reply_contains", []):
+        if fragment not in (out.get("reply") or ""):
+            tr.mismatches.append(f"reply: expected to contain {fragment!r}")
     needle = exp.get("escalation_reason_contains")
     if needle and needle not in (out.get("escalation_reason") or ""):
         tr.mismatches.append(
@@ -372,6 +394,10 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             sum(t.actual.get("tokens") or 0 for t in turns) / max(len(results), 1), 1
         ),
         "llm_fallback_turns": sum(bool(t.actual.get("llm_fallback")) for t in turns),
+        "fact_check": {
+            key: sum((t.actual.get("fact_check") or {}).get(key, 0) for t in turns)
+            for key in ("checked", "blocked", "unsupported_sent")
+        },
     }
 
 
@@ -401,6 +427,7 @@ def write_report(results: list[CaseResult], summary: dict[str, Any], out_dir: st
         "llm_enabled": os.getenv("LLM_ENABLED", "true"),
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model_primary,
+        "fact_check_enabled": settings.fact_check_enabled,
     }
     payload = {"meta": meta, "summary": summary, "cases": [asdict(r) for r in results]}
     (out / "golden_report.json").write_text(json.dumps(payload, indent=2, default=str))
@@ -421,6 +448,11 @@ def write_report(results: list[CaseResult], summary: dict[str, Any], out_dir: st
         f"Latency per turn: mean {summary['latency_ms']['mean']} ms, "
         f"p95 {summary['latency_ms']['p95']} ms · tokens per case {summary['tokens_per_case']} · "
         f"LLM fallback turns {summary['llm_fallback_turns']}/{summary['turns']}",
+        "",
+        f"Fact checker (enforcing: {meta['fact_check_enabled']}): "
+        f"{summary['fact_check']['checked']} LLM replies checked, "
+        f"{summary['fact_check']['blocked']} blocked, "
+        f"{summary['fact_check']['unsupported_sent']} unsupported claims sent to the customer",
         "",
         "| Case | Status | Tags | Detail |",
         "| --- | --- | --- | --- |",
