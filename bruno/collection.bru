@@ -1,0 +1,69 @@
+docs {
+  # TRAZO API collection
+  
+  TRAZO is a governed agentic flow for disputed card charges in LATAM digital banking (Factored AI & Data Hackathon 2026). The customer signs in with a document and a one-time code, reviews the charge before disputing it, and confirms each action explicitly. Business rules live in a policy engine outside the model, and cases the system should not resolve alone go to an analyst queue.
+  
+  This collection covers two areas:
+  
+  - **auth**: customer sign-in with document + OTP, analyst sign-in, role separation and session handling (TRZ-09).
+  - **dispute**: the dispute flow end to end: recognizing the charge before disputing (TRZ-16), registering the dispute and blocking the card (TRZ-18), and choosing between several matching charges.
+  
+  ## How to run
+  
+  1. Start the local stack with `docker compose up`. The API listens on `http://localhost:8000` by default.
+  2. Select the `local` environment (top right). If you run a parallel stack on another port, change `baseUrl` locally but **do not commit** that change to `environments/local.bru`.
+  3. Create `bruno/.env` with one line:
+  
+  ```
+     ANALYST_DEMO_PASSWORD=<same value as in the root .env>
+  ```
+  
+     The file is already covered by `.gitignore`. Never write the value in this collection.
+  4. Reload the collection so Bruno reads the `.env` file.
+  5. Run `auth` first, then `dispute`.
+  
+  ### Environment variables (`local`)
+  
+  | Variable | Purpose |
+  | --- | --- |
+  | `baseUrl` | API root |
+  | `documentType`, `documentNumber` | Synthetic demo customer used to sign in |
+  | `demoCode` | Fixed OTP, only valid when the API runs in demo mode |
+  | `analystUser` | Analyst test user |
+  | `analystPassword` | Read from `process.env.ANALYST_DEMO_PASSWORD` (`bruno/.env`) |
+  
+  ## Folders
+  
+  | Folder | What it checks | Story |
+  | --- | --- | --- |
+  | `auth` | CA1 same answer whether or not the document exists (no enumeration) · CA2/CA3 demo code returns a customer JWT · CA4 three wrong codes · CA6 `customer_id` in the body is ignored · CA7 analyst login · CA8 403 across roles · CA9 no data without a session · logout closes the session | TRZ-09 |
+  | `dispute` | Setup (demo code + customer login) · CA1/CA4/CA5 charge details shown before any decision · CA7 "Ya lo reconozco" closes the case · CA5 "Sigo sin reconocerlo" goes straight to the policy | TRZ-16 |
+  | `dispute` | CA1/CA3 the confirmed action registers with a folio · CA4 a double send returns the same folio (idempotency) · CA3 the action of another case runs nothing | TRZ-18 |
+  | `dispute` | Several matching charges are shown as options · a chosen option goes to the recognition step · options belong to their own case · "none of the options" escalates | Charge identification |
+  
+  ## Gotchas
+  
+  - **Run `dispute` once per clean stack.** A second run escalates on purpose, because the dispute from the first run is already open.
+  - **CA4 consumes attempts.** Three wrong codes lock the document for 15 minutes and write an audit event. Running `auth` twice in a row can leave the demo document locked; wait or restart the stack.
+  - **Sessions expire** after 15 minutes of inactivity (`401` with `session_expired`). The open case is kept.
+  - Requests inside each folder depend on each other (tokens and case ids are passed along), so run the folder, not single requests out of order.
+  
+  ## Error format
+  
+  Every error uses the same shape, and `trace_id` also travels in a response header:
+  
+  ```json
+  {
+    "error_code": "http_404",
+    "message": "Not Found",
+    "trace_id": "c234de5065ab45a7"
+  }
+  ```
+  
+  | Status | When |
+  | --- | --- |
+  | `202` | OTP requested (`code_sent`), same answer for any document |
+  | `401` | No session, wrong or expired session (`session_expired`) |
+  | `403` | Customer token on an analyst route, or analyst token on a customer route |
+  | `404` | Unknown route or resource |
+}
