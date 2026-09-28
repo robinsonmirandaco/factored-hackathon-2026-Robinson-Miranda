@@ -77,6 +77,7 @@ class VerifiedFacts:
         known_merchants: Every merchant of the customer's transactions, casefolded; the closed
             list a mentioned merchant is looked for in.
         actions: Actions verified in the turn, such as register_dispute and block_card.
+        counts: How many records were shown, such as the number of options to choose from.
     """
 
     amounts: frozenset[Decimal] = frozenset()
@@ -88,10 +89,12 @@ class VerifiedFacts:
     merchants: frozenset[str] = frozenset()
     known_merchants: frozenset[str] = frozenset()
     actions: frozenset[str] = frozenset()
+    counts: frozenset[int] = frozenset()
 
     def numbers(self) -> frozenset[int]:
-        """Whole numbers a bare figure may be: parts of the amounts, dates, deadlines, digits."""
-        found = {int(a) for a in self.amounts} | set(self.deadlines)
+        """Whole numbers a bare figure may be: parts of the amounts, dates, deadlines, digits,
+        and the counts of records shown."""
+        found = {int(a) for a in self.amounts} | set(self.deadlines) | set(self.counts)
         found |= {n for d in self.dates for n in (d.day, d.month, d.year)}
         found |= {int(d) for d in self.last4}
         return frozenset(found)

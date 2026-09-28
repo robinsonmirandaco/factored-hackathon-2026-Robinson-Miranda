@@ -128,6 +128,12 @@ def test_an_unsupported_element_is_named(text: str, expected: list[tuple[str, st
     assert _kinds(text) == expected
 
 
+def test_the_number_of_options_shown_is_a_fact() -> None:
+    shown = VerifiedFacts(counts=frozenset({2}))
+    assert _kinds("Encontré 2 cargos que coinciden.", shown) == []
+    assert _kinds("Encontrei 3 cobranças.", shown) == [("number", "3")]
+
+
 def test_a_merchant_not_on_the_customers_list_is_not_detected() -> None:
     # Declared limit: an invented merchant name is not on the closed list.
     assert _kinds("El cargo de Tienda Inventada.") == []

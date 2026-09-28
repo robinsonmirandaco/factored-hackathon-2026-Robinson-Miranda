@@ -144,6 +144,7 @@ def verified_facts(
         merchants=frozenset(merchants),
         known_merchants=frozenset(str(m).casefold() for m in known),
         actions=frozenset(facts.get("actions_taken", [])),
+        counts=frozenset({len(facts["options"])} if facts.get("options") else set()),
     )
 
 
