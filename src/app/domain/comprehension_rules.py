@@ -13,6 +13,7 @@ import unicodedata
 from datetime import date
 
 from app.domain.clock import SimulatedClock
+from app.domain.language import VARIANT_BY_COUNTRY, signals
 from app.schemas.comprehension import (
     AmountClue,
     ChannelClue,
@@ -489,65 +490,8 @@ _DATE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("today", _any(r"hoy", r"hoje")),
 )
 
-_PT_MARKERS = _any(
-    r"nao",
-    r"voce",
-    r"cartao",
-    r"cobrancas?",
-    r"meu",
-    r"minha",
-    r"ontem",
-    r"reconheco",
-    r"fiz",
-    r"um",
-    r"uma",
-    r"com",
-    r"isso",
-    r"essa",
-    r"esse",
-    r"tambem",
-    r"entao",
-    r"pelo",
-    r"pela",
-    r"fatura",
-    r"reais",
-    r"cobraram",
-    r"vezes",
-    r"tenho",
-    r"preciso",
-    r"gostaria",
-    r"estou",
-    r"obrigad[oa]",
-    r"eu",
-)
-_ES_MARKERS = _any(
-    r"no",
-    r"mi",
-    r"tarjeta",
-    r"cobros?",
-    r"cobraron",
-    r"ayer",
-    r"reconozco",
-    r"hice",
-    r"una",
-    r"con",
-    r"eso",
-    r"tambien",
-    r"entonces",
-    r"tengo",
-    r"necesito",
-    r"quiero",
-    r"gracias",
-    r"yo",
-    r"pero",
-    r"cuenta",
-    r"el",
-    r"los",
-    r"las",
-)
 # Voseo is the one variant signal a rule can trust; other regional words are too sparse.
 _VOSEO = re.compile(r"\b(?:vos|sos|ten[eé]s|pod[eé]s|quer[eé]s|decime|necesit[aá]s)\b", re.I)
-_VARIANT_BY_COUNTRY: dict[str, LanguageVariant] = {"MX": "es-MX", "CO": "es-CO", "AR": "es-AR"}
 
 # Merchant: capitalized words after a preposition or article ("en MercaYa", "el Uber").
 _CAPITAL_WORD = r"[A-ZÁÉÍÓÚÑÇ0-9][\w'&.-]*"
@@ -603,7 +547,7 @@ def comprehend_rules(message: str, context: ComprehensionContext) -> Comprehensi
         merchant_hint=merchant,
         channel_hint=_channel(message, folded),
         card_in_possession=possession,
-        language=_language(message, folded, context),
+        language=_language(message, context),
     )
 
 
@@ -789,12 +733,10 @@ def _merchant(message: str) -> TextClue | None:
     return None
 
 
-def _language(message: str, folded: str, context: ComprehensionContext) -> LanguageVariant:
-    pt = len(_PT_MARKERS.findall(folded)) + sum(message.count(ch) for ch in "ãõçÃÕÇ")
-    es = len(_ES_MARKERS.findall(folded)) + sum(message.count(ch) for ch in "ñ¿¡Ñ")
-    if pt > es:
+def _language(message: str, context: ComprehensionContext) -> LanguageVariant:
+    if signals(message).predominant == "pt":
         return "pt-BR"
     if _VOSEO.search(message):
         return "es-AR"
     # es-MX when the country has no Spanish variant: Mexico is the largest country of the cohort.
-    return _VARIANT_BY_COUNTRY.get(context.country_code, "es-MX")
+    return VARIANT_BY_COUNTRY.get(context.country_code, "es-MX")

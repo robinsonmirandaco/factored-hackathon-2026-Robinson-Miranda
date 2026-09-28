@@ -1,7 +1,8 @@
 """One customer turn (design 5): understand, screen, identify, decide, confirm, reply.
 
   1. redact PII
-  2. comprehension: intent and clues with their literal evidence (LLM; rules when it fails)
+  2. comprehension: intent and clues with their literal evidence (LLM; rules when it fails),
+     and the language the turn is answered in (rules, with the LLM's variant)
   3. policy screen, before any identification: security first, then the routes that need no
      charge (out of scope, lost card without a charge, claim status)
   4. identification of the disputed charge with its conformal set
@@ -34,6 +35,8 @@ from app.domain.identification import (
     Params,
     duplicate_twin,
 )
+from app.domain.language import LanguageDecision
+from app.domain.language import decide as decide_language
 from app.domain.pii import redact
 from app.domain.policy import (
     AutonomyLookup,
@@ -134,13 +137,16 @@ def handle_message(
         redacted, pii_counts = redact(text, name=customer.first_name)
         if security_event:
             case, language, facts = _stop_for_security(
-                session, deps, customer_id, case_id, redacted, pii_counts
+                session, deps, customer, case_id, redacted, pii_counts
             )
             stats = LLMCallStats()
         elif confirm and case_id is not None:
             case = _own_case(session, customer_id, case_id)
-            language: Language = "pt" if case.language == "pt" else "es"
-            facts = _confirm(session, case, redacted, pii_counts)
+            # No LLM call on a confirmation: a short "sí" or "sim" keeps the case's language.
+            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
+            language: Language = spoken.language
+            case.language = language
+            facts = _confirm(session, case, redacted, pii_counts, spoken)
             stats = LLMCallStats()
         else:
             case, language, facts, stats = _understand_and_decide(
@@ -198,12 +204,20 @@ def _understand_and_decide(
     pii_counts: dict[str, int],
     case_id: str | None,
 ) -> tuple[Case, Language, Facts, LLMCallStats]:
+    # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
+    previous = (
+        _case_language(_own_case(session, customer.customer_id, case_id)) if case_id else None
+    )
     local = local_currency(customer.country_code)
     context = ComprehensionContext(
         now=deps.clock.now, country_code=customer.country_code, local_currency=local
     )
     clues, stats = deps.llm.comprehend(redacted, context)
-    language: Language = "pt" if clues.language == "pt-BR" else "es"
+    # The rules baseline also reads a language, but the LLM's is the one CA2 names.
+    spoken = decide_language(
+        redacted, None if stats.fallback else clues.language, previous, customer.country_code
+    )
+    language: Language = spoken.language
     case = _open_case(session, customer.customer_id, case_id, clues.intent, language)
     write_audit(
         session,
@@ -216,6 +230,7 @@ def _understand_and_decide(
             "fallback": stats.fallback,
             "error": stats.error,
             "dropped_clues": stats.dropped_clues,
+            "language_decision": asdict(spoken),
         },
         stats.latency_ms,
         llm=stats,
@@ -400,7 +415,7 @@ def _audit_decision(
 def _stop_for_security(
     session: Session,
     deps: AgentDeps,
-    customer_id: str,
+    customer: Customer,
     case_id: str | None,
     redacted: str,
     pii_counts: dict[str, int],
@@ -408,13 +423,19 @@ def _stop_for_security(
     """Stops a turn that tried to reach another customer's data, without reading the message.
 
     No comprehension runs, so the turn spends no tokens and its text never reaches the LLM. A
-    new case keeps the intent `unread`; a continued case keeps the intent it had.
+    new case keeps the intent `unread`; a continued case keeps the intent it had. The language
+    comes from the rules detector alone, which runs locally.
     """
+    previous = (
+        _case_language(_own_case(session, customer.customer_id, case_id)) if case_id else None
+    )
+    spoken = decide_language(redacted, None, previous, customer.country_code)
+    language: Language = spoken.language
     if case_id is None:
-        case = _open_case(session, customer_id, None, UNREAD_INTENT, "es")
+        case = _open_case(session, customer.customer_id, None, UNREAD_INTENT, language)
     else:
-        case = _own_case(session, customer_id, case_id)
-    language: Language = "pt" if case.language == "pt" else "es"
+        case = _own_case(session, customer.customer_id, case_id)
+        case.language = language
     # The other customer's id is not stored: this trail belongs to the session customer.
     write_audit(
         session,
@@ -422,7 +443,7 @@ def _stop_for_security(
         "security_event",
         case.id,
         {"reason": "foreign_customer_id", "redacted_text": redacted[:500], "pii": pii_counts},
-        None,
+        {"language_decision": asdict(spoken)},
     )
     screened = deps.policy.screen(None, language, None, True)
     if screened is None:  # screen raises before returning None without an intent
@@ -436,7 +457,13 @@ def _stop_for_security(
 # ---- confirmation -----------------------------------------------------------------------
 
 
-def _confirm(session: Session, case: Case, redacted: str, pii_counts: dict[str, int]) -> Facts:
+def _confirm(
+    session: Session,
+    case: Case,
+    redacted: str,
+    pii_counts: dict[str, int],
+    spoken: LanguageDecision,
+) -> Facts:
     """Runs the pending action of the case, and only that one, once the customer confirms.
 
     A confirmation with nothing pending runs nothing. The pending action is the one stored when
@@ -449,7 +476,11 @@ def _confirm(session: Session, case: Case, redacted: str, pii_counts: dict[str, 
         "confirm",
         case.id,
         {"redacted_text": redacted[:500], "pii": pii_counts},
-        {"pending_action": pending, "transaction_id": case.transaction_id},
+        {
+            "pending_action": pending,
+            "transaction_id": case.transaction_id,
+            "language_decision": asdict(spoken),
+        },
     )
     facts: Facts = {"intent": case.intent, "action": pending, "actions_taken": []}
     if pending not in CONFIRMED_TOOLS or case.transaction_id is None:
@@ -490,6 +521,10 @@ def _open_case(
     case = _own_case(session, customer_id, case_id)
     case.intent, case.language = intent, language
     return case
+
+
+def _case_language(case: Case) -> Language | None:
+    return "pt" if case.language == "pt" else "es" if case.language == "es" else None
 
 
 def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
