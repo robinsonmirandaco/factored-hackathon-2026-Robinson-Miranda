@@ -1,5 +1,5 @@
-description: 'Two charges at the same merchant fit a clue without amount: show them as options, no decision
-  yet'
+description: 'Two charges at the same merchant fit a clue without amount: show them as options; the
+  customer chooses one, which goes to the recognition step and then to the policy'
 tags:
 - golden
 - unrecognized_charge
@@ -48,3 +48,20 @@ turns:
     autonomy_level: L0
     actions_taken: []
     policy_action: null
+- message: El de 45 dólares
+  option: EVTX20A
+  expect:
+    intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Sigo sin reconocerlo
+  recognition: not_recognized
+  expect:
+    intent: unrecognized_charge
+    outcome: awaiting_confirmation
+    autonomy_level: L1
+    actions_taken: []
+    policy_action: register_and_offer_block
+    policy_rule: routing.unrecognized_charge.card_in_possession

@@ -77,7 +77,15 @@ def _turn(schema: SchemaUrls, database_url: str, rates: list[tuple[date, str, st
     db = Database(schema.app)
     try:
         with db.session(customer_id="C1") as s:
-            result = handle_message(s, deps, "C1", "No reconozco el cargo de 800000 en Exito")
+            shown = handle_message(s, deps, "C1", "No reconozco el cargo de 800000 en Exito")
+            result = handle_message(
+                s,
+                deps,
+                "C1",
+                "Sigo sin reconocerlo",
+                case_id=shown.case_id,
+                recognition="not_recognized",
+            )
     finally:
         db.dispose()
     owner = Database(schema.admin)

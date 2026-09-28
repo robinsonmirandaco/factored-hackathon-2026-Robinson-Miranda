@@ -7,7 +7,7 @@ not query through the ORM (complaints, exchange rates, the queue, seed runs) are
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, Numeric, Text, func
+from sqlalchemy import ARRAY, JSON, Boolean, Date, DateTime, Integer, Numeric, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Numeric columns come back as float: tool results are stored as JSON, which has no Decimal.
@@ -82,13 +82,18 @@ class Case(Base):
     customer_id: Mapped[str] = mapped_column(Text)
     transaction_id: Mapped[str | None] = mapped_column(Text)
     intent: Mapped[str] = mapped_column(Text)
-    # open | identifying | awaiting_confirmation | registered | pending_analyst_approval |
-    # escalated | security_blocked | abstained | closed | approved | rejected | expired
+    # open | identifying | recognizing | recognized_closed | awaiting_confirmation |
+    # registered | pending_analyst_approval | escalated | security_blocked | abstained |
+    # closed | approved | rejected | expired
     status: Mapped[str] = mapped_column(Text, default="open")
     # es or pt; with the intent, the autonomy cell of the case.
     language: Mapped[str | None] = mapped_column(Text)
     autonomy_level: Mapped[str] = mapped_column(Text, default="L0")
     recommended_action: Mapped[str | None] = mapped_column(Text)
+    # What the customer said about the card; the policy reads it after the recognition step.
+    card_in_possession: Mapped[bool | None] = mapped_column(Boolean)
+    # Transactions shown as options; a choice must name one of them.
+    shown_options: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     escalation_reason: Mapped[str | None] = mapped_column(Text)
     human_decision: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
@@ -114,7 +119,27 @@ class Dispute(Base):
     amount: Mapped[float | None] = mapped_column(Money)
     currency: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, default="opened")
+    due_date: Mapped[date | None] = mapped_column(Date)
+    # Simulated "now" of the case at registration; the open-dispute rule counts on it.
+    business_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CaseAction(Base):
+    """An action offered for confirmation; a confirmation must name its id."""
+
+    __tablename__ = "case_actions"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    case_id: Mapped[str] = mapped_column(Text)
+    customer_id: Mapped[str] = mapped_column(Text)
+    # register | register_and_offer_block | register_and_block
+    action: Mapped[str] = mapped_column(Text)
+    transaction_id: Mapped[str] = mapped_column(Text)
+    # pending | replaced | executed | canceled
+    status: Mapped[str] = mapped_column(Text, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class CardBlock(Base):

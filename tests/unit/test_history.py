@@ -87,6 +87,56 @@ def test_an_identification_line_gives_the_size_of_the_set() -> None:
     )
 
 
+def test_recognition_lines_say_what_was_shown_and_chosen() -> None:
+    shown = {"status": "Pending", "twin": {"status": "Approved"}, "earlier_months": ["2026-04"]}
+    assert describe("tool", "show_charge_detail", None, shown, "1", "es") == (
+        "El sistema mostró al cliente el detalle del cargo para reconocerlo "
+        "(pendiente, con un cargo gemelo, meses anteriores del comercio: 1)."
+    )
+    said = {"waiting": True, "choice": "recognized"}
+    assert describe("agent", "recognize", None, said, "1", "pt") == (
+        "O cliente disse: «Já reconheço»."
+    )
+
+
+def test_choice_lines_never_name_the_id_chosen() -> None:
+    assert describe("agent", "choose", None, {"option": "TX1", "shown": 2}, "1", "es") == (
+        "El cliente eligió una de las 2 opciones mostradas."
+    )
+    assert describe("agent", "choose", None, {"option": None, "shown": 2}, "1", "es") == (
+        "El cliente eligió un cargo que no estaba entre las opciones mostradas."
+    )
+    event = {"reason": "option_not_shown"}
+    assert describe("agent", "security_event", event, {}, "1", "pt") == (
+        "O cliente escolheu uma cobrança que não estava entre as opções: evento de segurança."
+    )
+
+
+def test_a_stale_confirmation_says_why_nothing_ran() -> None:
+    replaced = {"action_status": "replaced"}
+    assert describe("agent", "confirm", None, replaced, "1", "es") == (
+        "El cliente confirmó una acción que otra ya había reemplazado: no se ejecutó."
+    )
+    again = {"action_status": "executed", "pending_action": "register"}
+    assert describe("agent", "confirm", None, again, "1", "es") == (
+        "El cliente confirmó otra vez una acción ya ejecutada: registrar la aclaración."
+    )
+
+
+def test_registration_and_block_lines() -> None:
+    dispute = {"folio": "DSP-2026-00001", "due_date": "2026-07-09"}
+    assert describe("tool", "register_dispute", None, dispute, "1", "es") == (
+        "El sistema registró la aclaración con el folio DSP-2026-00001, con plazo de respuesta "
+        "al 2026-07-09."
+    )
+    assert describe("tool", "block_card", None, {"status_after": "Blocked"}, "1", "pt") == (
+        "O sistema bloqueou o cartão da cobrança contestada."
+    )
+    assert describe("tool", "block_card", None, {"message": "not_a_card"}, "1", "es") == (
+        "El producto del cargo no es una tarjeta: no se bloqueó nada."
+    )
+
+
 def test_a_step_with_no_template_still_gets_a_line() -> None:
     assert describe("system", "new_step", None, None, None, "es") == "Paso «new_step» de system."
     assert describe("system", "new_step", None, None, None, "pt") == "Etapa «new_step» de system."

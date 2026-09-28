@@ -1,0 +1,27 @@
+meta {
+  name: a shown option goes to the recognition step
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Ese", "case_id": "{{optionsCase}}", "option": "{{firstOption}}"}
+}
+
+tests {
+  test("recognizing the chosen charge", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("recognizing");
+    expect(res.getBody().charge.transaction_id).to.equal(bru.getVar("firstOption"));
+  });
+}

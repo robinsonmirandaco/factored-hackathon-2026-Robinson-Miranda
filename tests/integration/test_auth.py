@@ -18,7 +18,7 @@ from app.adapters.db.session import Database, SchemaUrls
 from app.core.config import Settings
 from app.main import create_app
 from app.services import auth as auth_module
-from tests.agent_support import fake_llm, llm_settings, reading
+from tests.agent_support import fake_llm, llm_settings, reading, still_not_recognized
 from tests.auth_support import (
     DEMO_CODE,
     TEST_ANALYST_PASSWORD,
@@ -363,22 +363,25 @@ def test_a_session_expires_after_15_idle_minutes_and_its_case_is_expired(
 ) -> None:
     headers = customer_headers(client, "C1")
     first = client.post("/chat", json={"message": NETFLIX}, headers=headers).json()
-    assert first["outcome"] == "awaiting_confirmation"
+    assert first["outcome"] == "recognizing"
+    pending = still_not_recognized(client, first["case_id"], headers)
+    assert pending["outcome"] == "awaiting_confirmation"
 
     clock.advance(15.5)
+    action_id = pending["pending_action"]["action_id"]
     late = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={"message": "sí", "case_id": first["case_id"], "confirm_action_id": action_id},
         headers=headers,
     )
     _error(late, 401, "session_expired")
     case = _case(seeded, first["case_id"])
     assert (case.status, case.recommended_action) == ("expired", None)
 
-    # Logged in again, a "sí" on the kept case runs nothing.
+    # Logged in again, a "sí" to the action of the kept case runs nothing: it was cancelled.
     again = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={"message": "sí", "case_id": first["case_id"], "confirm_action_id": action_id},
         headers=customer_headers(client, "C1"),
     ).json()
     assert (again["outcome"], again["actions_taken"]) == ("no_pending_action", [])
@@ -390,6 +393,10 @@ def test_a_session_expires_after_15_idle_minutes_and_its_case_is_expired(
     )
     assert expired[0][0]["status_before"] == "awaiting_confirmation"
     assert expired[0][0]["pending_action_dropped"] in ("register", "register_and_offer_block")
+    assert expired[0][0]["action_id"] == action_id
+    assert _query(seeded, f"SELECT status FROM case_actions WHERE id = '{action_id}'") == [
+        ("canceled",)
+    ]
 
 
 def test_a_new_login_expires_the_case_of_a_session_left_idle(
@@ -398,11 +405,17 @@ def test_a_new_login_expires_the_case_of_a_session_left_idle(
     first = client.post(
         "/chat", json={"message": NETFLIX}, headers=customer_headers(client, "C1")
     ).json()
+    # Left at the recognition step, which also waits on the customer.
+    assert first["outcome"] == "recognizing"
     clock.advance(20)
     # The old token is never used again; the new login alone ends that session.
     again = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={
+            "message": "sí",
+            "case_id": first["case_id"],
+            "confirm_action_id": "ACT-0000000000",
+        },
         headers=customer_headers(client, "C1"),
     ).json()
     assert (again["outcome"], again["actions_taken"]) == ("no_pending_action", [])
@@ -513,7 +526,7 @@ def test_the_customer_id_of_the_session_itself_in_the_body_is_just_ignored(
         json={"customer_id": "C1", "message": NETFLIX},
         headers=customer_headers(client, "C1"),
     )
-    assert r.json()["outcome"] == "awaiting_confirmation"
+    assert r.json()["outcome"] == "recognizing"
 
 
 def test_another_customers_case_id_is_not_found(client: TestClient) -> None:
@@ -522,7 +535,11 @@ def test_another_customers_case_id_is_not_found(client: TestClient) -> None:
     ).json()
     r = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={
+            "message": "sí",
+            "case_id": first["case_id"],
+            "confirm_action_id": "ACT-0000000000",
+        },
         headers=customer_headers(client, "C2"),
     )
     _error(r, 404, "case_not_found")

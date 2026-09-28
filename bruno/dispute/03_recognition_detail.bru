@@ -1,0 +1,39 @@
+meta {
+  name: TRZ-16 CA1 CA4 CA5 the charge is shown before any decision
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "No reconozco un cargo de 87.55 dólares en Netflix"}
+}
+
+script:post-response {
+  bru.setVar("recognizedCase", res.getBody().case_id);
+}
+
+tests {
+  test("recognizing, read from the database, primary button first", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.outcome).to.equal("recognizing");
+    expect(body.autonomy_level).to.equal("L0");
+    expect(body.actions_taken).to.eql([]);
+    expect(body.charge.transaction_id).to.equal("T00001020");
+    expect(body.charge.merchant).to.equal("Netflix");
+    expect(body.charge.product_type).to.equal("credit_card");
+    expect(body.charge.last4).to.match(/^\d{4}$/);
+    expect(body.charge.earlier_months).to.eql(["2026-05"]);
+    expect(body.choices.map(c => c.id)).to.eql(["not_recognized", "recognized"]);
+  });
+}

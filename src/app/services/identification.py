@@ -56,19 +56,28 @@ def load_candidates(
         .scalars()
         .all()
     )
-    return [
-        Candidate(
-            transaction_id=r.transaction_id,
-            timestamp=r.transaction_date,
-            amount=r.amount,
-            currency=r.currency,
-            channel=r.channel,
-            merchant_name=r.merchant_name,
-            transaction_type=r.transaction_type,
-            status=r.transaction_status,
-        )
-        for r in rows
-    ]
+    return [candidate_of(r) for r in rows]
+
+
+def candidate_of(row: Transaction) -> Candidate:
+    """The candidate view of a transaction row.
+
+    Args:
+        row: A transaction of the session customer.
+
+    Returns:
+        The fields the identification and the policy read.
+    """
+    return Candidate(
+        transaction_id=row.transaction_id,
+        timestamp=row.transaction_date,
+        amount=row.amount,
+        currency=row.currency,
+        channel=row.channel,
+        merchant_name=row.merchant_name,
+        transaction_type=row.transaction_type,
+        status=row.transaction_status,
+    )
 
 
 def identify_charge(

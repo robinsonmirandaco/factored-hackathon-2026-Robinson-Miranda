@@ -1,0 +1,27 @@
+meta {
+  name: none of the options escalates
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Ninguno es", "case_id": "{{noneCase}}", "option": "none"}
+}
+
+tests {
+  test("escalated to a person", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("escalated");
+    expect(res.getBody().autonomy_level).to.equal("L3");
+  });
+}

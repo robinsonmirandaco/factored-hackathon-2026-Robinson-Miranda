@@ -1,0 +1,53 @@
+# TRZ-16 CA2 and CA5: a pending charge is explained, and "Continuo sem reconhecer" goes on with no
+# further question.
+description: 'Pending charge in Portuguese: the detail says it is not settled yet; the customer still
+  does not recognize it and the policy offers the registration'
+tags:
+- golden
+- unrecognized_charge
+- recognition
+- portuguese
+- multi_turn
+fixtures:
+  customer:
+    customer_id: EVC24
+    document_type: Pasaporte
+    document_number: EVC24-DOC
+    first_name: Eval
+    country: Colombia
+    country_code: CO
+    timezone: America/Bogota
+    segment: Basic
+  products:
+  - product_id: P24
+    product_type: debit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX24
+    transaction_type: Purchase
+    amount: 75.0
+    currency: USD
+    merchant_name: Rappi
+    merchant_category: Food
+    transaction_country: CO
+    channel: App
+    transaction_status: Pending
+    hours_ago: 6
+turns:
+- message: Não reconheço uma cobrança de 75 dólares na Rappi
+  expect:
+    intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Continuo sem reconhecer
+  recognition: not_recognized
+  expect:
+    intent: unrecognized_charge
+    outcome: awaiting_confirmation
+    autonomy_level: L1
+    actions_taken: []
+    policy_action: register_and_offer_block
+    policy_rule: routing.unrecognized_charge.card_in_possession

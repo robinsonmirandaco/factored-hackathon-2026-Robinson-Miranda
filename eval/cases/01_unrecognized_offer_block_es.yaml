@@ -36,6 +36,14 @@ turns:
 - message: No reconozco un cargo de 120 dólares en Netflix de ayer
   expect:
     intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Sigo sin reconocerlo
+  recognition: not_recognized
+  expect:
+    intent: unrecognized_charge
     outcome: awaiting_confirmation
     autonomy_level: L1
     actions_taken: []
@@ -48,5 +56,6 @@ turns:
     outcome: registered
     autonomy_level: L1
     actions_taken:
-    - open_dispute
+    - register_dispute
     policy_action: null
+    dispute_folio: DSP-2026-\d{5}

@@ -1,0 +1,30 @@
+meta {
+  name: options in a third case
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "No reconozco un cargo en Avianca"}
+}
+
+script:post-response {
+  bru.setVar("foreignCase", res.getBody().case_id);
+}
+
+tests {
+  test("identifying", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("identifying");
+  });
+}

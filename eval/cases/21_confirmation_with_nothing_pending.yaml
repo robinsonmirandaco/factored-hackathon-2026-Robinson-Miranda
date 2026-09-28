@@ -1,4 +1,4 @@
-# Replaces 13. The confirmation applies only to the exact pending action of the case (TRZ-18 CA3, the part TRZ-17 brings forward).
+# Replaces 13. The confirmation applies only to the exact pending action of the case (TRZ-18 CA3).
 description: A "sí" with no pending action runs nothing
 tags:
 - golden

@@ -1,0 +1,27 @@
+meta {
+  name: TRZ-16 CA7 Ya lo reconozco closes the case
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Ya lo reconozco", "case_id": "{{recognizedCase}}", "recognition": "recognized"}
+}
+
+tests {
+  test("recognized_closed with nothing done", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("recognized_closed");
+    expect(res.getBody().actions_taken).to.eql([]);
+  });
+}

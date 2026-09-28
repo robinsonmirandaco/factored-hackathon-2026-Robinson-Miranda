@@ -1,0 +1,50 @@
+# TRZ-16 CA7: "Ya lo reconozco" closes the case with nothing done.
+description: 'The customer sees the charge detail and recognizes it: the case closes as recognized_closed,
+  no policy decision, no action'
+tags:
+- golden
+- unrecognized_charge
+- recognition
+- multi_turn
+fixtures:
+  customer:
+    customer_id: EVC23
+    document_type: Pasaporte
+    document_number: EVC23-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P23
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX23
+    transaction_type: Purchase
+    amount: 60.0
+    currency: USD
+    merchant_name: Spotify
+    merchant_category: Entertainment
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: No reconozco un cargo de 60 dólares en Spotify
+  expect:
+    intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Ya lo reconozco
+  recognition: recognized
+  expect:
+    intent: unrecognized_charge
+    outcome: recognized_closed
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null

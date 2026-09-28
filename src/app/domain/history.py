@@ -43,6 +43,10 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "abstained": "fuera de alcance, cliente redirigido",
         "informed": "informado al cliente",
         "no_pending_action": "no había nada que confirmar",
+        "recognizing": "mostrando el detalle del cargo al cliente",
+        "recognized_closed": "el cliente reconoció el cargo, caso cerrado sin acción",
+        "no_pending_recognition": "no había ningún cargo esperando respuesta",
+        "no_pending_choice": "no había opciones esperando elección",
     },
     "pt": {
         "identifying": "buscando a cobrança com o cliente",
@@ -54,6 +58,10 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "abstained": "fora do escopo, cliente redirecionado",
         "informed": "informado ao cliente",
         "no_pending_action": "não havia nada para confirmar",
+        "recognizing": "mostrando o detalhe da cobrança ao cliente",
+        "recognized_closed": "o cliente reconheceu a cobrança, caso encerrado sem ação",
+        "no_pending_recognition": "não havia nenhuma cobrança aguardando resposta",
+        "no_pending_choice": "não havia opções aguardando escolha",
     },
 }
 
@@ -142,15 +150,34 @@ def _decide(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return f"A política v{version}{cited} decidiu {action} (nível {level})."
 
 
+_STALE: dict[Lang, dict[str, str]] = {
+    "es": {
+        "replaced": "El cliente confirmó una acción que otra ya había reemplazado: no se ejecutó.",
+        "canceled": "El cliente confirmó una acción ya cancelada: no se ejecutó.",
+    },
+    "pt": {
+        "replaced": "O cliente confirmou uma ação já substituída por outra: não foi executada.",
+        "canceled": "O cliente confirmou uma ação já cancelada: não foi executada.",
+    },
+}
+
+
 def _confirm(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
-    pending = r.get("pending_action")
+    pending, status = r.get("pending_action"), r.get("action_status")
+    if status in _STALE[lang]:
+        return _STALE[lang][status]
+    action = _label(_ACTIONS, lang, pending)
     if lang == "es":
         if not pending:
             return "El cliente confirmó, pero no había ninguna acción pendiente."
-        return f"El cliente confirmó la acción pendiente: {_label(_ACTIONS, lang, pending)}."
+        if status == "executed":
+            return f"El cliente confirmó otra vez una acción ya ejecutada: {action}."
+        return f"El cliente confirmó la acción pendiente: {action}."
     if not pending:
         return "O cliente confirmou, mas não havia nenhuma ação pendente."
-    return f"O cliente confirmou a ação pendente: {_label(_ACTIONS, lang, pending)}."
+    if status == "executed":
+        return f"O cliente confirmou de novo uma ação já executada: {action}."
+    return f"O cliente confirmou a ação pendente: {action}."
 
 
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -217,6 +244,30 @@ def _dispute(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     )
 
 
+def _register(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    folio, due = r.get("folio", "?"), r.get("due_date")
+    if lang == "es":
+        deadline = f", con plazo de respuesta al {due}" if due else ", sin plazo respaldado"
+        return f"El sistema registró la aclaración con el folio {folio}{deadline}."
+    deadline = f", com prazo de resposta até {due}" if due else ", sem prazo respaldado"
+    return f"O sistema registrou a contestação com o protocolo {folio}{deadline}."
+
+
+def _block(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    why = r.get("message")
+    if lang == "es":
+        if r.get("status_after") == "Blocked":
+            return "El sistema bloqueó la tarjeta del cargo disputado."
+        if why == "not_a_card":
+            return "El producto del cargo no es una tarjeta: no se bloqueó nada."
+        return "La tarjeta del cargo no estaba activa: no se bloqueó nada."
+    if r.get("status_after") == "Blocked":
+        return "O sistema bloqueou o cartão da cobrança contestada."
+    if why == "not_a_card":
+        return "O produto da cobrança não é um cartão: nada foi bloqueado."
+    return "O cartão da cobrança não estava ativo: nada foi bloqueado."
+
+
 def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "El sistema envió el caso a una analista."
@@ -224,9 +275,70 @@ def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 
 
 def _security_event(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if p.get("reason") == "option_not_shown":
+        if lang == "es":
+            return (
+                "El cliente eligió un cargo que no estaba entre las opciones: evento de seguridad."
+            )
+        return (
+            "O cliente escolheu uma cobrança que não estava entre as opções: evento de segurança."
+        )
     if lang == "es":
         return "La petición intentó llegar a datos de otro cliente: evento de seguridad."
     return "A solicitação tentou acessar dados de outro cliente: evento de segurança."
+
+
+def _show_charge(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    notes = []
+    if r.get("status") == "Pending":
+        notes.append("pendiente" if lang == "es" else "pendente")
+    if r.get("twin"):
+        notes.append("con un cargo gemelo" if lang == "es" else "com uma cobrança gêmea")
+    if r.get("earlier_months"):
+        n = len(r["earlier_months"])
+        notes.append(
+            f"meses anteriores del comercio: {n}"
+            if lang == "es"
+            else f"meses anteriores do estabelecimento: {n}"
+        )
+    extra = f" ({', '.join(notes)})" if notes else ""
+    if lang == "es":
+        return f"El sistema mostró al cliente el detalle del cargo para reconocerlo{extra}."
+    return f"O sistema mostrou ao cliente o detalhe da cobrança para reconhecê-la{extra}."
+
+
+def _recognize(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if not r.get("waiting"):
+        if lang == "es":
+            return "El cliente respondió al reconocimiento, pero no había ningún cargo esperando."
+        return "O cliente respondeu ao reconhecimento, mas não havia cobrança aguardando."
+    recognized = r.get("choice") == "recognized"
+    if lang == "es":
+        return (
+            "El cliente dijo: «Ya lo reconozco»."
+            if recognized
+            else ("El cliente dijo: «Sigo sin reconocerlo».")
+        )
+    return (
+        "O cliente disse: «Já reconheço»."
+        if recognized
+        else ("O cliente disse: «Continuo sem reconhecer».")
+    )
+
+
+def _choose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    option = r.get("option")
+    if option == "none":
+        if lang == "es":
+            return "El cliente dijo que ninguna de las opciones es el cargo."
+        return "O cliente disse que nenhuma das opções é a cobrança."
+    if option is None:
+        if lang == "es":
+            return "El cliente eligió un cargo que no estaba entre las opciones mostradas."
+        return "O cliente escolheu uma cobrança que não estava entre as opções mostradas."
+    if lang == "es":
+        return f"El cliente eligió una de las {r.get('shown', 0)} opciones mostradas."
+    return f"O cliente escolheu uma das {r.get('shown', 0)} opções mostradas."
 
 
 def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -244,8 +356,9 @@ def _document_locked(lang: Lang, p: Fields, r: Fields, policy: str | None) -> st
 
 Template = Callable[[Lang, Fields, Fields, str | None], str]
 
-# ("agent", "extract") and ("tool", "lookup_transaction") are no longer written, but the audit
-# log is append-only and still holds rows of both, which the history must keep telling.
+# ("agent", "extract"), ("tool", "lookup_transaction"), ("tool", "freeze_card") and
+# ("tool", "open_dispute") are no longer written, but the audit log is append-only and still
+# holds rows of them, which the history must keep telling.
 TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "extract"): _extract,
     ("agent", "comprehend"): _extract,
@@ -260,8 +373,13 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "lookup_transaction"): _lookup,
     ("tool", "freeze_card"): _freeze,
     ("tool", "open_dispute"): _dispute,
+    ("tool", "register_dispute"): _register,
+    ("tool", "block_card"): _block,
     ("tool", "escalate_to_human"): _escalate,
     ("agent", "security_event"): _security_event,
+    ("agent", "recognize"): _recognize,
+    ("agent", "choose"): _choose,
+    ("tool", "show_charge_detail"): _show_charge,
     ("auth", "case_expired"): _case_expired,
     ("auth", "document_locked"): _document_locked,
 }

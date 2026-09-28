@@ -222,3 +222,41 @@ def test_complete_sends_the_temperature_to_both_providers() -> None:
     text, stats = llm.complete("s", "u", 50, 1.0)
     # anthropic 1.x has no `temperature` argument; the body still carries it.
     assert (text, sent["extra_body"], "temperature" in sent) == ("ok", {"temperature": 1.0}, False)
+
+
+@pytest.mark.parametrize(
+    ("facts", "expected"),
+    [
+        (
+            {"actions_taken": ["register_dispute"]},
+            "Registramos tu aclaración sobre el cargo con el folio DSP-2026-00007.",
+        ),
+        (
+            {"actions_taken": ["register_dispute", "block_card"]},
+            "Registramos tu aclaración sobre el cargo con el folio DSP-2026-00007 y bloqueamos "
+            "la tarjeta de ese cargo.",
+        ),
+        (
+            {"actions_taken": ["register_dispute"], "card_not_blocked": "not_a_card"},
+            "Registramos tu aclaración sobre el cargo con el folio DSP-2026-00007, pero no "
+            "pudimos bloquear la tarjeta de ese cargo.",
+        ),
+    ],
+    ids=["register", "register and block", "card not blocked"],
+)
+def test_the_registration_reply_gives_the_folio(facts: dict, expected: str) -> None:
+    facts = {"outcome": "registered", "dispute": {"folio": "DSP-2026-00007"}, **facts}
+    assert template_reply(facts, "es") == expected
+
+
+def test_without_card_and_without_block_the_reply_sends_the_customer_to_block_it() -> None:
+    facts = {
+        "outcome": "registered",
+        "actions_taken": ["register_dispute"],
+        "card_not_blocked": "card_not_active",
+        "redirect": "card_block",
+        "dispute": {"folio": "DSP-2026-00007"},
+    }
+    reply = template_reply(facts, "pt")
+    assert "protocolo DSP-2026-00007" in reply
+    assert "central de bloqueio" in reply

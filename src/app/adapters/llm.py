@@ -559,8 +559,21 @@ class LLMClient:
 
 _REPLIES: dict[str, dict[str, str]] = {
     "es": {
-        "registered": "Registramos tu aclaración sobre el cargo.",
-        "registered_block": "Registramos tu aclaración sobre el cargo y bloqueamos tu tarjeta.",
+        "registered": "Registramos tu aclaración sobre el cargo con el folio {folio}.",
+        "registered_block": (
+            "Registramos tu aclaración sobre el cargo con el folio {folio} y bloqueamos la "
+            "tarjeta de ese cargo."
+        ),
+        "registered_not_blocked": (
+            "Registramos tu aclaración sobre el cargo con el folio {folio}, pero no pudimos "
+            "bloquear la tarjeta de ese cargo."
+        ),
+        "registered_card_block": (
+            "Registramos tu aclaración sobre el cargo con el folio {folio}, pero no pudimos "
+            "bloquear la tarjeta de ese cargo. Bloquéala de inmediato con la opción de bloqueo "
+            "de la app de tu banco o llamando a la línea de bloqueo que aparece en el sitio "
+            "oficial del banco."
+        ),
         "confirm_register": "Responde sí para registrar la aclaración de este cargo.",
         "confirm_block": (
             "Responde sí para registrar la aclaración de este cargo y bloquear tu tarjeta."
@@ -597,10 +610,29 @@ _REPLIES: dict[str, dict[str, str]] = {
             "app o con una persona."
         ),
         "no_pending_action": "No hay ninguna acción pendiente de confirmar en este caso.",
+        "recognized_closed": (
+            "Listo: cerramos el caso sin registrar nada. Si ves otro cargo que no reconoces, "
+            "escríbenos."
+        ),
+        "no_pending_recognition": "No hay ningún cargo esperando tu respuesta en este caso.",
+        "no_pending_choice": "No hay opciones esperando tu elección en este caso.",
     },
     "pt": {
-        "registered": "Registramos a sua contestação da cobrança.",
-        "registered_block": "Registramos a sua contestação da cobrança e bloqueamos o seu cartão.",
+        "registered": "Registramos a sua contestação da cobrança com o protocolo {folio}.",
+        "registered_block": (
+            "Registramos a sua contestação da cobrança com o protocolo {folio} e bloqueamos o "
+            "cartão dessa cobrança."
+        ),
+        "registered_not_blocked": (
+            "Registramos a sua contestação da cobrança com o protocolo {folio}, mas não "
+            "conseguimos bloquear o cartão dessa cobrança."
+        ),
+        "registered_card_block": (
+            "Registramos a sua contestação da cobrança com o protocolo {folio}, mas não "
+            "conseguimos bloquear o cartão dessa cobrança. Bloqueie-o agora mesmo pela opção de "
+            "bloqueio do app do seu banco ou ligando para a central de bloqueio indicada no site "
+            "oficial do banco."
+        ),
         "confirm_register": "Responda sim para registrar a contestação desta cobrança.",
         "confirm_block": (
             "Responda sim para registrar a contestação desta cobrança e bloquear o seu cartão."
@@ -641,6 +673,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "no app ou com uma pessoa."
         ),
         "no_pending_action": "Não há nenhuma ação pendente de confirmação neste caso.",
+        "recognized_closed": (
+            "Pronto: encerramos o caso sem registrar nada. Se você vir outra cobrança que não "
+            "reconhece, fale com a gente."
+        ),
+        "no_pending_recognition": "Não há nenhuma cobrança aguardando a sua resposta neste caso.",
+        "no_pending_choice": "Não há opções aguardando a sua escolha neste caso.",
     },
 }
 
@@ -656,7 +694,11 @@ def reply_key(facts: dict[str, Any]) -> str:
     """
     outcome = facts.get("outcome")
     if outcome == "registered":
-        return "registered_block" if "freeze_card" in facts.get("actions_taken", []) else outcome
+        if "block_card" in facts.get("actions_taken", []):
+            return "registered_block"
+        if facts.get("redirect") == "card_block":
+            return "registered_card_block"
+        return "registered_not_blocked" if facts.get("card_not_blocked") else outcome
     if outcome == "awaiting_confirmation":
         block = facts.get("action") == "register_and_block"
         return "confirm_block" if block else "confirm_register"
@@ -671,6 +713,9 @@ def reply_key(facts: dict[str, Any]) -> str:
         "pending_analyst_approval": "approval",
         "security_blocked": "security",
         "no_pending_action": "no_pending_action",
+        "recognized_closed": "recognized_closed",
+        "no_pending_recognition": "no_pending_recognition",
+        "no_pending_choice": "no_pending_choice",
     }.get(str(outcome), "escalated")
 
 
@@ -686,7 +731,8 @@ def template_reply(facts: dict[str, Any], language: str) -> str:
         The reply text.
     """
     table = _REPLIES["pt" if language == "pt" else "es"]
-    return table[reply_key(facts)]
+    folio = (facts.get("dispute") or {}).get("folio", "")
+    return table[reply_key(facts)].format(folio=folio)
 
 
 def _strip_fence(s: str) -> str:

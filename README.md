@@ -4,9 +4,9 @@ An AI-first intake assistant for disputed card transactions, built for the Facto
 
 ## Status
 
-Prototype in progress. The service runs end to end on synthetic data. A customer turn follows the dispute workflow of the design up to the decision: the LLM reads the intent and the clues (the rules baseline answers when it fails), the charge is identified with a conformal set, and the business policy of `config/policy.yaml` decides. Registering a dispute or blocking a card runs only after the customer confirms the pending action.
+Prototype in progress. The service runs end to end on synthetic data. A customer turn follows the dispute workflow of the design up to the registration: the LLM reads the intent and the clues (the rules baseline answers when it fails), and the charge is identified with a conformal set. When several charges fit, the customer picks one among the options shown. The customer then sees the charge as the database records it and says whether they recognize it, and the business policy of `config/policy.yaml` decides. Registering a dispute, with a folio, or blocking the card of the charge runs only after the customer confirms that exact pending action.
 
-Not built yet: the recognition step before deciding, dispute folios and the read-back check after acting, the analyst dossier and queue with priority, autonomy levels per cell (every cell starts at A0) and authentication. `make eval` runs 22 golden cases, none skipped.
+Not built yet: the read-back check after acting, the fact checker of replies, the analyst dossier and queue with priority, and autonomy levels per cell (every cell starts at A0). `make eval` runs 25 golden cases, none skipped.
 
 ## Requirements
 
@@ -64,9 +64,9 @@ curl -s -X POST localhost:8000/auth/otp/verify \
   -d '{"document_type": "Pasaporte", "document_number": "SYN0000001", "code": "482913"}'
 ```
 
-The first call answers the same for any document, whether a customer has it or not. The second returns `access_token`; the examples below call it `$TOKEN`. Without demo mode the code is random and only appears in the API log when `APP_ENV=local`. Three wrong codes lock the document for 15 minutes. A session expires after 15 idle minutes or 2 hours, whichever comes first, and `POST /auth/logout` closes it. A case left waiting for confirmation when its session ends is expired and keeps no pending action.
+The first call answers the same for any document, whether a customer has it or not. The second returns `access_token`; the examples below call it `$TOKEN`. Without demo mode the code is random and only appears in the API log when `APP_ENV=local`. Three wrong codes lock the document for 15 minutes. A session expires after 15 idle minutes or 2 hours, whichever comes first, and `POST /auth/logout` closes it. A case left waiting for the customer when its session ends is expired and keeps no pending action.
 
-A charge the customer does not recognize. The policy decides; nothing runs until the customer confirms:
+A charge the customer does not recognize. Before anything is decided, the charge is shown as the database records it:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
@@ -74,15 +74,25 @@ curl -s -X POST localhost:8000/chat \
   -d '{"message": "No reconozco un cargo de 40.92 dólares en Claro"}'
 ```
 
-The response has `outcome` `awaiting_confirmation` and a `case_id`. Confirm the pending action of that case:
+The response has `outcome` `recognizing`, a `case_id`, the `charge` (merchant, city, channel, date and time, the last four digits of the card and status) and two `choices`. "Ya lo reconozco" (`"recognition": "recognized"`) closes the case with nothing done. "Sigo sin reconocerlo" goes to the policy:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
   -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
-  -d '{"message": "sí", "case_id": "<case_id>", "confirm": true}'
+  -d '{"message": "Sigo sin reconocerlo", "case_id": "<case_id>", "recognition": "not_recognized"}'
 ```
 
-The outcome is `registered` and `actions_taken` is `["open_dispute"]`. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
+The outcome is `awaiting_confirmation` with a `pending_action`: nothing runs until the customer confirms that exact action by its `action_id`:
+
+```bash
+curl -s -X POST localhost:8000/chat \
+  -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
+  -d '{"message": "sí", "case_id": "<case_id>", "confirm_action_id": "<action_id>"}'
+```
+
+The outcome is `registered`, `actions_taken` is `["register_dispute"]` and `dispute_folio` has the form `DSP-2026-00001`. Sending the same confirmation again returns the same folio and registers nothing new; an `action_id` that was replaced by a newer one, cancelled or belongs to another case runs nothing. When the customer says the card is lost or stolen, confirming also blocks the card of that charge, and only that one. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
+
+When several charges fit, as with `"No reconozco un cargo en Avianca"`, the outcome is `identifying` with the `options`. Send the `transaction_id` of one of them as `"option"` to go on to the recognition step, or `"option": "none"` when none is the charge, which sends the case to an analyst. An id that was not among the options shown stops the case as a security event.
 
 The customer is always the one of the session. A `customer_id` in the body is ignored, and one that names another customer stops the case as a security event. Messages can be in Spanish or Portuguese, and each reply follows the language of the message it answers.
 
@@ -96,7 +106,7 @@ curl -s -X POST localhost:8000/auth/analyst/login \
 curl -s localhost:8000/cases/<case_id>/trace -H "authorization: Bearer <analyst access_token>"
 ```
 
-A customer token gets 403 on the analyst endpoints, and an analyst token gets 403 on `/chat`. The Bruno collection in `bruno/auth` runs these checks against a running API.
+A customer token gets 403 on the analyst endpoints, and an analyst token gets 403 on `/chat`. The Bruno collection in `bruno/auth` and `bruno/dispute` runs these checks against a running API.
 
 ## Test and evaluate
 

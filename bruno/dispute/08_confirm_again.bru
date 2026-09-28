@@ -1,0 +1,27 @@
+meta {
+  name: TRZ-18 CA4 a double send returns the same folio
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "sí", "case_id": "{{disputeCase}}", "confirm_action_id": "{{pendingAction}}"}
+}
+
+tests {
+  test("same folio, nothing new", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("registered");
+    expect(res.getBody().dispute_folio).to.equal(bru.getVar("folio"));
+  });
+}

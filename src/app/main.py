@@ -14,9 +14,11 @@ from app.core.config import Settings
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import install_trace_middleware
+from app.domain.business_days import load_calendars
 from app.domain.clock import SimulatedClock
 from app.domain.identification import MAX_OPTIONS, Params, load_params
 from app.domain.policy import PolicyEngine, PolicyError, initial_autonomy
+from app.domain.policy_passages import load_passages
 from app.services.agent import AgentDeps
 from app.services.auth import check_secrets
 
@@ -81,6 +83,10 @@ def build_runtime(settings: Settings) -> Runtime:
             clock=SimulatedClock(settings.trazo_now),
             identification=load_identification(settings, policy),
             autonomy=initial_autonomy(policy.config),
+            passages=load_passages(
+                settings.policy_passages_path, policy.config.dispute_window_days
+            ),
+            calendars=load_calendars(settings.holidays_path),
         ),
     )
 

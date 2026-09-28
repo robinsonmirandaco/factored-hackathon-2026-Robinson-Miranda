@@ -1,13 +1,20 @@
 """Tools the agent can call. Each one:
   - takes an open Session and typed arguments,
   - writes one audit row,
-  - is idempotent when it changes state (keyed by case_id + action + target),
+  - is idempotent when it changes state (keyed by action + case_id + target),
+  - checks that every transaction and product id is the session customer's,
   - never exposes PII: no name, document or product number leaves these tools.
+
+Each state-changing tool documents its contract (inputs, writes, output, replay, errors and
+limits) in its docstring (TRZ-18 CA7).
 
 Which tools may run is decided by the policy engine before the call, never here.
 """
 
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Literal
 
 from sqlalchemy import func, select, text
@@ -18,12 +25,15 @@ from app.adapters.db.models import (
     AuditRecord,
     CardBlock,
     Case,
+    CaseAction,
     Customer,
     Dispute,
     Product,
     Transaction,
 )
+from app.core.time import utcnow
 from app.domain.clock import SimulatedClock
+from app.domain.policy_passages import PolicyDeadline, Unsupported
 
 CARD_TYPES = ("credit_card", "debit_card")
 HandoffStatus = Literal["escalated", "pending_analyst_approval", "security_blocked"]
@@ -76,7 +86,8 @@ def get_customer_profile(
 
     A dispute is open when a dispute complaint of the dataset was created in the `lookback_days`
     before the simulated now, was not rejected and was not resolved or closed by then, or when
-    a dispute registered by TRAZO is still opened (design 8, customer_has_open_dispute_last_90d).
+    a dispute registered by TRAZO in that look-back is still opened (design 8,
+    customer_has_open_dispute_last_90d).
 
     Args:
         session: Open database session.
@@ -102,11 +113,13 @@ def get_customer_profile(
                     "now": clock.now,
                 },
             ).scalar_one()
-            # Own disputes carry the real clock of the database, not the simulated one, so the
-            # look-back cannot be applied to them: every one still opened counts.
+            # Own disputes count on their business date, the same clock and window as the
+            # complaints; one registered before business dates existed has none and is left out.
             disputes = session.execute(
                 select(func.count(Dispute.id)).where(
-                    Dispute.customer_id == customer_id, Dispute.status == "opened"
+                    Dispute.customer_id == customer_id,
+                    Dispute.status == "opened",
+                    Dispute.business_at.between(clock.days_ago(lookback_days), clock.now),
                 )
             ).scalar_one()
             res = ToolResult(
@@ -174,66 +187,105 @@ def list_recent_transactions(
 # ---- state-changing tools (class 1) -----------------------------------------------------
 
 
-def freeze_card(session: Session, customer_id: str, case_id: str, reason: str) -> ToolResult:
-    """Blocks every active card of the customer and records each block in card_blocks.
+class OwnershipError(Exception):
+    """A transaction or product id that is not the session customer's.
 
-    Every active card is blocked because the customer has not said which card yet; choosing
-    the card and the folio come with TRZ-18.
+    Under row level security another customer's row is invisible, so "not yours" and "does not
+    exist" look the same, and both raise this. The caller stops the case for security and says
+    nothing about whether the id exists (design 11.4).
+    """
+
+
+def register_dispute(
+    session: Session,
+    clock: SimulatedClock,
+    deadline: Callable[[date], PolicyDeadline | Unsupported],
+    customer_id: str,
+    case_id: str,
+    transaction_id: str,
+    dispute_type: str,
+) -> ToolResult:
+    """Registers a dispute on a transaction of the session customer (TRZ-18 CA1).
+
+    Contract:
+        Inputs: the session customer, the case, the disputed transaction and the dispute type
+            (the case intent). The business date is the simulated now of `clock`.
+        Writes: one row of disputes with folio DSP-AAAA-NNNNN (AAAA the year of the business
+            date, NNNNN from dispute_folio_seq), transaction, type, amount, currency,
+            business_at and due_date; one audit row keyed `dispute:{case_id}:{transaction_id}`.
+            The transaction, its product and every balance are left untouched (CA6).
+        Output: folio, transaction_id, dispute_type, amount, currency, business_at, due_date
+            and dispute_status "opened".
+        Replay: the same key returns the stored output, the same folio, and writes nothing
+            (CA4).
+        Errors: OwnershipError when the transaction is not the customer's (CA5); the database
+            error of the sequence when folios pass 99999.
+        Limits: due_date is null when no policy passage backs a deadline, with the reason in
+            the output; it is never guessed.
 
     Args:
-        session: Open database session.
-        customer_id: Card owner.
-        case_id: Case that owns the action; part of the idempotency key.
-        reason: Why the cards are blocked, such as the case intent.
+        session: Open session bound to the customer of the JWT.
+        clock: Simulated clock of the case: the business date of the dispute.
+        deadline: Response deadline counted from a business date, with its passage, or
+            Unsupported when no passage backs it.
+        customer_id: Customer of the session.
+        case_id: Case that owns the action.
+        transaction_id: Disputed transaction.
+        dispute_type: Kind of dispute, the case intent.
 
     Returns:
-        The blocked products and their status before, or the stored result on a replay; ok
-        is False when the customer has no active card.
+        The dispute, or the stored result on a replay.
+
+    Raises:
+        OwnershipError: If the transaction is not a transaction of the customer.
     """
-    key = f"{case_id}:freeze_card:{customer_id}"
+    key = f"dispute:{case_id}:{transaction_id}"
     if prev := _existing(session, key):
         return ToolResult(True, prev.result or {}, "already applied (idempotent)")
     with timed() as t:
-        cards = (
-            session.execute(
-                select(Product)
-                .where(
-                    Product.customer_id == customer_id,
-                    Product.product_type.in_(CARD_TYPES),
-                    Product.product_status == "Active",
-                )
-                .order_by(Product.product_id)
+        tx = _owned_transaction(session, customer_id, transaction_id)
+        business_at = clock.now
+        number = session.execute(text("SELECT nextval('dispute_folio_seq')")).scalar_one()
+        folio = f"DSP-{business_at.year:04d}-{number:05d}"
+        backed = deadline(business_at.date())
+        due = backed.due if isinstance(backed, PolicyDeadline) else None
+        session.add(
+            Dispute(
+                folio=folio,
+                customer_id=customer_id,
+                case_id=case_id,
+                transaction_id=transaction_id,
+                dispute_type=dispute_type,
+                reason="customer confirmed",
+                amount=tx.amount,
+                currency=tx.currency,
+                business_at=business_at,
+                due_date=due,
             )
-            .scalars()
-            .all()
         )
-        if not cards:
-            return ToolResult(False, {}, "no active card")
-        for p in cards:
-            session.add(
-                CardBlock(
-                    customer_id=customer_id,
-                    product_id=p.product_id,
-                    case_id=case_id,
-                    reason=reason[:200],
-                    status_before=p.product_status,
-                )
-            )
-            p.product_status = "Blocked"
         res = ToolResult(
             True,
             {
-                "customer_id": customer_id,
-                "blocked_products": [p.product_id for p in cards],
-                "status_after": "Blocked",
+                "folio": folio,
+                "transaction_id": transaction_id,
+                "dispute_type": dispute_type,
+                "amount": tx.amount,
+                "currency": tx.currency,
+                "business_at": business_at.isoformat(),
+                "due_date": due.isoformat() if due else None,
+                "due_date_passage": backed.passage_id
+                if isinstance(backed, PolicyDeadline)
+                else None,
+                "due_date_unsupported": backed.reason if isinstance(backed, Unsupported) else None,
+                "dispute_status": "opened",
             },
         )
     write_audit(
         session,
         "tool",
-        "freeze_card",
+        "register_dispute",
         case_id,
-        {"customer_id": customer_id, "reason": reason[:200]},
+        {"transaction_id": transaction_id, "dispute_type": dispute_type},
         res.data,
         t["ms"],
         idempotency_key=key,
@@ -241,53 +293,84 @@ def freeze_card(session: Session, customer_id: str, case_id: str, reason: str) -
     return res
 
 
-def open_dispute(
-    session: Session, tx_id: str, case_id: str, dispute_type: str, reason: str
+def block_card(
+    session: Session, customer_id: str, case_id: str, transaction_id: str, reason: str
 ) -> ToolResult:
-    """Registers a dispute on a transaction as a row of disputes; the transaction is untouched.
+    """Blocks the card the disputed charge was made with, and only that one (TRZ-18 CA2).
 
-    The folio and the deadline come with TRZ-18.
+    Contract:
+        Inputs: the session customer, the case, the disputed transaction and a short reason.
+        Writes: product_status of the charge's product to Blocked and one row of card_blocks
+            with the status before; one audit row keyed `card_block:{case_id}:{product_id}`.
+            No other product and no balance changes (CA6).
+        Output: product_id, status_before and status_after "Blocked".
+        Replay: the same key returns the stored output and writes nothing (CA4).
+        Not ok, nothing written: the product is not a credit or debit card (reason
+            not_a_card), or the card is not Active (reason card_not_active).
+        Errors: OwnershipError when the transaction or its product is not the customer's (CA5).
 
     Args:
-        session: Open database session.
-        tx_id: Disputed transaction.
-        case_id: Case that owns the action; part of the idempotency key.
-        dispute_type: Kind of dispute, such as the case intent.
-        reason: Why the dispute was opened, truncated to 200 characters.
+        session: Open session bound to the customer of the JWT.
+        customer_id: Customer of the session.
+        case_id: Case that owns the action.
+        transaction_id: Disputed transaction; its product is the card blocked.
+        reason: Why the card is blocked, such as the case intent.
 
     Returns:
-        The dispute, or the stored result on a replay.
+        The block, the stored result on a replay, or ok False with the reason.
+
+    Raises:
+        OwnershipError: If the transaction or its product is not the customer's.
     """
-    key = f"{case_id}:open_dispute:{tx_id}"
+    tx = _owned_transaction(session, customer_id, transaction_id)
+    key = f"card_block:{case_id}:{tx.product_id}"
     if prev := _existing(session, key):
         return ToolResult(True, prev.result or {}, "already applied (idempotent)")
     with timed() as t:
-        tx = session.get(Transaction, tx_id)
-        if not tx:
-            return ToolResult(False, {}, "transaction not found")
-        session.add(
-            Dispute(
-                customer_id=tx.customer_id,
-                case_id=case_id,
-                transaction_id=tx_id,
-                dispute_type=dispute_type,
-                reason=reason[:200],
-                amount=tx.amount,
-                currency=tx.currency,
+        product = session.get(Product, tx.product_id)
+        if product is None or product.customer_id != customer_id:
+            raise OwnershipError("product not found for the session customer")
+        if product.product_type not in CARD_TYPES:
+            res = ToolResult(False, {"product_id": product.product_id}, "not_a_card")
+        elif product.product_status != "Active":
+            res = ToolResult(False, {"product_id": product.product_id}, "card_not_active")
+        else:
+            session.add(
+                CardBlock(
+                    customer_id=customer_id,
+                    product_id=product.product_id,
+                    case_id=case_id,
+                    reason=reason[:200],
+                    status_before=product.product_status,
+                )
             )
-        )
-        res = ToolResult(True, {"tx_id": tx_id, "dispute_status": "opened", "reason": reason[:200]})
+            res = ToolResult(
+                True,
+                {
+                    "product_id": product.product_id,
+                    "status_before": product.product_status,
+                    "status_after": "Blocked",
+                },
+            )
+            product.product_status = "Blocked"
     write_audit(
         session,
         "tool",
-        "open_dispute",
+        "block_card",
         case_id,
-        {"tx_id": tx_id, "reason": reason[:200]},
-        res.data,
+        {"transaction_id": transaction_id, "reason": reason[:200]},
+        res.data if res.ok else {**res.data, "message": res.message},
         t["ms"],
-        idempotency_key=key,
+        idempotency_key=key if res.ok else None,
     )
     return res
+
+
+def _owned_transaction(session: Session, customer_id: str, transaction_id: str) -> Transaction:
+    tx = session.get(Transaction, transaction_id)
+    if tx is None or tx.customer_id != customer_id:
+        raise OwnershipError("transaction not found for the session customer")
+    return tx
 
 
 def escalate_to_human(
@@ -333,6 +416,59 @@ def escalate_to_human(
         idempotency_key=key,
     )
     return res
+
+
+# ---- pending actions ----------------------------------------------------------------------
+
+
+def offer_action(session: Session, case: Case, action: str) -> CaseAction:
+    """Stores an action that waits for the customer's confirmation, replacing any earlier one.
+
+    Args:
+        session: Open session bound to the case customer.
+        case: The case, with its identified transaction.
+        action: register, register_and_offer_block or register_and_block.
+
+    Returns:
+        The pending action; its id is what a confirmation must name.
+    """
+    settle_pending_action(session, case.id, "replaced")
+    row = CaseAction(
+        id=f"ACT-{uuid.uuid4().hex[:10].upper()}",
+        case_id=case.id,
+        customer_id=case.customer_id,
+        action=action,
+        transaction_id=case.transaction_id,
+        status="pending",
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def settle_pending_action(
+    session: Session, case_id: str, status: Literal["replaced", "executed", "canceled"]
+) -> str | None:
+    """Ends the pending action of a case, if there is one, so no later "sí" can run it.
+
+    Args:
+        session: Open session bound to the case customer.
+        case_id: The case.
+        status: replaced by a newer action, or canceled (security stop, expired session, a new
+            message that offered nothing).
+
+    Returns:
+        The id of the action ended, or None when nothing was pending.
+    """
+    row = session.execute(
+        select(CaseAction).where(CaseAction.case_id == case_id, CaseAction.status == "pending")
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    row.status, row.resolved_at = status, utcnow()
+    # The one-pending-per-case index needs this update in before a new pending row goes in.
+    session.flush()
+    return row.id
 
 
 # ---- helpers ----------------------------------------------------------------------------

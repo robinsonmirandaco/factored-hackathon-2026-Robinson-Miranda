@@ -36,6 +36,14 @@ turns:
 - message: No reconozco un cargo de 200 dólares en Sanborns
   expect:
     intent: unrecognized_charge
+    outcome: recognizing
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: Sigo sin reconocerlo
+  recognition: not_recognized
+  expect:
+    intent: unrecognized_charge
     outcome: awaiting_confirmation
     autonomy_level: L1
     actions_taken: []
