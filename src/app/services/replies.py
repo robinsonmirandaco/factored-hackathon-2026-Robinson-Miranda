@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import write_audit
-from app.adapters.db.models import Product, Transaction
+from app.adapters.db.models import Dispute, Product, Transaction
 from app.domain.fact_check import Claim, VerifiedFacts, amount_fact, unsupported
 from app.domain.policy_passages import Passage
 from app.domain.recognition import long_date
@@ -182,11 +182,32 @@ def verified_facts(
         last4=frozenset({last4} if last4 else set()),
         merchants=frozenset(merchants),
         known_merchants=frozenset(str(m).casefold() for m in known),
-        actions=frozenset(facts.get("actions_taken", [])),
+        actions=frozenset(facts.get("actions_taken", []))
+        | _registered(session, customer_id, facts),
         counts=frozenset(
             {len(shown)} if (shown := facts.get("options") or facts.get("claims")) else set()
         ),
     )
+
+
+def _registered(session: Session, customer_id: str, facts: dict[str, Any]) -> set[str]:
+    """The registration a claim status turn may state: "fue registrado", "foi registrada".
+
+    Only the claim reported in a status turn, and only when it is a dispute of the customer
+    read back from the database by its folio. In any other turn, saying something was
+    registered needs the action among the actions verified in that turn.
+    """
+    claim = facts.get("claim")
+    if facts.get("action") != "report_claim_status" or not claim:
+        return set()
+    if claim.get("source") != "disputes":
+        return set()
+    found = session.execute(
+        select(Dispute.id).where(
+            Dispute.folio == claim["claim_id"], Dispute.customer_id == customer_id
+        )
+    ).first()
+    return {"register_dispute"} if found else set()
 
 
 def check_reply(

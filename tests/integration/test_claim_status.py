@@ -4,6 +4,7 @@ through the fact checker (CA2), a list to choose from (CA3), an overdue deadline
 written (CA5), and no deadline stated without a backing passage (CA6)."""
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -236,22 +237,23 @@ def test_a_complaint_that_is_not_open_at_the_simulated_now_is_not_a_claim(
     assert _ask(schema, _deps(settings)).facts["claim"] is None
 
 
-def test_a_dispute_registered_by_trazo_is_a_claim_with_its_registered_deadline(
-    schema: SchemaUrls, settings: Settings
-) -> None:
-    dispute = reading(
-        "unrecognized_charge",
-        amount={"value": 120, "currency": "USD", "approximate": False, "evidence": "120 dólares"},
-        merchant_hint={"value": "Netflix", "evidence": "Netflix"},
-    )
-    charge_deps = agent_deps(settings, fake_llm(settings, dispute))
+CHARGE = reading(
+    "unrecognized_charge",
+    amount={"value": 120, "currency": "USD", "approximate": False, "evidence": "120 dólares"},
+    merchant_hint={"value": "Netflix", "evidence": "Netflix"},
+)
+
+
+def _dispute_turns(schema: SchemaUrls, deps: AgentDeps) -> tuple[AgentResponse, AgentResponse]:
+    """Disputes the Netflix charge: the turn that waits for confirmation, then the confirmed
+    registration."""
     db = Database(schema.app)
     try:
         with db.session(customer_id="C1") as s:
-            shown = handle_message(s, charge_deps, "C1", "No reconozco 120 dólares en Netflix")
+            shown = handle_message(s, deps, "C1", "No reconozco 120 dólares en Netflix")
             pending = handle_message(
                 s,
-                charge_deps,
+                deps,
                 "C1",
                 "Sigo sin reconocerlo",
                 case_id=shown.case_id,
@@ -259,14 +261,21 @@ def test_a_dispute_registered_by_trazo_is_a_claim_with_its_registered_deadline(
             )
             registered = handle_message(
                 s,
-                charge_deps,
+                deps,
                 "C1",
                 "sí",
                 case_id=shown.case_id,
                 confirm_action_id=pending.facts["pending_action"]["action_id"],
             )
+            return pending, registered
     finally:
         db.dispose()
+
+
+def test_a_dispute_registered_by_trazo_is_a_claim_with_its_registered_deadline(
+    schema: SchemaUrls, settings: Settings
+) -> None:
+    _, registered = _dispute_turns(schema, agent_deps(settings, fake_llm(settings, CHARGE)))
     folio = registered.facts["dispute"]["folio"]
 
     r = _ask(schema, _deps(settings))
@@ -277,6 +286,72 @@ def test_a_dispute_registered_by_trazo_is_a_claim_with_its_registered_deadline(
     assert claim["last_step"]["step"] == "registered"
     assert f"Fuente: registro del reclamo {folio}." in r.reply and PASSAGE in r.reply
     assert _fact_check_passed(schema, r.case_id) is True
+
+
+# ---- "fue registrado": only for a dispute reported in a claim status turn -------------------
+
+SAYS_REGISTERED = {
+    "es": "Tu reclamo {claim_id} fue registrado el {opened_on}.",
+    "pt": "A sua reclamação {claim_id} foi registrada em {opened_on}.",
+}
+
+
+def _says_registered(language: str) -> Callable[[dict[str, Any]], str]:
+    """What an LLM writes that says the claim reported was registered."""
+
+    def writes(facts: dict[str, Any]) -> str:
+        claims = facts.get("claims") or []
+        return SAYS_REGISTERED[language].format(**claims[0]) if claims else "Nada."
+
+    return writes
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_a_status_turn_may_say_that_an_existing_dispute_was_registered(
+    schema: SchemaUrls, settings: Settings, language: str
+) -> None:
+    _dispute_turns(schema, agent_deps(settings, fake_llm(settings, CHARGE)))
+    answer = reading("claim_status", "es-CO" if language == "es" else "pt-BR")
+    deps = agent_deps(settings, fake_llm(settings, answer, reply=_says_registered(language)))
+
+    r = _ask(schema, deps, language)
+
+    claim = r.facts["claim"]
+    assert (r.llm_fallback, _fact_check_passed(schema, r.case_id)) == (False, True)
+    assert r.reply.startswith(SAYS_REGISTERED[language].format(**claim))
+
+
+def test_a_status_turn_may_not_say_that_a_complaint_was_registered(
+    schema: SchemaUrls, settings: Settings
+) -> None:
+    # A complaint of the dataset is not a dispute this service registered.
+    _complaint(schema, "CMP-TEST000000000000007", settings.trazo_now - timedelta(days=3))
+    answer = reading("claim_status", "es-CO")
+    deps = agent_deps(settings, fake_llm(settings, answer, reply=_says_registered("es")))
+
+    r = _ask(schema, deps)
+
+    assert (r.llm_fallback, _fact_check_passed(schema, r.case_id)) == (True, False)
+    assert "fue registrado" not in r.reply
+
+
+def test_a_dispute_turn_waiting_for_confirmation_may_not_say_it_was_registered(
+    schema: SchemaUrls, settings: Settings
+) -> None:
+    deps = agent_deps(settings, fake_llm(settings, CHARGE, reply="Tu aclaración fue registrada."))
+
+    pending, _ = _dispute_turns(schema, deps)
+
+    assert (pending.outcome, pending.llm_fallback) == ("awaiting_confirmation", True)
+    assert "fue registrada" not in pending.reply
+    # The first reply checked in the case is the one of the turn that waits for confirmation.
+    blocked = _scalar(
+        schema,
+        "SELECT result->'unsupported' FROM audit_log WHERE case_id = :c "
+        "AND action = 'fact_check' ORDER BY id LIMIT 1",
+        c=pending.case_id,
+    )
+    assert blocked == [{"kind": "action_claim", "value": "register_dispute"}]
 
 
 # ---- several claims -------------------------------------------------------------------------
