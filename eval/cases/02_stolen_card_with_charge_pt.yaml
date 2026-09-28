@@ -23,6 +23,11 @@ fixtures:
     product_type: credit_card
     currency: USD
     product_status: Active
+  # A second active card: only the card of the charge is blocked (TRZ-18 CA2).
+  - product_id: P02B
+    product_type: debit_card
+    currency: USD
+    product_status: Active
   transactions:
   - transaction_id: EVTX02
     transaction_type: Purchase
@@ -58,5 +63,6 @@ turns:
     outcome: registered
     autonomy_level: L2
     actions_taken:
-    - open_dispute
-    - freeze_card
+    - register_dispute
+    - block_card
+    dispute_folio: DSP-2026-\d{5}

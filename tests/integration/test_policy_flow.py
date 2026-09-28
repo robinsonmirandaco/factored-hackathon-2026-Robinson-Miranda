@@ -113,7 +113,14 @@ def test_a_complaint_resolved_after_the_simulated_now_was_still_open(
     assert (profile["open_dispute_complaints"], profile["open_dispute_last_90d"]) == (1, True)
 
 
-def test_an_own_dispute_still_opened_counts(schema: SchemaUrls) -> None:
+@pytest.mark.parametrize(
+    ("business_days_ago", "counted"),
+    [(30, True), (90, True), (100, False), (None, False)],
+    ids=["30 days", "90 days", "100 days", "no business date"],
+)
+def test_an_own_dispute_counts_in_the_look_back_of_its_business_date(
+    schema: SchemaUrls, business_days_ago: int | None, counted: bool
+) -> None:
     load(
         schema.admin,
         [customer("C1")],
@@ -131,13 +138,19 @@ def test_an_own_dispute_still_opened_counts(schema: SchemaUrls) -> None:
         )
         conn.execute(
             text(
-                "INSERT INTO disputes (customer_id, case_id, transaction_id, dispute_type, status) "
-                "VALUES ('C1', 'CASE-1', 'TX0', 'unrecognized_charge', 'opened')"
-            )
+                "INSERT INTO disputes (customer_id, case_id, transaction_id, dispute_type, "
+                "status, business_at) "
+                "VALUES ('C1', 'CASE-1', 'TX0', 'unrecognized_charge', 'opened', :at)"
+            ),
+            {"at": NOW - timedelta(days=business_days_ago) if business_days_ago else None},
         )
     engine.dispose()
     profile = _profile(customer_c1)
-    assert (profile["open_disputes"], profile["open_dispute_last_90d"]) == (1, True)
+    # The row is always registered today on the server clock: only its business date counts.
+    assert (profile["open_disputes"], profile["open_dispute_last_90d"]) == (
+        int(counted),
+        counted,
+    )
 
 
 # ---- security before identification ------------------------------------------------------
@@ -352,24 +365,21 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
         "L1",
         [],
     )
-    second = rules_client.post(
-        "/chat",
-        json={"message": "sí", "case_id": body["case_id"], "confirm": True},
-    )
+    assert body["pending_action"]["action"] == "register_and_offer_block"
+    confirm = {
+        "message": "sí",
+        "case_id": body["case_id"],
+        "confirm_action_id": body["pending_action"]["action_id"],
+    }
+    second = rules_client.post("/chat", json=confirm)
     assert (second.json()["outcome"], second.json()["actions_taken"]) == (
         "registered",
-        ["open_dispute"],
+        ["register_dispute"],
     )
-    # The pending action was consumed: a second "sí" runs nothing.
-    third = rules_client.post(
-        "/chat",
-        json={"message": "sí", "case_id": body["case_id"], "confirm": True},
-    )
-    assert (third.json()["outcome"], third.json()["actions_taken"]) == ("no_pending_action", [])
 
 
 def test_chat_rejects_an_invalid_body(rules_client: TestClient) -> None:
-    r = rules_client.post("/chat", json={"message": "", "confirm": "maybe"})
+    r = rules_client.post("/chat", json={"message": "", "confirm_action_id": "maybe"})
     assert r.status_code == 422
     assert r.json()["error_code"] == "validation_error"
 
@@ -411,7 +421,7 @@ def _executed(schema: SchemaUrls) -> tuple[int, int, int]:
             for q in (
                 "SELECT count(*) FROM disputes",
                 "SELECT count(*) FROM card_blocks",
-                "SELECT count(*) FROM audit_log WHERE action IN ('open_dispute', 'freeze_card')",
+                "SELECT count(*) FROM audit_log WHERE action IN ('register_dispute', 'block_card')",
             )
         )
     engine.dispose()
@@ -423,7 +433,9 @@ def test_an_analyst_decision_on_a_security_stop_runs_no_pending_action(
 ) -> None:
     first = rules_client.post("/chat", json={"message": NETFLIX}).json()
     case_id = first["case_id"]
-    assert still_not_recognized(rules_client, case_id)["outcome"] == "awaiting_confirmation"
+    pending = still_not_recognized(rules_client, case_id)
+    assert pending["outcome"] == "awaiting_confirmation"
+    action_id = pending["pending_action"]["action_id"]
 
     # The next turn of the same case names another customer while the registration is pending.
     stopped = rules_client.post(
@@ -445,7 +457,7 @@ def test_an_analyst_decision_on_a_security_stop_runs_no_pending_action(
     assert closed.status_code == 200 and closed.json()["status"] == "approved"
 
     late = rules_client.post(
-        "/chat", json={"message": "sí", "case_id": case_id, "confirm": True}
+        "/chat", json={"message": "sí", "case_id": case_id, "confirm_action_id": action_id}
     ).json()
     assert (late["outcome"], late["actions_taken"]) == ("no_pending_action", [])
     assert _executed(netflix_customer) == (0, 0, 0)
@@ -477,11 +489,16 @@ def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
 ) -> None:
     first = two_customers.post("/chat", json={"message": NETFLIX}).json()
     case_id = first["case_id"]
-    assert still_not_recognized(two_customers, case_id)["outcome"] == "awaiting_confirmation"
+    pending = still_not_recognized(two_customers, case_id)
+    confirm = {
+        "message": "sí",
+        "case_id": case_id,
+        "confirm_action_id": pending["pending_action"]["action_id"],
+    }
 
     r = two_customers.post(
         "/chat",
-        json={"message": "sí", "case_id": case_id, "confirm": True},
+        json=confirm,
         headers=customer_headers(two_customers, "C2"),
     )
     assert r.status_code == 404
@@ -493,7 +510,5 @@ def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
     assert _executed(schema) == (0, 0, 0)
 
     # The owner's pending action is intact: only C1 can confirm it.
-    own = two_customers.post(
-        "/chat", json={"message": "sí", "case_id": case_id, "confirm": True}
-    ).json()
-    assert (own["outcome"], own["actions_taken"]) == ("registered", ["open_dispute"])
+    own = two_customers.post("/chat", json=confirm).json()
+    assert (own["outcome"], own["actions_taken"]) == ("registered", ["register_dispute"])

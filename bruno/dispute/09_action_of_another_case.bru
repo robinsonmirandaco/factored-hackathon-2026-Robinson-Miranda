@@ -1,0 +1,28 @@
+meta {
+  name: TRZ-18 CA3 the action of another case runs nothing
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "sí", "case_id": "{{recognizedCase}}", "confirm_action_id": "{{pendingAction}}"}
+}
+
+tests {
+  test("no pending action", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("no_pending_action");
+    expect(res.getBody().actions_taken).to.eql([]);
+    expect(res.getBody().dispute_folio).to.equal(null);
+  });
+}

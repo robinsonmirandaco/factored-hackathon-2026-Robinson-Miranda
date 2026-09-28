@@ -368,19 +368,20 @@ def test_a_session_expires_after_15_idle_minutes_and_its_case_is_expired(
     assert pending["outcome"] == "awaiting_confirmation"
 
     clock.advance(15.5)
+    action_id = pending["pending_action"]["action_id"]
     late = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={"message": "sí", "case_id": first["case_id"], "confirm_action_id": action_id},
         headers=headers,
     )
     _error(late, 401, "session_expired")
     case = _case(seeded, first["case_id"])
     assert (case.status, case.recommended_action) == ("expired", None)
 
-    # Logged in again, a "sí" on the kept case runs nothing.
+    # Logged in again, a "sí" to the action of the kept case runs nothing: it was cancelled.
     again = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={"message": "sí", "case_id": first["case_id"], "confirm_action_id": action_id},
         headers=customer_headers(client, "C1"),
     ).json()
     assert (again["outcome"], again["actions_taken"]) == ("no_pending_action", [])
@@ -392,6 +393,10 @@ def test_a_session_expires_after_15_idle_minutes_and_its_case_is_expired(
     )
     assert expired[0][0]["status_before"] == "awaiting_confirmation"
     assert expired[0][0]["pending_action_dropped"] in ("register", "register_and_offer_block")
+    assert expired[0][0]["action_id"] == action_id
+    assert _query(seeded, f"SELECT status FROM case_actions WHERE id = '{action_id}'") == [
+        ("canceled",)
+    ]
 
 
 def test_a_new_login_expires_the_case_of_a_session_left_idle(
@@ -406,7 +411,11 @@ def test_a_new_login_expires_the_case_of_a_session_left_idle(
     # The old token is never used again; the new login alone ends that session.
     again = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={
+            "message": "sí",
+            "case_id": first["case_id"],
+            "confirm_action_id": "ACT-0000000000",
+        },
         headers=customer_headers(client, "C1"),
     ).json()
     assert (again["outcome"], again["actions_taken"]) == ("no_pending_action", [])
@@ -526,7 +535,11 @@ def test_another_customers_case_id_is_not_found(client: TestClient) -> None:
     ).json()
     r = client.post(
         "/chat",
-        json={"message": "sí", "case_id": first["case_id"], "confirm": True},
+        json={
+            "message": "sí",
+            "case_id": first["case_id"],
+            "confirm_action_id": "ACT-0000000000",
+        },
         headers=customer_headers(client, "C2"),
     )
     _error(r, 404, "case_not_found")

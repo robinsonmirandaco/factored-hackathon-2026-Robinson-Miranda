@@ -18,10 +18,16 @@ body:json {
   {"message": "Sigo sin reconocerlo", "case_id": "{{disputeCase}}", "recognition": "not_recognized"}
 }
 
+script:post-response {
+  bru.setVar("pendingAction", res.getBody().pending_action.action_id);
+}
+
 tests {
   test("the policy offers the registration", function() {
     expect(res.getStatus()).to.equal(200);
     expect(res.getBody().outcome).to.equal("awaiting_confirmation");
     expect(res.getBody().autonomy_level).to.equal("L1");
+    expect(res.getBody().pending_action.action).to.equal("register_and_offer_block");
+    expect(res.getBody().pending_action.action_id).to.match(/^ACT-[0-9A-F]{10}$/);
   });
 }

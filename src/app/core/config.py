@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     analyst_demo_password: str = ""
 
     policy_path: str = "config/policy.yaml"
+    # Demo policy passages and bank holidays: the response deadline of a dispute (TRZ-21).
+    policy_passages_path: Path = Path("config/policy_passages.yaml")
+    holidays_path: Path = Path("config/holidays.yaml")
     # Fitted weights, temperature and q-hat of the identification (TRZ-15), per comprehension.
     identification_path: Path = Path("config/identification.yaml")
 

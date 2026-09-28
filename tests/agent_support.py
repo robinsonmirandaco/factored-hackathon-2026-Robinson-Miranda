@@ -8,8 +8,10 @@ from fastapi.testclient import TestClient
 
 from app.adapters.llm import VALIDATE_SYSTEM, LLMClient
 from app.core.config import Settings
+from app.domain.business_days import load_calendars
 from app.domain.clock import SimulatedClock
 from app.domain.policy import PolicyEngine, initial_autonomy
+from app.domain.policy_passages import load_passages
 from app.main import load_identification
 from app.services.agent import AgentDeps
 
@@ -77,6 +79,8 @@ def agent_deps(settings: Settings, llm: LLMClient) -> AgentDeps:
         clock=SimulatedClock(settings.trazo_now),
         identification=load_identification(settings, policy),
         autonomy=initial_autonomy(policy.config),
+        passages=load_passages(settings.policy_passages_path, policy.config.dispute_window_days),
+        calendars=load_calendars(settings.holidays_path),
     )
 
 

@@ -82,15 +82,15 @@ curl -s -X POST localhost:8000/chat \
   -d '{"message": "Sigo sin reconocerlo", "case_id": "<case_id>", "recognition": "not_recognized"}'
 ```
 
-The outcome is `awaiting_confirmation`: nothing runs until the customer confirms the pending action of that case:
+The outcome is `awaiting_confirmation` with a `pending_action`: nothing runs until the customer confirms that exact action by its `action_id`:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
   -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
-  -d '{"message": "sí", "case_id": "<case_id>", "confirm": true}'
+  -d '{"message": "sí", "case_id": "<case_id>", "confirm_action_id": "<action_id>"}'
 ```
 
-The outcome is `registered` and `actions_taken` is `["open_dispute"]`. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
+The outcome is `registered`, `actions_taken` is `["register_dispute"]` and `dispute_folio` has the form `DSP-2026-00001`. Sending the same confirmation again returns the same folio and registers nothing new; an `action_id` that was replaced by a newer one, cancelled or belongs to another case runs nothing. When the customer says the card is lost or stolen, confirming also blocks the card of that charge, and only that one. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
 
 When several charges fit, as with `"No reconozco un cargo en Avianca"`, the outcome is `identifying` with the `options`. Send the `transaction_id` of one of them as `"option"` to go on to the recognition step, or `"option": "none"` when none is the charge, which sends the case to an analyst. An id that was not among the options shown stops the case as a security event.
 

@@ -68,6 +68,13 @@ def _seed_operational_rows(admin_url: str) -> None:
             )
             conn.execute(
                 text(
+                    "INSERT INTO case_actions (id, case_id, customer_id, action, transaction_id) "
+                    "VALUES (:c || '-A', :k, :c, 'register', :t)"
+                ),
+                params,
+            )
+            conn.execute(
+                text(
                     "INSERT INTO audit_log (trace_id, case_id, customer_id, actor, action) "
                     "VALUES ('t', :k, :c, 'tool', 'test')"
                 ),
@@ -118,6 +125,7 @@ def test_every_customer_table_is_covered(two_customers: SchemaUrls) -> None:
     assert _customer_tables(two_customers.admin) == [
         "audit_log",
         "card_blocks",
+        "case_actions",
         "case_queue",
         "cases",
         "complaints",

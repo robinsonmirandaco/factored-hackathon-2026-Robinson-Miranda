@@ -1,6 +1,7 @@
 """The language of each turn in full conversations (TRZ-11 CA6): the reply follows the language
 the customer writes in, also when it changes in the middle of a case."""
 
+import re
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 
@@ -51,7 +52,11 @@ def _in(reply: str, language: str) -> bool:
     """Whether the reply is one of the fixed replies of that language (the LLM is off), or the
     recognition step, which code always writes."""
     intro = {"es": "Este es el cargo", "pt": "Esta é a cobrança"}[language]
-    return reply in _REPLIES[language].values() or reply.startswith(intro)
+    fixed = (
+        re.escape(t).replace(re.escape("{folio}"), r"DSP-\d{4}-\d{5}")
+        for t in _REPLIES[language].values()
+    )
+    return any(re.fullmatch(f, reply) for f in fixed) or reply.startswith(intro)
 
 
 def _case(schema: SchemaUrls, case_id: str) -> tuple[str | None, list[dict]]:
@@ -120,7 +125,12 @@ def test_a_customer_who_switches_language_is_answered_in_the_new_one(
 
     # "sim" is too short to count on: it keeps the language the case has now.
     third = client.post(
-        "/chat", json={"message": "sim", "case_id": case_id, "confirm": True}
+        "/chat",
+        json={
+            "message": "sim",
+            "case_id": case_id,
+            "confirm_action_id": pending["pending_action"]["action_id"],
+        },
     ).json()
     assert third["outcome"] == "registered"
     assert _in(third["reply"], "pt")

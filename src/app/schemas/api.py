@@ -31,7 +31,9 @@ class ChatIn(BaseModel):
         message: Raw message; PII is redacted before any LLM call or audit write. For a button,
             its label.
         case_id: Existing case to continue, or None to open a new one.
-        confirm: True when the customer confirms a pending action.
+        confirm_action_id: The `action_id` of the pending action the customer confirms. An
+            action that was replaced, cancelled or belongs to another case runs nothing; one
+            already executed returns the same result again.
         recognition: The button pressed at the recognition step of `case_id`.
         option: The `transaction_id` of the option chosen in `case_id`, or `none` when none of
             the options shown is the charge. Any id that was not shown stops the case for
@@ -41,17 +43,17 @@ class ChatIn(BaseModel):
     customer_id: str | None = Field(default=None, max_length=64)
     message: str = Field(min_length=1, max_length=4000)
     case_id: str | None = Field(default=None, max_length=64)
-    confirm: bool = False
+    confirm_action_id: str | None = Field(default=None, pattern=r"^ACT-[0-9A-F]{10}$")
     recognition: Literal["not_recognized", "recognized"] | None = None
     option: str | None = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def _one_answer(self) -> Self:
-        answers = [self.confirm, self.recognition is not None, self.option is not None]
-        if sum(answers) > 1:
-            raise ValueError("send at most one of confirm, recognition and option")
-        if (self.recognition or self.option) and self.case_id is None:
-            raise ValueError("recognition and option answer a case: case_id is required")
+        answers = [self.confirm_action_id, self.recognition, self.option]
+        if sum(a is not None for a in answers) > 1:
+            raise ValueError("send at most one of confirm_action_id, recognition and option")
+        if any(a is not None for a in answers) and self.case_id is None:
+            raise ValueError("confirm_action_id, recognition and option need a case_id")
         return self
 
 
@@ -177,6 +179,18 @@ class OptionOut(BaseModel):
     date: str
 
 
+class PendingActionOut(BaseModel):
+    """An action waiting for the customer's confirmation.
+
+    Attributes:
+        action_id: What `confirm_action_id` must name to run it.
+        action: register, register_and_offer_block or register_and_block.
+    """
+
+    action_id: str
+    action: str
+
+
 class ChatOut(BaseModel):
     """What the system did with one customer turn.
 
@@ -184,6 +198,8 @@ class ChatOut(BaseModel):
         charge: The charge to recognize, when `outcome` is recognizing.
         choices: The buttons of the recognition step, primary first.
         options: The charges to choose from, when several fit.
+        pending_action: The action to confirm, when `outcome` is awaiting_confirmation.
+        dispute_folio: Folio DSP-AAAA-NNNNN of the dispute registered in this turn.
     """
 
     case_id: str
@@ -199,6 +215,8 @@ class ChatOut(BaseModel):
     charge: ChargeOut | None = None
     choices: list[ChoiceOut] = Field(default_factory=list)
     options: list[OptionOut] = Field(default_factory=list)
+    pending_action: PendingActionOut | None = None
+    dispute_folio: str | None = None
 
 
 class CaseOut(BaseModel):

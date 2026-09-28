@@ -92,9 +92,10 @@ def _dispute_turns(client: TestClient) -> tuple[str, list[str]]:
         },
     )
     assert second.status_code == 200, second.text
+    action_id = second.json()["pending_action"]["action_id"]
     third = client.post(
         "/chat",
-        json={"message": "sí, confirmo", "case_id": case_id, "confirm": True},
+        json={"message": "sí, confirmo", "case_id": case_id, "confirm_action_id": action_id},
     )
     assert third.status_code == 200, third.text
     return case_id, [r.headers["x-trace-id"] for r in (first, second, third)]
@@ -146,7 +147,7 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
         "recognize",
         "decide",
         "confirm",
-        "open_dispute",
+        "register_dispute",
     }
     for r in rows:
         assert r.actor and r.action and r.result is not None, r.action

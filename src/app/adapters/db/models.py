@@ -119,7 +119,27 @@ class Dispute(Base):
     amount: Mapped[float | None] = mapped_column(Money)
     currency: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, default="opened")
+    due_date: Mapped[date | None] = mapped_column(Date)
+    # Simulated "now" of the case at registration; the open-dispute rule counts on it.
+    business_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CaseAction(Base):
+    """An action offered for confirmation; a confirmation must name its id."""
+
+    __tablename__ = "case_actions"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    case_id: Mapped[str] = mapped_column(Text)
+    customer_id: Mapped[str] = mapped_column(Text)
+    # register | register_and_offer_block | register_and_block
+    action: Mapped[str] = mapped_column(Text)
+    transaction_id: Mapped[str] = mapped_column(Text)
+    # pending | replaced | executed | canceled
+    status: Mapped[str] = mapped_column(Text, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class CardBlock(Base):

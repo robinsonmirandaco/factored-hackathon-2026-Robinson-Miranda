@@ -17,18 +17,22 @@ The LLM never picks tools nor decides: tool selection is code and the decision i
 """
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
+from datetime import date
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
-from app.adapters.db.models import Case, Customer, Transaction
+from app.adapters.db.models import Case, CaseAction, Customer, Transaction
 from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMCallStats, LLMClient, template_reply
 from app.core.errors import AppError
 from app.core.logging import trace_id_var
+from app.core.time import utcnow
+from app.domain.business_days import HolidayCalendar
 from app.domain.clock import SimulatedClock
 from app.domain.fx import display_amount, local_currency, to_usd
 from app.domain.identification import (
@@ -49,6 +53,7 @@ from app.domain.policy import (
     PolicyEngine,
     PolicyError,
 )
+from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, policy_deadline
 from app.domain.recognition import Choice, choices, recognition_text
 from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
@@ -62,12 +67,12 @@ UNREAD_INTENT = "unread"
 # The option a customer picks when none of the charges shown is the one.
 NONE_OF_THESE = "none"
 
-# What confirming each pending action runs. The folio, blocking only the card of the charge and
-# the read-back come with TRZ-18 and TRZ-19.
-CONFIRMED_TOOLS: dict[str, tuple[str, ...]] = {
-    "register": ("open_dispute",),
-    "register_and_offer_block": ("open_dispute",),
-    "register_and_block": ("open_dispute", "freeze_card"),
+# The actions that wait for the customer's confirmation, and whether confirming blocks the card
+# of the charge. The offered block is not run by the "sí": the customer asks for it apart.
+BLOCKS_CARD: dict[str, bool] = {
+    "register": False,
+    "register_and_offer_block": False,
+    "register_and_block": True,
 }
 
 
@@ -81,6 +86,8 @@ class AgentDeps:
         clock: Simulated clock for data windows, relative dates and deadlines.
         identification: Fitted identification parameters by comprehension, rules and llm.
         autonomy: Autonomy level of each intent x language cell.
+        passages: Demo policy passages by rule, which back the response deadline.
+        calendars: Bank holiday calendars by country code.
     """
 
     policy: PolicyEngine
@@ -88,6 +95,8 @@ class AgentDeps:
     clock: SimulatedClock
     identification: Mapping[str, Params]
     autonomy: AutonomyLookup
+    passages: Mapping[str, Passage]
+    calendars: Mapping[str, HolidayCalendar]
 
 
 @dataclass(frozen=True)
@@ -125,7 +134,7 @@ def handle_message(
     deps: AgentDeps,
     customer_id: str,
     text: str,
-    confirm: bool = False,
+    confirm_action_id: str | None = None,
     case_id: str | None = None,
     security_event: bool = False,
     recognition: Choice | None = None,
@@ -138,7 +147,7 @@ def handle_message(
         deps: Policy, LLM, clock, identification parameters and autonomy lookup.
         customer_id: Customer sending the message.
         text: Raw customer message.
-        confirm: True when the customer confirms the pending action of `case_id`.
+        confirm_action_id: The pending action of `case_id` the customer confirms.
         case_id: Case to continue, or None to open a new one.
         security_event: True when the request tried to reach another customer's data. The
             message is not read and no LLM is called: the policy stops the case, and a pending
@@ -165,7 +174,7 @@ def handle_message(
                 session, deps, customer, case_id, redacted, pii_counts
             )
             stats = LLMCallStats()
-        elif case_id is not None and (confirm or recognition or option):
+        elif case_id is not None and (confirm_action_id or recognition or option):
             case = _own_case(session, customer_id, case_id)
             # No LLM call on a confirmation or a button: a short "sí" or "sim" keeps the case's
             # language.
@@ -173,8 +182,8 @@ def handle_message(
             language: Language = spoken.language
             case.language = language
             said = Said(redacted, pii_counts, spoken)
-            if confirm:
-                facts = _confirm(session, case, said)
+            if confirm_action_id:
+                facts = _confirm(session, deps, customer, case, language, confirm_action_id, said)
             elif recognition:
                 facts = _recognize(session, deps, customer, case, language, recognition, said)
             else:
@@ -184,6 +193,9 @@ def handle_message(
             case, language, facts, stats = _understand_and_decide(
                 session, deps, customer, redacted, pii_counts, case_id
             )
+            # A new message that offers nothing new leaves no earlier action to confirm.
+            if facts["outcome"] != "awaiting_confirmation":
+                T.settle_pending_action(session, case.id, "canceled")
 
         reply, rstats = _reply(deps, redacted, facts, language)
         stats.add(rstats)
@@ -477,9 +489,11 @@ def _apply(session: Session, case: Case, d: PolicyDecision, tx: Facts | None) ->
             session, case.id, d.rule, d.recommended, status="pending_analyst_approval"
         )
         facts["outcome"] = "pending_analyst_approval"
-    elif d.action in CONFIRMED_TOOLS:
+    elif d.action in BLOCKS_CARD:
         case.status = "awaiting_confirmation"
         case.recommended_action = d.action
+        offered = T.offer_action(session, case, d.action)
+        facts["pending_action"] = {"action_id": offered.id, "action": d.action}
         facts["outcome"] = "awaiting_confirmation"
     elif d.action == "abstain_and_redirect":
         case.status = "abstained"
@@ -554,6 +568,7 @@ def _security_stop(
     nothing about whether the id exists.
     """
     case.shown_options = None
+    T.settle_pending_action(session, case.id, "canceled")
     write_audit(
         session,
         "agent",
@@ -686,13 +701,27 @@ def _candidates(session: Session, deps: AgentDeps, customer: Customer) -> list[C
 # ---- confirmation -----------------------------------------------------------------------
 
 
-def _confirm(session: Session, case: Case, said: Said) -> Facts:
-    """Runs the pending action of the case, and only that one, once the customer confirms.
+def _confirm(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    action_id: str,
+    said: Said,
+) -> Facts:
+    """Runs the pending action the customer confirms, and only that one (TRZ-18 CA3).
 
-    A confirmation with nothing pending runs nothing. The pending action is the one stored when
-    the policy decided, on the charge identified then, so a "sí" can never widen it.
+    The confirmation names the action. One that was replaced, cancelled or belongs to another
+    case runs nothing. One already executed runs its tools again, which return their stored
+    results: the same folio, no new rows (CA4). The action row is locked, so two confirmations
+    sent at once run one after the other.
     """
-    pending = case.recommended_action if case.status == "awaiting_confirmation" else None
+    row = session.execute(
+        select(CaseAction).where(CaseAction.id == action_id).with_for_update()
+    ).scalar_one_or_none()
+    status = row.status if row is not None and row.case_id == case.id else None
+    runnable = row is not None and status in ("pending", "executed")
     write_audit(
         session,
         "agent",
@@ -700,27 +729,74 @@ def _confirm(session: Session, case: Case, said: Said) -> Facts:
         case.id,
         said.audit(),
         {
-            "pending_action": pending,
-            "transaction_id": case.transaction_id,
+            "action_id": action_id if status else None,
+            "action_status": status,
+            "pending_action": row.action if runnable and row else None,
+            "transaction_id": row.transaction_id if runnable and row else None,
             "language_decision": asdict(said.spoken),
         },
     )
-    facts: Facts = {"intent": case.intent, "action": pending, "actions_taken": []}
-    if pending not in CONFIRMED_TOOLS or case.transaction_id is None:
-        facts["outcome"] = "no_pending_action"
-        return facts
-    for tool in CONFIRMED_TOOLS[pending]:
-        if tool == "open_dispute":
-            res = T.open_dispute(
-                session, case.transaction_id, case.id, case.intent, f"customer confirmed {pending}"
+    if not runnable or row is None:
+        return {
+            "intent": case.intent,
+            "action": None,
+            "outcome": "no_pending_action",
+            "actions_taken": [],
+        }
+    facts: Facts = {"intent": case.intent, "action": row.action, "actions_taken": []}
+    try:
+        # A foreign id found by a tool must leave nothing behind, not even the dispute.
+        with session.begin_nested():
+            dispute = T.register_dispute(
+                session,
+                deps.clock,
+                _deadline(deps, customer, language),
+                customer.customer_id,
+                case.id,
+                row.transaction_id,
+                case.intent,
             )
+            block = (
+                T.block_card(
+                    session, customer.customer_id, case.id, row.transaction_id, case.intent
+                )
+                if BLOCKS_CARD[row.action]
+                else None
+            )
+    except T.OwnershipError:
+        return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
+    facts["actions_taken"].append("register_dispute")
+    facts["dispute"] = {"folio": dispute.data["folio"], "due_date": dispute.data["due_date"]}
+    if block is not None:
+        if block.ok:
+            facts["actions_taken"].append("block_card")
         else:
-            res = T.freeze_card(session, case.customer_id, case.id, case.intent)
-        if res.ok:
-            facts["actions_taken"].append(tool)
-    case.status = "registered"
+            facts["card_not_blocked"] = block.message
+            # Without the card and without a block, the customer still has to stop the card.
+            if case.card_in_possession is False:
+                facts["redirect"] = "card_block"
+    # A replay reports what was done and leaves the case as later turns left it.
+    if row.status == "pending":
+        row.status, row.resolved_at = "executed", utcnow()
+        case.status = "registered"
     facts["outcome"] = "registered"
     return facts
+
+
+def _deadline(
+    deps: AgentDeps, customer: Customer, language: Language
+) -> Callable[[date], PolicyDeadline | Unsupported]:
+    def due(start: date) -> PolicyDeadline | Unsupported:
+        return policy_deadline(
+            deps.passages,
+            deps.calendars,
+            "response_deadline",
+            start,
+            customer.country_code,
+            language,
+        )
+
+    return due
 
 
 # ---- helpers ----------------------------------------------------------------------------
@@ -783,6 +859,8 @@ def _reply_facts(facts: Facts) -> Facts:
         "identification": facts.get("identification"),
         "options": facts.get("options", []),
         "actions_taken": facts["actions_taken"],
+        "dispute": facts.get("dispute"),
+        "card_not_blocked": facts.get("card_not_blocked"),
     }
 
 

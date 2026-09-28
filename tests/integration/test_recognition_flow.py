@@ -169,7 +169,12 @@ def test_a_recognition_answer_with_nothing_waiting_does_nothing(
     [
         {"message": "Ya lo reconozco", "recognition": "recognized"},
         {"message": "Ninguno", "option": "none"},
-        {"message": "sí", "case_id": "CASE-X", "confirm": True, "recognition": "recognized"},
+        {
+            "message": "sí",
+            "case_id": "CASE-X",
+            "confirm_action_id": "ACT-0000000000",
+            "recognition": "recognized",
+        },
         {"message": "x", "case_id": "CASE-X", "recognition": "maybe"},
         {"message": "x", "case_id": "CASE-X", "option": ""},
     ],

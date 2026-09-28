@@ -1,0 +1,32 @@
+meta {
+  name: TRZ-18 CA1 CA3 confirming the named action registers with a folio
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "sí", "case_id": "{{disputeCase}}", "confirm_action_id": "{{pendingAction}}"}
+}
+
+script:post-response {
+  bru.setVar("folio", res.getBody().dispute_folio);
+}
+
+tests {
+  test("registered with a folio", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("registered");
+    expect(res.getBody().actions_taken).to.eql(["register_dispute"]);
+    expect(res.getBody().dispute_folio).to.match(/^DSP-2026-\d{5}$/);
+  });
+}

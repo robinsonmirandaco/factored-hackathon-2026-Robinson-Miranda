@@ -37,6 +37,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.domain.pii import document_hash
+from app.services.tools import settle_pending_action
 
 log = get_logger("auth")
 
@@ -347,13 +348,14 @@ def end_session(
         return
     before, pending = case.status, case.recommended_action
     case.status, case.recommended_action = "expired", None
+    dropped = settle_pending_action(session, case.id, "canceled")
     write_audit(
         session,
         "auth",
         "case_expired",
         case.id,
         {"session_end": reason},
-        {"status_before": before, "pending_action_dropped": pending},
+        {"status_before": before, "pending_action_dropped": pending, "action_id": dropped},
     )
 
 

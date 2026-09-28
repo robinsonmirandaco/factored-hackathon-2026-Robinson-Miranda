@@ -56,5 +56,6 @@ turns:
     outcome: registered
     autonomy_level: L1
     actions_taken:
-    - open_dispute
+    - register_dispute
     policy_action: null
+    dispute_folio: DSP-2026-\d{5}

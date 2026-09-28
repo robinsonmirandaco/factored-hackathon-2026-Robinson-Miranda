@@ -33,6 +33,9 @@ read from the case trace; `policy_action: null` expects that the policy did not 
 
 A turn may press a button instead of writing: `recognition: not_recognized | recognized` answers
 the recognition step, and `option: <transaction_id> | none` chooses among the options shown.
+`confirm: true` confirms the pending action the previous turn offered, by its `action_id`; with
+nothing offered it sends an id no action has, which must run nothing. A turn may expect
+`dispute_folio` as a regular expression.
 
 Exit code: 0 if every non-known-failure case passes, 1 otherwise.
 """
@@ -40,6 +43,7 @@ Exit code: 0 if every non-known-failure case passes, 1 otherwise.
 import argparse
 import json
 import os
+import re
 import statistics
 import sys
 from dataclasses import asdict, dataclass, field
@@ -61,6 +65,8 @@ from app.services.ingestion import ingest_rows
 log = get_logger("eval")
 
 TURN_FIELDS = ("intent", "outcome", "autonomy_level", "actions_taken")
+# Sent when a turn confirms but nothing was offered: well formed, and no action has it.
+NO_ACTION = "ACT-0000000000"
 POLICY_FIELDS = ("policy_action", "policy_rule")
 
 # Columns of a complaint the case does not care about; the schema requires them.
@@ -255,13 +261,15 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
         analyst = _analyst_headers(client, settings)
         case_id = None
         last_row = 0
+        offered = None
         for turn in case["turns"]:
             body = {
                 "message": turn["message"],
-                "confirm": bool(turn.get("confirm", False)),
                 "case_id": case_id if turn.get("same_case", True) else None,
                 **{k: turn[k] for k in ("recognition", "option") if k in turn},
             }
+            if turn.get("confirm"):
+                body["confirm_action_id"] = offered or NO_ACTION
             r = client.post("/chat", json=body)
             if r.status_code != 200:
                 result.status = "error"
@@ -269,6 +277,7 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
                 return result
             out = r.json()
             case_id = out["case_id"]
+            offered = (out.get("pending_action") or {}).get("action_id")
             decision, last_row = _turn_decision(client, analyst, case_id, last_row)
             out.update(decision)
             if "escalation_reason_contains" in turn["expect"]:
@@ -300,6 +309,7 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
                 "tokens",
                 "latency_ms",
                 "escalation_reason",
+                "dispute_folio",
                 "reply",
             )
         },
@@ -307,6 +317,9 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
     for k in (*TURN_FIELDS, *POLICY_FIELDS):
         if k in exp and out.get(k) != exp[k]:
             tr.mismatches.append(f"{k}: expected {exp[k]!r}, got {out.get(k)!r}")
+    folio = exp.get("dispute_folio")
+    if folio and not re.fullmatch(folio, out.get("dispute_folio") or ""):
+        tr.mismatches.append(f"dispute_folio: expected {folio!r}, got {out.get('dispute_folio')!r}")
     needle = exp.get("escalation_reason_contains")
     if needle and needle not in (out.get("escalation_reason") or ""):
         tr.mismatches.append(
