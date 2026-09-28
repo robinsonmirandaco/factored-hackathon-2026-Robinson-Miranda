@@ -103,7 +103,7 @@ def test_a_missing_true_transaction_is_an_infinite_score() -> None:
     ],
 )
 def test_disputable_candidates(extra: dict, expected: bool) -> None:
-    assert is_disputable(_cand(**extra), NOW) is expected
+    assert is_disputable(_cand(**extra), NOW, 120) is expected
 
 
 # ---- CA2: components ---------------------------------------------------------------------

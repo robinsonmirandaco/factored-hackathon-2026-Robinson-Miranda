@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from app.domain.business_days import HolidayCalendar, OutsideCalendarError, load_calendars
+from app.domain.policy import load_policy
 from app.domain.policy_passages import (
     PolicyDeadline,
     Unsupported,
@@ -18,6 +19,7 @@ from app.domain.policy_passages import (
 CONFIG = Path(__file__).resolve().parents[2] / "config"
 HOLIDAYS = CONFIG / "holidays.yaml"
 PASSAGES = CONFIG / "policy_passages.yaml"
+WINDOW_DAYS = load_policy(CONFIG / "policy.yaml").dispute_window_days
 
 
 @pytest.fixture(scope="module")
@@ -27,7 +29,7 @@ def calendars() -> dict[str, HolidayCalendar]:
 
 @pytest.fixture(scope="module")
 def passages():
-    return load_passages(PASSAGES)
+    return load_passages(PASSAGES, WINDOW_DAYS)
 
 
 # ---- holiday table ------------------------------------------------------------------------
@@ -165,6 +167,21 @@ def test_dispute_window_counts_calendar_days(passages, calendars):
     d = policy_deadline(passages, calendars, "dispute_window", date(2026, 2, 17), "AR", "es")
     assert isinstance(d, PolicyDeadline)
     assert (d.due, d.passage_id) == (date(2026, 6, 17), "§1.1")
+
+
+def test_dispute_window_number_comes_only_from_the_policy(tmp_path):
+    raw = yaml.safe_load(PASSAGES.read_text(encoding="utf-8"))
+    window = next(p for p in raw["passages"] if p["rule"] == "dispute_window")
+    assert "120" not in str(window)
+    other = load_passages(PASSAGES, 90)
+    assert other["dispute_window"].calendar_days == 90
+    assert "90 días naturales" in other["dispute_window"].text["es"]
+    assert "90 dias corridos" in other["dispute_window"].text["pt"]
+    window["calendar_days"] = 120
+    own = tmp_path / "passages.yaml"
+    own.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(ValueError, match="takes its days from the policy"):
+        load_passages(own, WINDOW_DAYS)
 
 
 @pytest.mark.parametrize(

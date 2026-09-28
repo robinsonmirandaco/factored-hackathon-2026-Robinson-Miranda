@@ -48,6 +48,7 @@ from app.domain.identification import (
     weighted,
 )
 from app.domain.pii import redact
+from app.domain.policy import load_policy
 from app.schemas.comprehension import Comprehension
 from pipeline.cases.schema import CaseRecord
 from pipeline.cases.splits import load_split, read_manifest
@@ -66,6 +67,8 @@ log = get_logger("pipeline.identification_eval")
 CONFIG_PATH = Path("config/identification.yaml")
 REPORT_PATH = Path("docs/reports/identificacion.md")
 POLICY_PATH = Path("config/policy.yaml")
+# The service reads the same value, so the evaluated candidates are the served ones.
+WINDOW_DAYS = load_policy(POLICY_PATH).dispute_window_days
 VERSION = "identification-2"
 ALPHA = 0.05
 WEIGHT_STEP = 0.1
@@ -167,9 +170,8 @@ def candidates_of(case: CaseRecord, by_customer: dict[str, list[Candidate]]) -> 
         )
         for r in case.scenario.fixture_rows
     ]
-    return [
-        c for c in [*by_customer.get(case.customer_id, []), *staged] if is_disputable(c, case.now)
-    ]
+    pool = [*by_customer.get(case.customer_id, []), *staged]
+    return [c for c in pool if is_disputable(c, case.now, WINDOW_DAYS)]
 
 
 @dataclass(frozen=True)

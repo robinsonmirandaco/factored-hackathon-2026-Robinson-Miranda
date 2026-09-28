@@ -18,7 +18,6 @@ from app.domain.fx import Rates
 from app.domain.identification import (
     DISPUTABLE_STATUSES,
     DISPUTABLE_TYPES,
-    WINDOW_DAYS,
     Candidate,
     Identification,
     Params,
@@ -29,16 +28,19 @@ from app.domain.identification import (
 from app.schemas.comprehension import Comprehension
 
 
-def load_candidates(session: Session, customer_id: str, clock: SimulatedClock) -> list[Candidate]:
+def load_candidates(
+    session: Session, customer_id: str, clock: SimulatedClock, window_days: int
+) -> list[Candidate]:
     """Disputable transactions of a customer in the window before the simulated now (CA1).
 
     Args:
         session: Open session bound to the customer of the JWT.
         customer_id: Customer of the session.
         clock: Simulated clock of the service or of the case.
+        window_days: Dispute window, `dispute_window_days` of config/policy.yaml.
 
     Returns:
-        Purchases, payments and withdrawals, approved or pending, of the last 120 days.
+        Purchases, payments and withdrawals, approved or pending, of the window.
     """
     rows = (
         session.execute(
@@ -47,7 +49,7 @@ def load_candidates(session: Session, customer_id: str, clock: SimulatedClock) -
                 Transaction.customer_id == customer_id,
                 Transaction.transaction_type.in_(DISPUTABLE_TYPES),
                 Transaction.transaction_status.in_(DISPUTABLE_STATUSES),
-                Transaction.transaction_date.between(clock.days_ago(WINDOW_DAYS), clock.now),
+                Transaction.transaction_date.between(clock.days_ago(window_days), clock.now),
             )
             .order_by(Transaction.transaction_date, Transaction.transaction_id)
         )
@@ -76,6 +78,7 @@ def identify_charge(
     clues: Comprehension,
     params: Params,
     local_currency: str,
+    window_days: int,
     case_id: str | None = None,
 ) -> Identification:
     """Identifies the charge a customer describes in the conversation.
@@ -87,13 +90,14 @@ def identify_charge(
         clues: Faithful clues of the redacted message.
         params: Fitted parameters of the comprehension that read the clues.
         local_currency: Local currency of the customer's country.
+        window_days: Dispute window, `dispute_window_days` of config/policy.yaml.
         case_id: Case for the audit row.
 
     Returns:
         The identification.
     """
     with timed() as t:
-        candidates = load_candidates(session, customer_id, clock)
+        candidates = load_candidates(session, customer_id, clock, window_days)
         span = dates_of(candidates)
         rates: Rates = {}
         if span is not None and clues.amount is not None:
@@ -111,6 +115,7 @@ def identify_by_button(
     clock: SimulatedClock,
     customer_id: str,
     transaction_id: str,
+    window_days: int,
     case_id: str | None = None,
 ) -> Identification:
     """Checks the charge a customer chose with the "No lo reconozco" button.
@@ -120,13 +125,14 @@ def identify_by_button(
         clock: Simulated clock.
         customer_id: Customer of the session.
         transaction_id: Transaction the button was pressed on.
+        window_days: Dispute window, `dispute_window_days` of config/policy.yaml.
         case_id: Case for the audit row.
 
     Returns:
         Identified when it is one of the customer's candidates, else not found.
     """
     with timed() as t:
-        candidates = load_candidates(session, customer_id, clock)
+        candidates = load_candidates(session, customer_id, clock, window_days)
         result = identify_from_button(candidates, transaction_id)
     _audit(session, result, None, len(candidates), case_id, t["ms"])
     return result
