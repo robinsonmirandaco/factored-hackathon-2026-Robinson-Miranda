@@ -1000,8 +1000,11 @@ def _reply_facts(facts: Facts) -> Facts:
     shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
     dispute = facts.get("dispute")
     claims = [facts["claim"]] if facts.get("claim") else facts.get("claims", [])
+    # A claim status turn always says which claims are open, even none: without the empty list
+    # the LLM does not know there is nothing to report and asks the customer which claim.
+    asked = "claim" in facts or "claims" in facts
     return {
-        **({"claims": [_claim_shown(c) for c in claims]} if claims else {}),
+        **({"claims": [_claim_shown(c) for c in claims]} if asked else {}),
         **({"other_claim": True} if facts.get("other_claim") else {}),
         "outcome": facts["outcome"],
         "action": facts.get("action"),

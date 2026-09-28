@@ -3,6 +3,7 @@ disputes and complaints of the session customer (CA1), status, last step and cit
 through the fact checker (CA2), a list to choose from (CA3), an overdue deadline (CA4), nothing
 written (CA5), and no deadline stated without a backing passage (CA6)."""
 
+import json
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -78,9 +79,9 @@ def _writes(facts: dict[str, Any]) -> str:
     return "No encuentro reclamos abiertos."
 
 
-def _deps(settings: Settings, language: str = "es") -> AgentDeps:
+def _deps(settings: Settings, language: str = "es", sent: list[str] | None = None) -> AgentDeps:
     answer = reading("claim_status", "es-CO" if language == "es" else "pt-BR")
-    return agent_deps(settings, fake_llm(settings, answer, reply=_writes))
+    return agent_deps(settings, fake_llm(settings, answer, sent, reply=_writes))
 
 
 def _turns(schema: SchemaUrls, deps: AgentDeps, *turns: dict[str, Any]) -> list[AgentResponse]:
@@ -144,11 +145,15 @@ def _fact_check_passed(schema: SchemaUrls, case_id: str) -> bool:
 def test_no_open_claim_is_said_and_nothing_is_written(
     schema: SchemaUrls, settings: Settings
 ) -> None:
-    r = _ask(schema, _deps(settings))
+    sent: list[str] = []
+    r = _ask(schema, _deps(settings, sent=sent))
 
     assert (r.intent, r.outcome, r.autonomy_level) == ("claim_status", "informed", "L0")
     assert r.facts["claim"] is None and r.actions_taken == []
     assert r.reply == "No encuentro reclamos abiertos."
+    # The LLM is told that no claim is open, not left to guess.
+    user = json.loads(sent[-1])["messages"][1]["content"]
+    assert json.loads(user.split("Facts (JSON): ", 1)[1])["claims"] == []
     assert _written(schema) == (0, 0, 0, 0)
 
 
