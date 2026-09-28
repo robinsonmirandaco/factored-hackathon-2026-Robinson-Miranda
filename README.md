@@ -22,7 +22,7 @@ make init
 docker compose up --build
 ```
 
-`make init` is required: it creates `.env` from `.env.example` and generates `DOCUMENT_HASH_KEY` and `APP_DB_PASSWORD`, which Compose needs along with `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`. Values already set in `.env` are kept. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
+`make init` is required: it creates `.env` from `.env.example` and generates `DOCUMENT_HASH_KEY`, `APP_DB_PASSWORD`, `JWT_SECRET` and `ANALYST_DEMO_PASSWORD`, which Compose needs along with `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`. Values already set in `.env` are kept. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
 
 The `db` service starts first. The one-shot `migrate` service then applies the migrations and loads the synthetic fixture (`seed synthetic --seed 42`) only if the database is empty, and the `api` service serves:
 
@@ -50,29 +50,53 @@ Then open http://localhost:8000/docs.
 
 ## Try it
 
-**Warning:** the endpoints do not have authentication yet, and `/chat` still takes `customer_id` in the request body. Session-based authentication arrives with TRZ-09. Do not expose this service on a public URL before then.
+The examples use the synthetic fixture (`make seed-synthetic`) and demo mode, which accepts a fixed one-time code. Set `DEMO_MODE=true` in `.env`. `make init` generates `JWT_SECRET` and `ANALYST_DEMO_PASSWORD`; the API does not start without a `JWT_SECRET` of at least 32 characters.
 
-The examples use customer `C00001` of the synthetic fixture (`make seed-synthetic`). Messages are in Spanish or Portuguese.
+Customer `C00001` of the fixture has the invented document `Pasaporte SYN0000001`. Ask for a code, then exchange it for a session token:
+
+```bash
+curl -s -X POST localhost:8000/auth/otp/request \
+  -H 'content-type: application/json' \
+  -d '{"document_type": "Pasaporte", "document_number": "SYN0000001"}'
+
+curl -s -X POST localhost:8000/auth/otp/verify \
+  -H 'content-type: application/json' \
+  -d '{"document_type": "Pasaporte", "document_number": "SYN0000001", "code": "482913"}'
+```
+
+The first call answers the same for any document, whether a customer has it or not. The second returns `access_token`; the examples below call it `$TOKEN`. Without demo mode the code is random and only appears in the API log when `APP_ENV=local`. Three wrong codes lock the document for 15 minutes. A session expires after 15 idle minutes or 2 hours, whichever comes first, and `POST /auth/logout` closes it. A case left waiting for confirmation when its session ends is expired and keeps no pending action.
 
 A charge the customer does not recognize. The policy decides; nothing runs until the customer confirms:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
-  -H 'content-type: application/json' \
-  -d '{"customer_id": "C00001", "message": "No reconozco un cargo de 40.92 dólares en Claro"}'
+  -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
+  -d '{"message": "No reconozco un cargo de 40.92 dólares en Claro"}'
 ```
 
 The response has `outcome` `awaiting_confirmation` and a `case_id`. Confirm the pending action of that case:
 
 ```bash
 curl -s -X POST localhost:8000/chat \
-  -H 'content-type: application/json' \
-  -d '{"customer_id": "C00001", "message": "sí", "case_id": "<case_id>", "confirm": true}'
+  -H 'content-type: application/json' -H "authorization: Bearer $TOKEN" \
+  -d '{"message": "sí", "case_id": "<case_id>", "confirm": true}'
 ```
 
 The outcome is `registered` and `actions_taken` is `["open_dispute"]`. A request outside disputes, such as `"¿Cuál es mi saldo?"`, gets `outcome` `abstained` and no action.
 
-Every response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` and a `trace_id`. `GET /cases/{case_id}/trace` returns the audit events of that case, including the policy rule and version behind each decision.
+The customer is always the one of the session. A `customer_id` in the body is ignored, and one that names another customer stops the case as a security event. Messages can be in Spanish or Portuguese, and each reply follows the language of the message it answers.
+
+Analysts log in with the test credentials of `.env` and read the audit events of a case, including the policy rule and version behind each decision:
+
+```bash
+curl -s -X POST localhost:8000/auth/analyst/login \
+  -H 'content-type: application/json' \
+  -d '{"username": "analista.demo", "password": "<ANALYST_DEMO_PASSWORD>"}'
+
+curl -s localhost:8000/cases/<case_id>/trace -H "authorization: Bearer <analyst access_token>"
+```
+
+A customer token gets 403 on the analyst endpoints, and an analyst token gets 403 on `/chat`. The Bruno collection in `bruno/auth` runs these checks against a running API.
 
 ## Test and evaluate
 
@@ -85,6 +109,8 @@ Every response includes `intent`, `outcome`, `autonomy_level`, `actions_taken` a
 | `uv run python -m app.cli.seed synthetic --seed 42` | Ingestion with validation and quarantine | `eval/reports/ingest_synthetic.json` |
 | `make report-data` | Rebuilds the quality and demand reports from silver and gold | `docs/reports/calidad.md`, `docs/reports/demanda.md` |
 | `make diff-backup` | Compares the current data against the organizers' earlier backup | `docs/reports/diferencias_versiones.md` |
+| `make eval-language` | Language and variant of the first message on the development split; reads cached LLM answers, makes no call | `docs/reports/idioma.md` |
+| `npx @usebruno/cli run auth --env local` (in `bruno/`) | Authentication checks against a running API with `DEMO_MODE=true` | Terminal |
 
 Integration tests and golden cases need the Postgres service (`docker compose up -d --wait db`) and read `DATABASE_URL` and `ADMIN_DATABASE_URL` from `.env`. Each golden case and each integration test runs in its own temporary schema, so they never touch existing tables.
 
