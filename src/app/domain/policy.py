@@ -73,6 +73,8 @@ class PolicyEngine:
         Args:
             config: Parsed contents of config/policy.yaml.
         """
+        # Every audit row cites it, so a policy file without a version cannot be loaded.
+        self.version = str(config["version"])
         self.limits: dict[str, float] = config["amount_limits_usd"]
         self.ceiling: dict[str, int] = config["intent_ceiling"]
         self.action_class: dict[str, int] = config["action_class"]

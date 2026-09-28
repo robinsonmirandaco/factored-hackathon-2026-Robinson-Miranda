@@ -81,6 +81,26 @@ class TraceEventOut(BaseModel):
     at: str
 
 
+class HistoryEntryOut(BaseModel):
+    """One step of a case told in plain language, written by code from its audit row.
+
+    Attributes:
+        id: Audit row id, to open the raw row in the trace.
+        at: When the step happened.
+        trace_id: Request that wrote the step.
+        actor: Who acted.
+        action: What was done.
+        text: The step in the requested language.
+    """
+
+    id: int
+    at: str
+    trace_id: str
+    actor: str
+    action: str
+    text: str
+
+
 class HumanDecisionIn(BaseModel):
     """Operator decision on an escalated case.
 

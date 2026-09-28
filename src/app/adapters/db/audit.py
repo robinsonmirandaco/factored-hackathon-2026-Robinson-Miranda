@@ -8,9 +8,37 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.adapters.db.models import AuditRecord
+from app.adapters.llm import LLMCallStats
 from app.core.logging import get_logger, trace_id_var
 
 log = get_logger("audit")
+
+
+# Keys under which a model would hand back its own reasoning. The statement rules that hidden
+# reasoning is not an audit artifact, so a row carrying one is refused instead of trimmed.
+REASONING_KEYS = frozenset(
+    {"reasoning", "thinking", "rationale", "chain_of_thought", "explanation"}
+)
+
+
+class ReasoningInAuditError(ValueError):
+    """A payload or result offered to the audit log carries model reasoning."""
+
+
+def _reasoning_key(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            if str(key).lower() in REASONING_KEYS:
+                return str(key)
+            found = _reasoning_key(inner)
+            if found:
+                return found
+    elif isinstance(value, list | tuple):
+        for inner in value:
+            found = _reasoning_key(inner)
+            if found:
+                return found
+    return None
 
 
 def write_audit(
@@ -23,12 +51,14 @@ def write_audit(
     latency_ms: int | None = None,
     idempotency_key: str | None = None,
     customer_id: str | None = None,
+    llm: LLMCallStats | None = None,
 ) -> AuditRecord:
     """Appends one row to the audit log under the current trace_id.
 
     Callers must pass PII-redacted payloads; this function stores what it receives. The row
     belongs to the customer of the session unless another one is given, so row level security
-    lets that customer's later requests find it (idempotency lookups read the audit log).
+    lets that customer's later requests find it (idempotency lookups read the audit log). The
+    policy version comes from the session, bound once per request.
 
     Args:
         session: Open database session.
@@ -40,10 +70,17 @@ def write_audit(
         latency_ms: Duration of the action.
         idempotency_key: Unique key for state-changing actions.
         customer_id: Customer the row is about; defaults to the customer of the session.
+        llm: Usage of the LLM calls made by the step; None when the step made none.
 
     Returns:
         The stored audit record.
+
+    Raises:
+        ReasoningInAuditError: If the payload or the result holds a reasoning key.
     """
+    key = _reasoning_key(payload) or _reasoning_key(result)
+    if key:
+        raise ReasoningInAuditError(f"audit row {actor}/{action} carries model reasoning: {key}")
     rec = AuditRecord(
         trace_id=trace_id_var.get(),
         case_id=case_id,
@@ -54,7 +91,15 @@ def write_audit(
         result=result,
         latency_ms=latency_ms,
         idempotency_key=idempotency_key,
+        policy_version=session.info.get("policy_version"),
     )
+    if llm is not None:
+        # Cached prompt tokens are still prompt tokens; the cost already prices them apart.
+        rec.input_tokens = llm.input_tokens + llm.cache_write_tokens + llm.cache_read_tokens
+        rec.output_tokens = llm.output_tokens
+        rec.cost_usd = round(llm.cost_usd, 6)
+        rec.model = llm.model or None
+        rec.prompt_version = llm.prompt_version
     session.add(rec)
     session.flush()
     log.info("audit", actor=actor, action=action, case_id=case_id, latency_ms=latency_ms)

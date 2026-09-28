@@ -11,8 +11,9 @@ from app.core.logging import get_logger, new_trace_id, trace_id_var
 log = get_logger("api")
 
 TRACE_HEADER = "x-trace-id"
-# Matches the width of the trace_id columns, so a client value can never break an insert.
-_VALID_TRACE_ID = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
+# Matches the width of the trace_id columns, so a client value can never break an insert. The
+# first character is alphanumeric so a client cannot send "-", which the audit log refuses.
+_VALID_TRACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
 
 def install_trace_middleware(app: FastAPI) -> None:
