@@ -1,0 +1,31 @@
+# TRZ-17 CA9.
+description: 'Stolen card with no charge mentioned, in Portuguese: urgent redirect, no action'
+tags:
+- golden
+- out_of_scope
+- lost_or_stolen_card
+- portuguese
+fixtures:
+  customer:
+    customer_id: EVC15
+    document_type: Pasaporte
+    document_number: EVC15-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P15
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+turns:
+- message: Roubaram meu cartão, preciso bloquear agora
+  expect:
+    intent: out_of_scope
+    outcome: abstained
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: abstain_and_redirect
+    policy_rule: routing.out_of_scope.lost_card_without_charge

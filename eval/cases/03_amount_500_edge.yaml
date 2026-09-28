@@ -1,0 +1,41 @@
+# Replaces 02. 500 USD is still in the band the autonomy level decides (cell at A0).
+description: 'Unrecognized charge of 500 USD: register_and_offer_block'
+tags:
+- golden
+- unrecognized_charge
+- amount_band
+fixtures:
+  customer:
+    customer_id: EVC03
+    document_type: Pasaporte
+    document_number: EVC03-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P03
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX03
+    transaction_type: Purchase
+    amount: 500.0
+    currency: USD
+    merchant_name: Liverpool
+    merchant_category: Other
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: No reconozco el cargo de 500 dólares en Liverpool
+  expect:
+    intent: unrecognized_charge
+    outcome: awaiting_confirmation
+    autonomy_level: L1
+    actions_taken: []
+    policy_action: register_and_offer_block
+    policy_rule: routing.unrecognized_charge.card_in_possession

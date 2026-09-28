@@ -1,0 +1,42 @@
+description: '15,000 MXN with no rate in the allowed days: not convertible, so a person decides; never
+  read as zero'
+tags:
+- golden
+- unrecognized_charge
+- fx
+- escalation
+fixtures:
+  customer:
+    customer_id: EVC08
+    document_type: Pasaporte
+    document_number: EVC08-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P08
+    product_type: credit_card
+    currency: MXN
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX08
+    transaction_type: Purchase
+    amount: 15000.0
+    currency: MXN
+    merchant_name: Liverpool
+    merchant_category: Other
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: No reconozco un cargo de 15,000 pesos en Liverpool
+  expect:
+    intent: unrecognized_charge
+    outcome: escalated
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: escalate
+    policy_rule: escalate.amount_unknown

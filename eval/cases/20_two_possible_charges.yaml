@@ -1,0 +1,50 @@
+description: 'Two charges at the same merchant fit a clue without amount: show them as options, no decision
+  yet'
+tags:
+- golden
+- unrecognized_charge
+- identification
+fixtures:
+  customer:
+    customer_id: EVC20
+    document_type: Pasaporte
+    document_number: EVC20-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P20
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX20A
+    transaction_type: Purchase
+    amount: 45.0
+    currency: USD
+    merchant_name: Oxxo
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 5
+  - transaction_id: EVTX20B
+    transaction_type: Purchase
+    amount: 47.0
+    currency: USD
+    merchant_name: Oxxo
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 30
+turns:
+- message: No reconozco un cargo en Oxxo
+  expect:
+    intent: unrecognized_charge
+    outcome: identifying
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null

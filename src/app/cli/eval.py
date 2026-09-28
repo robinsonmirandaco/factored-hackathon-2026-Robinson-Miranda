@@ -25,6 +25,11 @@ fixture product.
 A case may declare `skip: <why>` when its expectations no longer apply and a later story will
 rewrite it. It is not run, and it is listed in the report with its reason.
 
+Besides customers, products and transactions, fixtures may hold `complaints` (a dispute complaint
+of the dataset, dated `days_ago` before the case "now") and `exchange_rates` (dated the same way).
+A turn may expect `policy_action` and `policy_rule`: the policy decision written during that turn,
+read from the case trace; `policy_action: null` expects that the policy did not decide.
+
 Exit code: 0 if every non-known-failure case passes, 1 otherwise.
 """
 
@@ -40,6 +45,7 @@ from typing import Any
 
 import yaml
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
 
 from app.adapters.db.session import Database, SchemaUrls, isolated_schema
 from app.core.config import Settings
@@ -51,6 +57,20 @@ from app.services.ingestion import ingest_rows
 log = get_logger("eval")
 
 TURN_FIELDS = ("intent", "outcome", "autonomy_level", "actions_taken")
+POLICY_FIELDS = ("policy_action", "policy_rule")
+
+# Columns of a complaint the case does not care about; the schema requires them.
+_COMPLAINT_DEFAULTS: dict[str, Any] = {
+    "case_type": "Claim",
+    "category": "Transactions",
+    "subcategory": "Cargo no reconocido",
+    "reception_channel": "App",
+    "has_affected_product": True,
+    "priority": "Medium",
+    "status": "Open",
+    "sla_breached": False,
+    "is_repeat_complainer": False,
+}
 
 
 @dataclass
@@ -123,6 +143,51 @@ def _fixture_rows(
     return customers, products, transactions
 
 
+def _insert_extra_rows(admin_url: str, case: dict[str, Any], now: datetime) -> None:
+    """Inserts the complaints and exchange rates of a case as the schema owner.
+
+    Neither goes through the ingestion validator, which only covers customers, products and
+    transactions; the columns and checks of the schema still apply.
+    """
+    fx = case.get("fixtures") or {}
+    customer_id = (fx.get("customer") or {}).get("customer_id")
+    engine = create_engine(admin_url)
+    try:
+        with engine.begin() as conn:
+            for c in fx.get("complaints") or []:
+                row = {**_COMPLAINT_DEFAULTS, "customer_id": customer_id, **c}
+                created = now - timedelta(days=float(row.pop("days_ago")))
+                row |= {"creation_date": created, "process_date": created.date()}
+                cols, params = ", ".join(row), ", ".join(f":{k}" for k in row)
+                conn.execute(text(f"INSERT INTO complaints ({cols}) VALUES ({params})"), row)
+            for r in fx.get("exchange_rates") or []:
+                conn.execute(
+                    text(
+                        "INSERT INTO exchange_rates (date, source_currency, target_currency, "
+                        "exchange_rate) VALUES (:d, :s, :t, :r)"
+                    ),
+                    {
+                        "d": (now - timedelta(days=float(r.get("days_ago", 0)))).date(),
+                        "s": r["source"],
+                        "t": r["target"],
+                        "r": r["rate"],
+                    },
+                )
+    finally:
+        engine.dispose()
+
+
+def _turn_decision(client: TestClient, case_id: str, after: int) -> tuple[dict[str, Any], int]:
+    """The policy decision written after audit row `after`, and the last row id of the case."""
+    rows = client.get(f"/cases/{case_id}/trace").json()
+    new = [r for r in rows if r["id"] > after and (r["actor"], r["action"]) == ("policy", "decide")]
+    last = new[-1]["result"] if new else {}
+    return (
+        {"policy_action": last.get("action"), "policy_rule": last.get("rule")},
+        max((r["id"] for r in rows), default=after),
+    )
+
+
 # ---- running ------------------------------------------------------------------------------
 
 
@@ -158,11 +223,13 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
         result.status = "error"
         result.error = f"fixtures rejected by validator: {dict(report.reasons)}"
         return result
+    _insert_extra_rows(urls.admin, case, settings.trazo_now)
 
     with TestClient(app) as client:
         customers = rows[0]
         customer_id = customers[0]["customer_id"] if customers else case["customer_id"]
         case_id = None
+        last_row = 0
         for turn in case["turns"]:
             body = {
                 "customer_id": customer_id,
@@ -177,6 +244,8 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
                 return result
             out = r.json()
             case_id = out["case_id"]
+            decision, last_row = _turn_decision(client, case_id, last_row)
+            out.update(decision)
             if "escalation_reason_contains" in turn["expect"]:
                 out["escalation_reason"] = (
                     client.get(f"/cases/{case_id}").json().get("escalation_reason")
@@ -201,6 +270,7 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
             k: out.get(k)
             for k in (
                 *TURN_FIELDS,
+                *POLICY_FIELDS,
                 "llm_fallback",
                 "tokens",
                 "latency_ms",
@@ -209,7 +279,7 @@ def _compare(turn: dict[str, Any], out: dict[str, Any]) -> TurnResult:
             )
         },
     )
-    for k in TURN_FIELDS:
+    for k in (*TURN_FIELDS, *POLICY_FIELDS):
         if k in exp and out.get(k) != exp[k]:
             tr.mismatches.append(f"{k}: expected {exp[k]!r}, got {out.get(k)!r}")
     needle = exp.get("escalation_reason_contains")

@@ -1,0 +1,29 @@
+# Replaces 10.
+description: 'Balance question: abstain and redirect, no tool'
+tags:
+- golden
+- out_of_scope
+fixtures:
+  customer:
+    customer_id: EVC17
+    document_type: Pasaporte
+    document_number: EVC17-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P17
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+turns:
+- message: Quiero saber mi saldo
+  expect:
+    intent: out_of_scope
+    outcome: abstained
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: abstain_and_redirect
+    policy_rule: routing.out_of_scope

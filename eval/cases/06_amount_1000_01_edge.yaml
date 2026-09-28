@@ -1,0 +1,41 @@
+# Replaces 05. Above 1000 USD the case is escalated.
+description: 'Unrecognized charge of 1000.01 USD: escalate'
+tags:
+- golden
+- unrecognized_charge
+- amount_band
+fixtures:
+  customer:
+    customer_id: EVC06
+    document_type: Pasaporte
+    document_number: EVC06-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P06
+    product_type: credit_card
+    currency: USD
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX06
+    transaction_type: Purchase
+    amount: 1000.01
+    currency: USD
+    merchant_name: Liverpool
+    merchant_category: Other
+    transaction_country: MX
+    channel: Web
+    transaction_status: Approved
+    hours_ago: 20
+turns:
+- message: No reconozco el cargo de 1000.01 dólares en Liverpool
+  expect:
+    intent: unrecognized_charge
+    outcome: escalated
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: escalate
+    policy_rule: escalate.amount_above_human_review
