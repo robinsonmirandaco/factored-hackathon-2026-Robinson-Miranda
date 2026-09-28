@@ -12,6 +12,7 @@ Every call is logged with model, prompt version, tokens, latency and cost (TRZ-1
 failure returns a typed fallback. Callers never see an exception from this module.
 """
 
+import hashlib
 import json
 import re
 import time
@@ -91,7 +92,10 @@ class LLMCallStats:
         self.cost_usd += other.cost_usd
         self.calls += other.calls
         self.model = other.model or self.model
-        self.prompt_version = other.prompt_version or self.prompt_version
+        # A step that used two prompts (compose, then validate) cites both.
+        if other.prompt_version and other.prompt_version != self.prompt_version:
+            versions = [v for v in (self.prompt_version, other.prompt_version) if v]
+            self.prompt_version = "+".join(versions)
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,18 @@ class ComprehensionPrompt:
     version: str
     system: str
     example_sources: tuple[str, ...]
+
+
+def prompt_version_of(system: str) -> str:
+    """Names an unversioned system prompt by its content, so any edit changes the name.
+
+    Args:
+        system: System prompt text.
+
+    Returns:
+        "sha256:" followed by the first 12 hex digits of the prompt's hash.
+    """
+    return "sha256:" + hashlib.sha256(system.encode()).hexdigest()[:12]
 
 
 def comprehension_user(message: str, country_code: str, local_currency: str) -> str:
@@ -280,7 +296,9 @@ class LLMClient:
         schema: dict[str, Any] | None = None,
         prompt_version: str | None = None,
     ) -> tuple[str, LLMCallStats]:
-        stats = LLMCallStats(model=self.model, prompt_version=prompt_version)
+        stats = LLMCallStats(
+            model=self.model, prompt_version=prompt_version or prompt_version_of(system)
+        )
         if not self.available:
             stats.fallback = True
             stats.error = "llm_disabled"
@@ -309,7 +327,7 @@ class LLMClient:
             "llm_call",
             provider=self.provider,
             model=stats.model,
-            prompt_version=prompt_version,
+            prompt_version=stats.prompt_version,
             input_tokens=stats.input_tokens,
             output_tokens=stats.output_tokens,
             cache_write_tokens=stats.cache_write_tokens,
@@ -552,7 +570,8 @@ class LLMClient:
         if not ok:
             log.warning("reply_rejected_by_validator", reason=why)
             stats.fallback = True
-            stats.error = f"validator:{why[:60]}"
+            # The validator's own words are model text; the audit log keeps only the outcome.
+            stats.error = "validator_rejected"
             return template_reply(facts, language), stats
         return reply.strip(), stats
 

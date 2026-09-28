@@ -127,6 +127,7 @@ def handle_message(
             {"redacted_text": redacted[:500], "pii": pii_counts},
             {**extraction.model_dump(), "fallback": xstats.fallback, "error": xstats.error},
             xstats.latency_ms,
+            llm=xstats,
         )
 
         profile = T.get_customer_profile(session, customer_id, case_id).data
@@ -143,6 +144,7 @@ def handle_message(
             {"facts": facts},
             {"reply": reply, "fallback": cstats.fallback, "error": cstats.error},
             cstats.latency_ms,
+            llm=cstats,
         )
 
         case.summary = _summary(extraction, facts)

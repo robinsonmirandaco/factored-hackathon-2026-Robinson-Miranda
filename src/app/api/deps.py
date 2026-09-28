@@ -47,7 +47,7 @@ def get_session(runtime: RuntimeDep) -> Iterator[Session]:
     """Opens one database session per request; commits on success, rolls back on error.
 
     The session starts with no row level security context, so it sees no customer rows
-    until the route binds one.
+    until the route binds one. It carries the policy version every audit row cites.
 
     Args:
         runtime: App runtime.
@@ -56,6 +56,7 @@ def get_session(runtime: RuntimeDep) -> Iterator[Session]:
         An open session.
     """
     with runtime.db.session() as session:
+        session.info["policy_version"] = runtime.agent.policy.version
         yield session
 
 
@@ -72,6 +73,7 @@ def get_analyst_session(runtime: RuntimeDep) -> Iterator[Session]:
         An open session.
     """
     with runtime.db.session(role="analyst") as session:
+        session.info["policy_version"] = runtime.agent.policy.version
         yield session
 
 

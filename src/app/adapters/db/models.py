@@ -7,7 +7,7 @@ not query through the ORM (complaints, exchange rates, the queue, seed runs) are
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Integer, Numeric, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, Numeric, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Numeric columns come back as float: tool results are stored as JSON, which has no Decimal.
@@ -145,6 +145,14 @@ class AuditRecord(Base):
     result: Mapped[dict | None] = mapped_column(JSON)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Null until the post-action read-back exists (TRZ-19).
+    verified: Mapped[bool | None] = mapped_column(Boolean)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(12, 6, asdecimal=False))
+    model: Mapped[str | None] = mapped_column(Text)
+    prompt_version: Mapped[str | None] = mapped_column(Text)
+    policy_version: Mapped[str | None] = mapped_column(Text)
 
 
 class QuarantineRecord(Base):

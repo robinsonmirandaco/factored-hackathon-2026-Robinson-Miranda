@@ -1,14 +1,18 @@
 """HTTP routes. Thin: validate input, call one service, return a schema."""
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.adapters.db.session import bind_context
 from app.api.deps import AnalystSessionDep, RuntimeDep, SessionDep
+from app.domain.history import Lang
 from app.schemas.api import (
     CaseOut,
     ChatIn,
     ChatOut,
     HealthOut,
+    HistoryEntryOut,
     HumanDecisionIn,
     MetricsOut,
     TraceEventOut,
@@ -74,6 +78,18 @@ def get_case(case_id: str, session: AnalystSessionDep) -> CaseOut:
 def get_trace(case_id: str, session: AnalystSessionDep) -> list[TraceEventOut]:
     """Returns every audit row of a case in write order."""
     return cases.get_trace(session, case_id)
+
+
+@router.get(
+    "/cases/{case_id}/history",
+    response_model=list[HistoryEntryOut],
+    responses={404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def get_history(
+    case_id: str, session: AnalystSessionDep, lang: Annotated[Lang, Query()] = "es"
+) -> list[HistoryEntryOut]:
+    """Returns the steps of a case in plain language, in Spanish or Portuguese."""
+    return cases.get_history(session, case_id, lang)
 
 
 @router.get("/queue", response_model=list[CaseOut])

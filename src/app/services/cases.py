@@ -1,4 +1,5 @@
-"""Operator-side use cases: read cases and traces, record human decisions, compute metrics."""
+"""Operator-side use cases: read cases, traces and histories, record human decisions, compute
+metrics."""
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -7,8 +8,14 @@ from sqlalchemy.orm import Session
 from app.adapters.db.audit import write_audit
 from app.adapters.db.models import AuditRecord, Case
 from app.core.errors import AppError
+from app.domain.history import Lang, describe
 from app.domain.pii import redact
-from app.schemas.api import CaseOut, HumanDecisionIn, MetricsOut, TraceEventOut
+from app.schemas.api import CaseOut, HistoryEntryOut, HumanDecisionIn, MetricsOut, TraceEventOut
+
+_HISTORY = text(
+    "SELECT id, trace_id, actor, action, payload, result, policy_version, created_at "
+    "FROM case_history WHERE case_id = :case_id ORDER BY id"
+)
 
 _STATUS_AFTER_DECISION = {
     "approve": "approved",
@@ -74,6 +81,40 @@ def get_trace(session: Session, case_id: str) -> list[TraceEventOut]:
             result=r.result,
             latency_ms=r.latency_ms,
             at=r.created_at.isoformat(),
+        )
+        for r in rows
+    ]
+
+
+def get_history(session: Session, case_id: str, lang: Lang) -> list[HistoryEntryOut]:
+    """Tells the steps of a case in plain language, read from the case_history view.
+
+    Args:
+        session: Open database session.
+        case_id: Case whose history to read.
+        lang: Language of the lines.
+
+    Returns:
+        One line per audit row of the case, in write order.
+
+    Raises:
+        AppError: 404 case_not_found, or 503 db_unavailable if the database fails.
+    """
+    try:
+        _require_case(session, case_id)
+        rows = session.execute(_HISTORY, {"case_id": case_id}).mappings().all()
+    except SQLAlchemyError as exc:
+        raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
+    return [
+        HistoryEntryOut(
+            id=r["id"],
+            at=r["created_at"].isoformat(),
+            trace_id=r["trace_id"],
+            actor=r["actor"],
+            action=r["action"],
+            text=describe(
+                r["actor"], r["action"], r["payload"], r["result"], r["policy_version"], lang
+            ),
         )
         for r in rows
     ]
