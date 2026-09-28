@@ -48,6 +48,25 @@ class Settings(BaseSettings):
     llm_price_input_per_mtok: float = 1.0
     llm_price_output_per_mtok: float = 5.0
 
+    # Sessions (TRZ-09). Every time here is the real clock, never trazo_now (design 5.1).
+    # No usable default for the secret: the API refuses to start without a generated one.
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    session_idle_minutes: int = 15
+    session_max_minutes: int = 120
+    otp_ttl_minutes: int = 5
+    otp_max_attempts: int = 3
+    otp_lock_minutes: int = 15
+    # Code requests allowed per document in each window.
+    otp_request_limit: int = 5
+    otp_request_window_minutes: int = 15
+    # The fixed demo code works only with demo_mode; otherwise every code is random.
+    demo_mode: bool = False
+    demo_otp_code: str = "482913"
+    # Test credentials of the demo analyst; an empty password lets no analyst in.
+    analyst_demo_user: str = "analista.demo"
+    analyst_demo_password: str = ""
+
     policy_path: str = "config/policy.yaml"
     # Fitted weights, temperature and q-hat of the identification (TRZ-15), per comprehension.
     identification_path: Path = Path("config/identification.yaml")

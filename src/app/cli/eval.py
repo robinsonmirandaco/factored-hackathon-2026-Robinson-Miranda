@@ -10,8 +10,9 @@ with the expected intent, outcome, autonomy level and actions. The runner:
      (whose timestamps move with the clock),
   2. loads the fixtures as the schema owner through the real ingestion validator (bad fixtures
      fail loudly),
-  3. drives the conversation through the real API (POST /chat) in-process, connected as
-     trazo_app so row level security applies,
+  3. logs the case customer in with the demo one-time code and an analyst with the test
+     credentials, then drives the conversation through the real API (POST /chat) in-process,
+     connected as trazo_app so row level security applies,
   4. compares, and writes a JSON + Markdown report.
 
 A case may declare `known_failure: <why>`. It still runs and shows up in the report, but does
@@ -177,9 +178,29 @@ def _insert_extra_rows(admin_url: str, case: dict[str, Any], now: datetime) -> N
         engine.dispose()
 
 
-def _turn_decision(client: TestClient, case_id: str, after: int) -> tuple[dict[str, Any], int]:
+def _login(client: TestClient, customer: dict[str, Any], settings: Settings) -> None:
+    """Logs the case customer in through the one-time code flow and stores its bearer token."""
+    document = {k: customer[k] for k in ("document_type", "document_number")}
+    client.post("/auth/otp/request", json=document).raise_for_status()
+    r = client.post("/auth/otp/verify", json={**document, "code": settings.demo_otp_code})
+    r.raise_for_status()
+    client.headers["authorization"] = f"Bearer {r.json()['access_token']}"
+
+
+def _analyst_headers(client: TestClient, settings: Settings) -> dict[str, str]:
+    r = client.post(
+        "/auth/analyst/login",
+        json={"username": settings.analyst_demo_user, "password": settings.analyst_demo_password},
+    )
+    r.raise_for_status()
+    return {"authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def _turn_decision(
+    client: TestClient, analyst: dict[str, str], case_id: str, after: int
+) -> tuple[dict[str, Any], int]:
     """The policy decision written after audit row `after`, and the last row id of the case."""
-    rows = client.get(f"/cases/{case_id}/trace").json()
+    rows = client.get(f"/cases/{case_id}/trace", headers=analyst).json()
     new = [r for r in rows if r["id"] > after and (r["actor"], r["action"]) == ("policy", "decide")]
     last = new[-1]["result"] if new else {}
     return (
@@ -209,7 +230,8 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
         known_failure=case.get("known_failure"),
     )
     overrides = {"trazo_now": case["now"]} if "now" in case else {}
-    settings = Settings(database_url=urls.app, **overrides)
+    # Demo mode only for the fixed one-time code: the cases test the agent, not the login.
+    settings = Settings(database_url=urls.app, demo_mode=True, **overrides)
     app = create_app(settings)
     rows = _fixture_rows(case, settings.trazo_now)
 
@@ -226,13 +248,12 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
     _insert_extra_rows(urls.admin, case, settings.trazo_now)
 
     with TestClient(app) as client:
-        customers = rows[0]
-        customer_id = customers[0]["customer_id"] if customers else case["customer_id"]
+        _login(client, rows[0][0], settings)
+        analyst = _analyst_headers(client, settings)
         case_id = None
         last_row = 0
         for turn in case["turns"]:
             body = {
-                "customer_id": customer_id,
                 "message": turn["message"],
                 "confirm": bool(turn.get("confirm", False)),
                 "case_id": case_id if turn.get("same_case", True) else None,
@@ -244,11 +265,11 @@ def run_case(case: dict[str, Any], urls: SchemaUrls) -> CaseResult:
                 return result
             out = r.json()
             case_id = out["case_id"]
-            decision, last_row = _turn_decision(client, case_id, last_row)
+            decision, last_row = _turn_decision(client, analyst, case_id, last_row)
             out.update(decision)
             if "escalation_reason_contains" in turn["expect"]:
                 out["escalation_reason"] = (
-                    client.get(f"/cases/{case_id}").json().get("escalation_reason")
+                    client.get(f"/cases/{case_id}", headers=analyst).json().get("escalation_reason")
                 )
             result.turns.append(_compare(turn, out))
 

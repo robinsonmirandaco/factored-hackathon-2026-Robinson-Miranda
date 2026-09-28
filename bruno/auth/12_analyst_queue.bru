@@ -1,0 +1,21 @@
+meta {
+  name: CA8 an analyst token opens the queue
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

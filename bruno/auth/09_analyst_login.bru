@@ -1,0 +1,26 @@
+meta {
+  name: CA7 the analyst logs in with the test credentials
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/auth/analyst/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {"username": "{{analystUser}}", "password": "{{analystPassword}}"}
+}
+
+script:post-response {
+  bru.setVar("analystToken", res.getBody().access_token);
+}
+
+tests {
+  test("200 role analyst", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().role).to.equal("analyst");
+  });
+}

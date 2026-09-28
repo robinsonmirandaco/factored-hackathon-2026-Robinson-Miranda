@@ -41,12 +41,16 @@ from app.domain.policy import (
     PolicyContext,
     PolicyDecision,
     PolicyEngine,
+    PolicyError,
 )
 from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
 from app.services.identification import identify_charge
 
 Facts = dict[str, Any]
+
+# Intent of a new case stopped for security before its message was read.
+UNREAD_INTENT = "unread"
 
 # What confirming each pending action runs. The folio, blocking only the card of the charge and
 # the read-back come with TRZ-18 and TRZ-19.
@@ -100,6 +104,7 @@ def handle_message(
     text: str,
     confirm: bool = False,
     case_id: str | None = None,
+    security_event: bool = False,
 ) -> AgentResponse:
     """Handles one customer turn end to end.
 
@@ -110,6 +115,9 @@ def handle_message(
         text: Raw customer message.
         confirm: True when the customer confirms the pending action of `case_id`.
         case_id: Case to continue, or None to open a new one.
+        security_event: True when the request tried to reach another customer's data. The
+            message is not read and no LLM is called: the policy stops the case, and a pending
+            confirmation is not run.
 
     Returns:
         What the system did and replied.
@@ -124,7 +132,12 @@ def handle_message(
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
-        if confirm and case_id is not None:
+        if security_event:
+            case, language, facts = _stop_for_security(
+                session, deps, customer_id, case_id, redacted, pii_counts
+            )
+            stats = LLMCallStats()
+        elif confirm and case_id is not None:
             case = _own_case(session, customer_id, case_id)
             language: Language = "pt" if case.language == "pt" else "es"
             facts = _confirm(session, case, redacted, pii_counts)
@@ -209,7 +222,7 @@ def _understand_and_decide(
     )
 
     card = clues.card_in_possession.value if clues.card_in_possession else None
-    screened = deps.policy.screen(clues.intent, language, card, _security_event(case))
+    screened = deps.policy.screen(clues.intent, language, card, False)
     if screened is not None:
         _audit_decision(
             session,
@@ -253,21 +266,6 @@ def _understand_and_decide(
     decision = deps.policy.decide(ctx, deps.autonomy)
     _audit_decision(session, case, asdict(ctx), decision)
     return case, language, _apply(session, case, decision, tx), stats
-
-
-def _security_event(case: Case) -> bool:
-    """Whether a security event was raised for the case before it is identified.
-
-    No detector raises one yet: access to another customer's data raises it with TRZ-09 (the
-    session) and TRZ-18 CA5 (tools that check ownership). The policy screens it first anyway.
-
-    Args:
-        case: The case of the turn.
-
-    Returns:
-        False until a detector exists.
-    """
-    return False
 
 
 def _chosen(
@@ -399,6 +397,42 @@ def _audit_decision(
     )
 
 
+def _stop_for_security(
+    session: Session,
+    deps: AgentDeps,
+    customer_id: str,
+    case_id: str | None,
+    redacted: str,
+    pii_counts: dict[str, int],
+) -> tuple[Case, Language, Facts]:
+    """Stops a turn that tried to reach another customer's data, without reading the message.
+
+    No comprehension runs, so the turn spends no tokens and its text never reaches the LLM. A
+    new case keeps the intent `unread`; a continued case keeps the intent it had.
+    """
+    if case_id is None:
+        case = _open_case(session, customer_id, None, UNREAD_INTENT, "es")
+    else:
+        case = _own_case(session, customer_id, case_id)
+    language: Language = "pt" if case.language == "pt" else "es"
+    # The other customer's id is not stored: this trail belongs to the session customer.
+    write_audit(
+        session,
+        "agent",
+        "security_event",
+        case.id,
+        {"reason": "foreign_customer_id", "redacted_text": redacted[:500], "pii": pii_counts},
+        None,
+    )
+    screened = deps.policy.screen(None, language, None, True)
+    if screened is None:  # screen raises before returning None without an intent
+        raise PolicyError("the policy did not stop a security event")
+    _audit_decision(
+        session, case, {"intent": None, "language": language, "security_event": True}, screened
+    )
+    return case, language, _apply(session, case, screened, None)
+
+
 # ---- confirmation -----------------------------------------------------------------------
 
 
@@ -469,9 +503,9 @@ def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
 def _reply(
     deps: AgentDeps, redacted: str, facts: Facts, language: Language
 ) -> tuple[str, LLMCallStats]:
-    # The urgent card block redirect must say the same thing every time, so it is not written
-    # by the LLM.
-    if facts.get("redirect") == "card_block":
+    # The urgent card block redirect must say the same thing every time, and a security stop
+    # must not send the text of the turn to the LLM, so neither is written by it.
+    if facts.get("redirect") == "card_block" or facts["outcome"] == "security_blocked":
         return template_reply(facts, language), LLMCallStats(fallback=True)
     return deps.llm.compose(redacted, _reply_facts(facts), language)
 

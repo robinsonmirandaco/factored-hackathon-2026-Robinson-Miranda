@@ -255,3 +255,67 @@ def test_audit_log_rows_cannot_change_or_disappear(two_customers: SchemaUrls) ->
             conn.execute(text("SELECT set_config('app.role', 'analyst', true)"))
             conn.execute(text("DELETE FROM audit_log"))
     app.dispose()
+
+
+# ---- the lookup by document before login (TRZ-09) -----------------------------------------
+
+
+@pytest.fixture
+def one_customer(schema: SchemaUrls) -> SchemaUrls:
+    load(schema.admin, [customer(A)], [], [])
+    return schema
+
+
+def _document_hash(schema: SchemaUrls) -> str:
+    engine = create_engine(schema.admin)
+    with engine.connect() as conn:
+        value = conn.execute(
+            text("SELECT document_hash FROM customers WHERE customer_id = :c"), {"c": A}
+        ).scalar_one()
+    engine.dispose()
+    return str(value)
+
+
+def test_without_context_the_app_sees_no_customer_but_the_lookup_returns_only_the_id(
+    one_customer: SchemaUrls,
+) -> None:
+    key = _document_hash(one_customer)
+    engine = create_engine(one_customer.app)
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM customers")).scalar_one() == 0
+        found = conn.execute(text("SELECT auth_customer_id(:k)"), {"k": key}).one()
+        missing = conn.execute(text("SELECT auth_customer_id('nope')")).scalar_one()
+    engine.dispose()
+    assert tuple(found) == (A,)
+    assert missing is None
+
+
+def test_the_lookup_function_pins_its_search_path_and_only_the_app_may_run_it(
+    one_customer: SchemaUrls,
+) -> None:
+    engine = create_engine(one_customer.admin)
+    with engine.connect() as conn:
+        schema_name = conn.execute(text("SELECT current_schema()")).scalar_one()
+        config, definer, owner = conn.execute(
+            text(
+                "SELECT p.proconfig, p.prosecdef, pg_get_userbyid(p.proowner) FROM pg_proc p "
+                "WHERE p.proname = 'auth_customer_id' "
+                "AND p.pronamespace = current_schema()::regnamespace"
+            )
+        ).one()
+        runners = set(
+            conn.execute(
+                text(
+                    "SELECT grantee FROM information_schema.routine_privileges "
+                    "WHERE routine_name = 'auth_customer_id' AND routine_schema = :s "
+                    "AND privilege_type = 'EXECUTE'"
+                ),
+                {"s": schema_name},
+            ).scalars()
+        )
+    engine.dispose()
+    assert config == [f"search_path={schema_name}, pg_temp"]
+    assert definer is True
+    # The owner reads two columns of customers and cannot log in; PUBLIC may not run it.
+    assert owner == "trazo_auth"
+    assert runners == {"trazo_app", "trazo_auth"}

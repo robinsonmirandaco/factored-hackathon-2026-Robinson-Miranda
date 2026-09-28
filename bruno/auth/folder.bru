@@ -1,0 +1,12 @@
+meta {
+  name: auth
+}
+
+docs {
+  TRZ-09 against a running API with the synthetic fixture (make seed-synthetic) and DEMO_MODE=true.
+  Run the folder in order. The analyst password is read from bruno/.env (ANALYST_DEMO_PASSWORD),
+  which git ignores; copy it from the project .env.
+
+  CA5 (15 idle minutes on the real clock) is not here: it needs the clock moved, and
+  tests/integration/test_auth.py covers it.
+}

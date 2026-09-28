@@ -83,7 +83,7 @@ class Case(Base):
     transaction_id: Mapped[str | None] = mapped_column(Text)
     intent: Mapped[str] = mapped_column(Text)
     # open | identifying | awaiting_confirmation | registered | pending_analyst_approval |
-    # escalated | security_blocked | abstained | closed | approved | rejected
+    # escalated | security_blocked | abstained | closed | approved | rejected | expired
     status: Mapped[str] = mapped_column(Text, default="open")
     # es or pt; with the intent, the autonomy cell of the case.
     language: Mapped[str | None] = mapped_column(Text)
@@ -156,6 +156,40 @@ class AuditRecord(Base):
     model: Mapped[str | None] = mapped_column(Text)
     prompt_version: Mapped[str | None] = mapped_column(Text)
     policy_version: Mapped[str | None] = mapped_column(Text)
+
+
+class AuthChallenge(Base):
+    """The one-time code and failed attempts of a document, keyed by its HMAC."""
+
+    __tablename__ = "auth_challenges"
+
+    document_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    code_hash: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Code requests in the current window, which starts at requests_since.
+    requests_since: Mapped[datetime | None] = mapped_column(DateTime)
+    request_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SessionRecord(Base):
+    """The server side of one JWT: inactivity, absolute expiry, logout and its last case."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    subject: Mapped[str] = mapped_column(Text)
+    # customer | analyst
+    role: Mapped[str] = mapped_column(Text)
+    case_id: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # idle | max_age | logout
+    ended_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class QuarantineRecord(Base):

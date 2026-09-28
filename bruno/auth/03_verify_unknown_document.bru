@@ -1,0 +1,22 @@
+meta {
+  name: CA1 the demo code on an unknown document fails like a wrong code
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "{{documentType}}", "document_number": "{{unknownDocumentNumber}}", "code": "{{demoCode}}"}
+}
+
+tests {
+  test("401 invalid_code", function() {
+    expect(res.getStatus()).to.equal(401);
+    expect(res.getBody().error_code).to.equal("invalid_code");
+  });
+}

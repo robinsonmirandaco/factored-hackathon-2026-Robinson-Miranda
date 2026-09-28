@@ -1,0 +1,26 @@
+meta {
+  name: CA8 an analyst token gets 403 on chat
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"message": "hola"}
+}
+
+tests {
+  test("403 forbidden", function() {
+    expect(res.getStatus()).to.equal(403);
+    expect(res.getBody().error_code).to.equal("forbidden");
+  });
+}

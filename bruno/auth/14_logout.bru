@@ -1,0 +1,21 @@
+meta {
+  name: logout closes the customer session
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/auth/logout
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+tests {
+  test("204", function() {
+    expect(res.getStatus()).to.equal(204);
+  });
+}

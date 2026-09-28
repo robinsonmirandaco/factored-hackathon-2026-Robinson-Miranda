@@ -1,9 +1,10 @@
 """`make init`: creates .env from .env.example and fills the secrets that cannot keep the example.
 
-DOCUMENT_HASH_KEY and APP_DB_PASSWORD get a random value when they are missing, empty or still
-equal to the example. The trazo_app password also lives inside DATABASE_URL, which is where
-`make migrate` reads it from, so the URL follows the new password while it still holds the old
-one; otherwise the API on the host and the API in compose would expect different passwords.
+DOCUMENT_HASH_KEY, APP_DB_PASSWORD, JWT_SECRET and ANALYST_DEMO_PASSWORD get a random value
+when they are missing, empty or still equal to the example. The trazo_app password also lives
+inside DATABASE_URL, which is where `make migrate` reads it from, so the URL follows the new
+password while it still holds the old one; otherwise the API on the host and the API in compose
+would expect different passwords.
 Values the user already set are never touched, and no secret is written to the output.
 
 Standard library only, and Python 3.9 syntax, so it runs before `uv sync` and on a machine that
@@ -19,7 +20,7 @@ import secrets
 import sys
 from pathlib import Path
 
-GENERATED = ("DOCUMENT_HASH_KEY", "APP_DB_PASSWORD")
+GENERATED = ("DOCUMENT_HASH_KEY", "APP_DB_PASSWORD", "JWT_SECRET", "ANALYST_DEMO_PASSWORD")
 APP_ROLE = "trazo_app"
 
 log = logging.getLogger("init")

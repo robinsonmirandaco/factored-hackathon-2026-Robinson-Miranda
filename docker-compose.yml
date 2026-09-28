@@ -47,7 +47,8 @@ services:
       # The API connects only as trazo_app, and never holds the owner's credentials.
       DATABASE_URL: postgresql+psycopg://trazo_app:${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB}
       ADMIN_DATABASE_URL: ""
-      DOCUMENT_HASH_KEY: ""
+      # Login hashes the typed document with it to find the customer (TRZ-09).
+      DOCUMENT_HASH_KEY: ${DOCUMENT_HASH_KEY?set DOCUMENT_HASH_KEY in .env}
     # API_PORT, like DB_PORT, lets a second project run next to the default one.
     ports: ["${API_PORT:-8000}:8000"]
     depends_on:

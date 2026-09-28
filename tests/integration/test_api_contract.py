@@ -14,6 +14,7 @@ from app.adapters.db.session import Database, PrivilegedRoleError, SchemaUrls
 from app.api.deps import get_analyst_session, get_session
 from app.core.config import Settings
 from app.main import create_app
+from tests.auth_support import analyst_headers, customer_headers
 from tests.serving_data import card, customer, load, transaction
 
 pytestmark = pytest.mark.integration
@@ -44,6 +45,7 @@ def client(app: FastAPI, schema: SchemaUrls) -> Iterator[TestClient]:
         ],
     )
     with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
         yield c
 
 
@@ -69,12 +71,14 @@ def test_health_reports_database_failure_as_503(app: FastAPI, client: TestClient
     _assert_envelope(r.json(), "db_unavailable")
 
 
-def test_unknown_customer_returns_envelope_with_request_trace_id(client: TestClient) -> None:
+def test_error_returns_envelope_with_request_trace_id(client: TestClient) -> None:
     r = client.post(
-        "/chat", json={"customer_id": "NOPE", "message": "hi"}, headers={"x-trace-id": "abc-123"}
+        "/chat",
+        json={"message": "hi"},
+        headers={"x-trace-id": "abc-123", "authorization": "Bearer not-a-token"},
     )
-    assert r.status_code == 404
-    _assert_envelope(r.json(), "customer_not_found")
+    assert r.status_code == 401
+    _assert_envelope(r.json(), "invalid_token")
     assert r.json()["trace_id"] == "abc-123"
     assert r.headers["x-trace-id"] == "abc-123"
 
@@ -86,7 +90,7 @@ def test_unsafe_trace_header_is_replaced(client: TestClient) -> None:
 
 
 def test_validation_error_uses_envelope(client: TestClient) -> None:
-    r = client.post("/chat", json={"customer_id": "C1", "message": ""})
+    r = client.post("/chat", json={"message": ""})
     assert r.status_code == 422
     _assert_envelope(r.json(), "validation_error")
 
@@ -104,14 +108,12 @@ def test_unhandled_error_hides_details(app: FastAPI, client: TestClient) -> None
 
 
 def test_customer_cannot_continue_another_customers_case(client: TestClient) -> None:
-    first = client.post(
-        "/chat",
-        json={"customer_id": "C1", "message": "No reconozco un cargo de 5000 pesos en Walmart"},
-    )
+    first = client.post("/chat", json={"message": "No reconozco un cargo de 5000 pesos en Walmart"})
     assert first.status_code == 200
     r = client.post(
         "/chat",
-        json={"customer_id": "C2", "message": "yes", "case_id": first.json()["case_id"]},
+        json={"message": "yes", "case_id": first.json()["case_id"]},
+        headers=customer_headers(client, "C2"),
     )
     assert r.status_code == 404
     _assert_envelope(r.json(), "case_not_found")
@@ -120,16 +122,14 @@ def test_customer_cannot_continue_another_customers_case(client: TestClient) -> 
 def test_operator_note_is_redacted_in_audit_log(client: TestClient, schema: SchemaUrls) -> None:
     # The only charge was declined, so it is not a candidate: no charge fits the clues, and the
     # case is escalated and waits for a person.
-    chat = client.post(
-        "/chat",
-        json={"customer_id": "C1", "message": "No reconozco un cargo de 5000 pesos en Walmart"},
-    )
+    chat = client.post("/chat", json={"message": "No reconozco un cargo de 5000 pesos en Walmart"})
     assert chat.json()["outcome"] == "escalated"
     case_id = chat.json()["case_id"]
 
     r = client.post(
         f"/cases/{case_id}/decision",
         json={"decision": "approve", "note": "called client, card 4111 1111 1111 1111"},
+        headers=analyst_headers(client),
     )
     assert r.status_code == 200
     owner = Database(schema.admin)
@@ -145,9 +145,13 @@ def test_operator_note_is_redacted_in_audit_log(client: TestClient, schema: Sche
 
 
 def test_decision_on_non_escalated_case_conflicts(client: TestClient) -> None:
-    chat = client.post("/chat", json={"customer_id": "C1", "message": "¿Cuál es mi saldo?"})
+    chat = client.post("/chat", json={"message": "¿Cuál es mi saldo?"})
     assert chat.json()["outcome"] == "abstained"
-    r = client.post(f"/cases/{chat.json()['case_id']}/decision", json={"decision": "approve"})
+    r = client.post(
+        f"/cases/{chat.json()['case_id']}/decision",
+        json={"decision": "approve"},
+        headers=analyst_headers(client),
+    )
     assert r.status_code == 409
     _assert_envelope(r.json(), "case_not_escalated")
 

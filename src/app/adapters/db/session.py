@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, SessionTransaction, sessionmaker
 
 from app.adapters.db.migrations import apply_migrations
 
-Role = Literal["analyst"]
+Role = Literal["analyst", "auth"]
 
 _SET_CONTEXT = text(
     "SELECT set_config('app.customer_id', :customer_id, true), set_config('app.role', :role, true)"
@@ -43,7 +43,8 @@ def bind_context(
     Args:
         session: Open session.
         customer_id: Customer whose rows are visible, or None.
-        role: "analyst" to see every customer's rows, or None.
+        role: "analyst" to see every customer's rows, "auth" to file an authentication event
+            that has no customer, or None.
     """
     session.info["customer_id"] = customer_id
     session.info["role"] = role

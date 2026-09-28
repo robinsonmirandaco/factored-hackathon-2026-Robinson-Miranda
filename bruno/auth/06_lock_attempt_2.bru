@@ -1,0 +1,22 @@
+meta {
+  name: CA4 wrong code 2 of 3
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "{{documentType}}", "document_number": "{{lockDocument}}", "code": "000000"}
+}
+
+tests {
+  test("401 invalid_code", function() {
+    expect(res.getStatus()).to.equal(401);
+    expect(res.getBody().error_code).to.equal("invalid_code");
+  });
+}
