@@ -1,0 +1,33 @@
+meta {
+  name: CA2 CA3 the demo code returns a customer token
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "{{documentType}}", "document_number": "{{documentNumber}}", "code": "{{demoCode}}"}
+}
+
+script:post-response {
+  bru.setVar("customerToken", res.getBody().access_token);
+}
+
+tests {
+  test("200 bearer token with role customer", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.role).to.equal("customer");
+    expect(body.token_type).to.equal("bearer");
+    expect(body.expires_in_seconds).to.equal(7200);
+    const claims = JSON.parse(Buffer.from(body.access_token.split(".")[1], "base64").toString());
+    expect(claims.sub).to.equal("C00001");
+    expect(claims.role).to.equal("customer");
+    expect(claims.exp - claims.iat).to.equal(7200);
+  });
+}

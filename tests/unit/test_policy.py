@@ -142,6 +142,8 @@ def _settings(**overrides: Any) -> Settings:
     return Settings(
         database_url="postgresql+psycopg://unused@localhost:1/unused",
         llm_enabled=False,
+        jwt_secret="unit-test-jwt-secret-of-at-least-32-characters",
+        document_hash_key="unit-test-document-key",
         **overrides,
     )
 

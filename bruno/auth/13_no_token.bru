@@ -1,0 +1,18 @@
+meta {
+  name: CA9 no data without a session
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: none
+}
+
+tests {
+  test("401 not_authenticated", function() {
+    expect(res.getStatus()).to.equal(401);
+    expect(res.getBody().error_code).to.equal("not_authenticated");
+  });
+}

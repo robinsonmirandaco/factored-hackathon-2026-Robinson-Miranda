@@ -303,7 +303,7 @@ class PolicyEngine:
 
     def screen(
         self,
-        intent: Intent,
+        intent: Intent | None,
         language: Language,
         card_in_possession: bool | None,
         security_event: bool,
@@ -311,7 +311,8 @@ class PolicyEngine:
         """Security and the routes that need no charge, before any identification.
 
         Args:
-            intent: Intent of the customer.
+            intent: Intent of the customer; None when the message was not read, which only a
+                security stop allows.
             language: es or pt.
             card_in_possession: What the customer said about the card.
             security_event: A security event was raised for the case.
@@ -323,6 +324,8 @@ class PolicyEngine:
         for name in self.config.security_if:
             if name == "security_event" and security_event:
                 return self._decision(Route(action="security_blocked"), f"security.{name}")
+        if intent is None:
+            raise PolicyError("only a security event may be decided without an intent")
         if intent == "out_of_scope":
             # Decided by intent: a customer who mentions charges or purchases is a dispute.
             if card_in_possession is False:

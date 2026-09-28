@@ -20,6 +20,7 @@ _INTENTS: dict[Lang, dict[str, str]] = {
         "billing_error_duplicate": "cobro duplicado",
         "claim_status": "estado de un reclamo",
         "out_of_scope": "fuera de alcance",
+        "unread": "mensaje no leído",
     },
     "pt": {
         "unrecognized_charge": "cobrança não reconhecida",
@@ -27,6 +28,7 @@ _INTENTS: dict[Lang, dict[str, str]] = {
         "billing_error_duplicate": "cobrança duplicada",
         "claim_status": "status de uma reclamação",
         "out_of_scope": "fora do escopo",
+        "unread": "mensagem não lida",
     },
 }
 
@@ -221,6 +223,25 @@ def _escalate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return "O sistema enviou o caso a uma analista."
 
 
+def _security_event(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "La petición intentó llegar a datos de otro cliente: evento de seguridad."
+    return "A solicitação tentou acessar dados de outro cliente: evento de segurança."
+
+
+def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "La sesión del cliente terminó: el caso quedó vencido, sin acción pendiente."
+    return "A sessão do cliente terminou: o caso expirou, sem ação pendente."
+
+
+def _document_locked(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    n = r.get("failed_attempts", "?")
+    if lang == "es":
+        return f"{n} códigos incorrectos seguidos: el documento quedó bloqueado por un tiempo."
+    return f"{n} códigos incorretos seguidos: o documento ficou bloqueado por um tempo."
+
+
 Template = Callable[[Lang, Fields, Fields, str | None], str]
 
 # ("agent", "extract") and ("tool", "lookup_transaction") are no longer written, but the audit
@@ -240,6 +261,9 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("tool", "freeze_card"): _freeze,
     ("tool", "open_dispute"): _dispute,
     ("tool", "escalate_to_human"): _escalate,
+    ("agent", "security_event"): _security_event,
+    ("auth", "case_expired"): _case_expired,
+    ("auth", "document_locked"): _document_locked,
 }
 
 

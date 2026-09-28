@@ -23,6 +23,7 @@ from app.api.deps import get_analyst_session
 from app.core.config import Settings
 from app.main import create_app
 from tests.agent_support import fake_llm, llm_settings, reading
+from tests.auth_support import analyst_headers, customer_headers
 from tests.serving_data import card, customer, load, transaction
 
 pytestmark = pytest.mark.integration
@@ -61,6 +62,7 @@ def app(database_url: str, schema: SchemaUrls) -> FastAPI:
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
         yield c
 
 
@@ -77,12 +79,12 @@ def _rows(schema: SchemaUrls, case_id: str) -> list[AuditRecord]:
 
 
 def _two_turns(client: TestClient) -> tuple[str, str, str]:
-    first = client.post("/chat", json={"customer_id": "C1", "message": MESSAGE})
+    first = client.post("/chat", json={"message": MESSAGE})
     assert first.status_code == 200, first.text
     case_id = first.json()["case_id"]
     second = client.post(
         "/chat",
-        json={"customer_id": "C1", "message": "sí, confirmo", "case_id": case_id, "confirm": True},
+        json={"message": "sí, confirmo", "case_id": case_id, "confirm": True},
     )
     assert second.status_code == 200, second.text
     return case_id, first.headers["x-trace-id"], second.headers["x-trace-id"]
@@ -174,9 +176,7 @@ def test_the_database_refuses_a_row_outside_a_request(schema: SchemaUrls) -> Non
 
 
 def test_a_client_trace_id_of_a_dash_is_replaced(client: TestClient) -> None:
-    r = client.post(
-        "/chat", json={"customer_id": "C1", "message": MESSAGE}, headers={"x-trace-id": "-"}
-    )
+    r = client.post("/chat", json={"message": MESSAGE}, headers={"x-trace-id": "-"})
     assert r.status_code == 200
     assert r.headers["x-trace-id"] != "-"
 
@@ -212,7 +212,9 @@ def test_the_migration_keeps_rows_written_before_it(tmp_path: Path) -> None:
                 )
             )
 
-        assert apply_migrations(admin, app) == ["0005_audit_fields", "0006_case_language"]
+        applied = apply_migrations(admin, app)
+        assert applied[0] == "0005_audit_fields"
+        assert applied == sorted(p.stem for p in MIGRATIONS_DIR.glob("*.sql") if p.name >= "0005")
 
         with engine.connect() as conn:
             row = conn.execute(
@@ -232,12 +234,13 @@ def test_the_migration_keeps_rows_written_before_it(tmp_path: Path) -> None:
 def test_history_tells_each_step_in_spanish_and_portuguese(
     client: TestClient, schema: SchemaUrls
 ) -> None:
-    first = client.post("/chat", json={"customer_id": "C1", "message": MESSAGE})
+    first = client.post("/chat", json={"message": MESSAGE})
     case_id = first.json()["case_id"]
     rows = _rows(schema, case_id)
 
-    es = client.get(f"/cases/{case_id}/history")
-    pt = client.get(f"/cases/{case_id}/history", params={"lang": "pt"})
+    analyst = analyst_headers(client)
+    es = client.get(f"/cases/{case_id}/history", headers=analyst)
+    pt = client.get(f"/cases/{case_id}/history", params={"lang": "pt"}, headers=analyst)
 
     assert es.status_code == 200 and pt.status_code == 200
     assert [e["id"] for e in es.json()] == [r.id for r in rows]
@@ -255,13 +258,15 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
 
 
 def test_history_of_an_unknown_case_is_404(client: TestClient) -> None:
-    r = client.get("/cases/CASE-NOPE/history")
+    r = client.get("/cases/CASE-NOPE/history", headers=analyst_headers(client))
     assert r.status_code == 404
     assert r.json()["error_code"] == "case_not_found"
 
 
 def test_history_rejects_an_unsupported_language(client: TestClient) -> None:
-    r = client.get("/cases/CASE-NOPE/history", params={"lang": "fr"})
+    r = client.get(
+        "/cases/CASE-NOPE/history", params={"lang": "fr"}, headers=analyst_headers(client)
+    )
     assert r.status_code == 422
     assert set(r.json()) == {"error_code", "message", "trace_id"}
     assert r.json()["error_code"] == "validation_error"

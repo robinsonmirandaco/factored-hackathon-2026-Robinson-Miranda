@@ -1,0 +1,27 @@
+meta {
+  name: CA1 request a code for an unknown document gets the same answer
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/request
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "{{documentType}}", "document_number": "{{unknownDocumentNumber}}"}
+}
+
+script:pre-request {
+  // A new invented document each run, so repeated runs never lock it.
+  bru.setVar("unknownDocumentNumber", "NONE" + Date.now());
+}
+
+tests {
+  test("same 202 code_sent", function() {
+    expect(res.getStatus()).to.equal(202);
+    expect(res.getBody()).to.eql({status: "code_sent", expires_in_seconds: 300});
+  });
+}

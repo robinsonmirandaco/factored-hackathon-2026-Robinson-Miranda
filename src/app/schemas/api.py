@@ -22,19 +22,78 @@ class HealthOut(BaseModel):
 
 
 class ChatIn(BaseModel):
-    """One customer turn.
+    """One customer turn. The customer is the one of the session token.
 
     Attributes:
-        customer_id: Customer sending the message.
+        customer_id: Ignored: the customer comes only from the session. One that differs from
+            the session customer raises a security event (TRZ-09 CA6).
         message: Raw message; PII is redacted before any LLM call or audit write.
         case_id: Existing case to continue, or None to open a new one.
         confirm: True when the customer confirms a pending action.
     """
 
-    customer_id: str = Field(min_length=1, max_length=64)
+    customer_id: str | None = Field(default=None, max_length=64)
     message: str = Field(min_length=1, max_length=4000)
     case_id: str | None = Field(default=None, max_length=64)
     confirm: bool = False
+
+
+class OtpRequestIn(BaseModel):
+    """A request for a one-time code.
+
+    Attributes:
+        document_type: Identity document type, such as CC, DNI or Pasaporte.
+        document_number: Identity document number.
+    """
+
+    document_type: str = Field(min_length=1, max_length=32)
+    document_number: str = Field(min_length=1, max_length=32)
+
+
+class OtpRequestOut(BaseModel):
+    """The same answer for every document, whether a customer has it or not.
+
+    Attributes:
+        status: Always code_sent.
+        expires_in_seconds: How long a code stays valid.
+    """
+
+    status: Literal["code_sent"] = "code_sent"
+    expires_in_seconds: int
+
+
+class OtpVerifyIn(OtpRequestIn):
+    """A one-time code for a document.
+
+    Attributes:
+        code: The six-digit code.
+    """
+
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class AnalystLoginIn(BaseModel):
+    """Test credentials of an analyst."""
+
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class TokenOut(BaseModel):
+    """A new session.
+
+    Attributes:
+        access_token: JWT to send as `Authorization: Bearer <token>`.
+        role: customer or analyst.
+        expires_in_seconds: Absolute lifetime of the session.
+        idle_timeout_seconds: Inactivity after which the session expires.
+    """
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    role: Literal["customer", "analyst"]
+    expires_in_seconds: int
+    idle_timeout_seconds: int
 
 
 class ChatOut(BaseModel):

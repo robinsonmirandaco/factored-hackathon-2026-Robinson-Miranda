@@ -24,6 +24,8 @@ jobs:
       DATABASE_URL: postgresql+psycopg://trazo_app:ci-app@localhost:5432/ci
       # Test-only key; CI holds no real document.
       DOCUMENT_HASH_KEY: ci-only-document-hash-key
+      JWT_SECRET: ci-only-jwt-secret-with-at-least-32-characters
+      ANALYST_DEMO_PASSWORD: ci-only-analyst-password
       LLM_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4

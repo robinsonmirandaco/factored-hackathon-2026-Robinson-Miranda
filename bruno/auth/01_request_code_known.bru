@@ -1,0 +1,22 @@
+meta {
+  name: CA1 request a code for an existing document
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/request
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "{{documentType}}", "document_number": "{{documentNumber}}"}
+}
+
+tests {
+  test("202 code_sent", function() {
+    expect(res.getStatus()).to.equal(202);
+    expect(res.getBody()).to.eql({status: "code_sent", expires_in_seconds: 300});
+  });
+}

@@ -1,0 +1,26 @@
+meta {
+  name: a closed session token is refused
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "hola"}
+}
+
+tests {
+  test("401 session_revoked", function() {
+    expect(res.getStatus()).to.equal(401);
+    expect(res.getBody().error_code).to.equal("session_revoked");
+  });
+}

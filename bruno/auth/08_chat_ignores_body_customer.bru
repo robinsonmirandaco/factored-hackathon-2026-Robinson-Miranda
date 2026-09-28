@@ -1,0 +1,27 @@
+meta {
+  name: CA6 a customer_id in the body is ignored and raises a security event
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"customer_id": "C00002", "message": "No reconozco un cargo en Oxxo"}
+}
+
+tests {
+  test("the session customer is served and the case is stopped", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("security_blocked");
+    expect(res.getBody().actions_taken).to.eql([]);
+  });
+}

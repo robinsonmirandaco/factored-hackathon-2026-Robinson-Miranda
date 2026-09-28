@@ -18,12 +18,21 @@ def env(tmp_path: Path) -> Path:
     return tmp_path / ".env"
 
 
-def test_creates_env_and_generates_both_secrets(env: Path) -> None:
+def test_creates_env_and_generates_every_secret(env: Path) -> None:
     changed = init_env(EXAMPLE, env)
     values, example = _values(env.read_text()), _values(EXAMPLE.read_text())
 
-    assert sorted(changed) == ["APP_DB_PASSWORD", "DATABASE_URL", "DOCUMENT_HASH_KEY"]
+    assert sorted(changed) == [
+        "ANALYST_DEMO_PASSWORD",
+        "APP_DB_PASSWORD",
+        "DATABASE_URL",
+        "DOCUMENT_HASH_KEY",
+        "JWT_SECRET",
+    ]
     assert len(values["DOCUMENT_HASH_KEY"]) == 48
+    # Long enough for the API to accept it as the session signing key.
+    assert len(values["JWT_SECRET"]) >= 32
+    assert values["ANALYST_DEMO_PASSWORD"] != example["ANALYST_DEMO_PASSWORD"]
     assert values["APP_DB_PASSWORD"] != example["APP_DB_PASSWORD"]
     # The URL the migration reads the role password from follows the new password.
     assert f"trazo_app:{values['APP_DB_PASSWORD']}@" in values["DATABASE_URL"]
@@ -45,12 +54,16 @@ def test_values_the_user_set_are_kept(env: Path) -> None:
     text = EXAMPLE.read_text()
     text = text.replace("APP_DB_PASSWORD=cambia-esto-tambien", "APP_DB_PASSWORD=mine")
     text = text.replace("trazo_app:cambia-esto-tambien@", "trazo_app:mine@")
+    text = text.replace("JWT_SECRET=genera-uno-largo-y-aleatorio", "JWT_SECRET=my-secret")
+    text = text.replace("ANALYST_DEMO_PASSWORD=cambia-esto", "ANALYST_DEMO_PASSWORD=my-pass")
     env.write_text(text.replace("DOCUMENT_HASH_KEY=", "DOCUMENT_HASH_KEY=my-key"))
 
     assert init_env(EXAMPLE, env) == []
     values = _values(env.read_text())
     assert values["APP_DB_PASSWORD"] == "mine"
     assert values["DOCUMENT_HASH_KEY"] == "my-key"
+    assert values["JWT_SECRET"] == "my-secret"
+    assert values["ANALYST_DEMO_PASSWORD"] == "my-pass"
 
 
 def test_missing_variables_are_appended_to_an_older_env(env: Path) -> None:
@@ -58,7 +71,12 @@ def test_missing_variables_are_appended_to_an_older_env(env: Path) -> None:
     changed = init_env(EXAMPLE, env)
     values = _values(env.read_text())
 
-    assert sorted(changed) == ["APP_DB_PASSWORD", "DOCUMENT_HASH_KEY"]
+    assert sorted(changed) == [
+        "ANALYST_DEMO_PASSWORD",
+        "APP_DB_PASSWORD",
+        "DOCUMENT_HASH_KEY",
+        "JWT_SECRET",
+    ]
     assert values["POSTGRES_USER"] == "trazo"
     assert values["DOCUMENT_HASH_KEY"] and values["APP_DB_PASSWORD"]
 
@@ -75,6 +93,8 @@ def test_output_names_the_variables_but_never_their_values(
     assert "DOCUMENT_HASH_KEY" in caplog.text
     assert values["DOCUMENT_HASH_KEY"] not in caplog.text
     assert values["APP_DB_PASSWORD"] not in caplog.text
+    assert values["JWT_SECRET"] not in caplog.text
+    assert values["ANALYST_DEMO_PASSWORD"] not in caplog.text
 
 
 def test_seed_without_document_key_asks_for_make_init(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,12 +2,19 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
-from app.adapters.db.session import bind_context
-from app.api.deps import AnalystSessionDep, RuntimeDep, SessionDep
+from app.api.deps import (
+    AnalystSessionDep,
+    CustomerDep,
+    CustomerSessionDep,
+    PrincipalDep,
+    RuntimeDep,
+    SessionDep,
+)
 from app.domain.history import Lang
 from app.schemas.api import (
+    AnalystLoginIn,
     CaseOut,
     ChatIn,
     ChatOut,
@@ -15,19 +22,27 @@ from app.schemas.api import (
     HistoryEntryOut,
     HumanDecisionIn,
     MetricsOut,
+    OtpRequestIn,
+    OtpRequestOut,
+    OtpVerifyIn,
+    TokenOut,
     TraceEventOut,
 )
-from app.services import cases
+from app.services import auth, cases
 from app.services.agent import handle_message
 
 router = APIRouter()
 
 _ERRORS = {
+    401: {"description": "Missing, invalid, expired or revoked session"},
+    403: {"description": "The session has another role"},
     404: {"description": "Not found"},
     409: {"description": "Conflict with the current state"},
     422: {"description": "Invalid input"},
+    429: {"description": "Document locked, or too many code requests for it"},
     503: {"description": "A dependency is unavailable"},
 }
+_AUTH = {401: _ERRORS[401], 403: _ERRORS[403]}
 
 
 @router.get("/health", response_model=HealthOut, responses={503: _ERRORS[503]})
@@ -44,16 +59,88 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
     )
 
 
-@router.post("/chat", response_model=ChatOut, responses={404: _ERRORS[404], 422: _ERRORS[422]})
-def chat(body: ChatIn, session: SessionDep, runtime: RuntimeDep) -> ChatOut:
-    """Handles one customer turn: understand, decide, act or escalate, reply."""
-    # TODO(TRZ-09): take the customer from the session JWT. Until then the body names the
-    # customer, so row level security confines the request to that customer's rows but does not
-    # stop a caller from naming another customer (IDOR).
-    bind_context(session, customer_id=body.customer_id)
-    r = handle_message(
-        session, runtime.agent, body.customer_id, body.message, body.confirm, body.case_id
+@router.post(
+    "/auth/otp/request",
+    response_model=OtpRequestOut,
+    status_code=202,
+    responses={422: _ERRORS[422], 429: _ERRORS[429]},
+)
+def request_code(body: OtpRequestIn, runtime: RuntimeDep) -> OtpRequestOut:
+    """Sends a one-time code; the answer is the same whether or not a customer has the document."""
+    s = runtime.settings
+    auth.request_code(runtime.db, s, body.document_type, body.document_number, runtime.now())
+    return OtpRequestOut(expires_in_seconds=s.otp_ttl_minutes * 60)
+
+
+@router.post(
+    "/auth/otp/verify",
+    response_model=TokenOut,
+    responses={401: _ERRORS[401], 422: _ERRORS[422], 429: _ERRORS[429]},
+)
+def verify_code(body: OtpVerifyIn, runtime: RuntimeDep) -> TokenOut:
+    """Exchanges a valid one-time code for a customer session token."""
+    issued = auth.verify_code(
+        runtime.db,
+        runtime.settings,
+        body.document_type,
+        body.document_number,
+        body.code,
+        runtime.now(),
     )
+    return _token(issued, runtime)
+
+
+@router.post(
+    "/auth/analyst/login",
+    response_model=TokenOut,
+    responses={401: _ERRORS[401], 422: _ERRORS[422]},
+)
+def analyst_login(body: AnalystLoginIn, runtime: RuntimeDep) -> TokenOut:
+    """Exchanges the analyst test credentials for an analyst session token."""
+    issued = auth.analyst_login(
+        runtime.db, runtime.settings, body.username, body.password, runtime.now()
+    )
+    return _token(issued, runtime)
+
+
+@router.post("/auth/logout", status_code=204, responses={401: _ERRORS[401]})
+def logout(principal: PrincipalDep, runtime: RuntimeDep) -> Response:
+    """Closes the caller's session; its token stops working at once."""
+    auth.logout(runtime.db, principal, runtime.now())
+    return Response(status_code=204)
+
+
+def _token(issued: auth.IssuedToken, runtime: RuntimeDep) -> TokenOut:
+    return TokenOut(
+        access_token=issued.token,
+        role=issued.role,
+        expires_in_seconds=issued.expires_in_seconds,
+        idle_timeout_seconds=runtime.settings.session_idle_minutes * 60,
+    )
+
+
+@router.post(
+    "/chat",
+    response_model=ChatOut,
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422]},
+)
+def chat(
+    body: ChatIn, customer: CustomerDep, session: CustomerSessionDep, runtime: RuntimeDep
+) -> ChatOut:
+    """Handles one customer turn: understand, decide, act or escalate, reply."""
+    # The body's customer_id never selects data. Naming someone else is an attempt to reach
+    # another customer's data, which the policy stops as a security event.
+    foreign = body.customer_id is not None and body.customer_id != customer.subject
+    r = handle_message(
+        session,
+        runtime.agent,
+        customer.subject,
+        body.message,
+        body.confirm,
+        body.case_id,
+        security_event=foreign,
+    )
+    auth.remember_case(session, customer, r.case_id)
     return ChatOut(
         case_id=r.case_id,
         trace_id=r.trace_id,
@@ -68,13 +155,13 @@ def chat(body: ChatIn, session: SessionDep, runtime: RuntimeDep) -> ChatOut:
     )
 
 
-@router.get("/cases/{case_id}", response_model=CaseOut, responses={404: _ERRORS[404]})
+@router.get("/cases/{case_id}", response_model=CaseOut, responses={**_AUTH, 404: _ERRORS[404]})
 def get_case(case_id: str, session: AnalystSessionDep) -> CaseOut:
     """Returns one case."""
     return cases.get_case(session, case_id)
 
 
-@router.get("/cases/{case_id}/trace", response_model=list[TraceEventOut])
+@router.get("/cases/{case_id}/trace", response_model=list[TraceEventOut], responses=_AUTH)
 def get_trace(case_id: str, session: AnalystSessionDep) -> list[TraceEventOut]:
     """Returns every audit row of a case in write order."""
     return cases.get_trace(session, case_id)
@@ -83,7 +170,7 @@ def get_trace(case_id: str, session: AnalystSessionDep) -> list[TraceEventOut]:
 @router.get(
     "/cases/{case_id}/history",
     response_model=list[HistoryEntryOut],
-    responses={404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
 )
 def get_history(
     case_id: str, session: AnalystSessionDep, lang: Annotated[Lang, Query()] = "es"
@@ -92,7 +179,7 @@ def get_history(
     return cases.get_history(session, case_id, lang)
 
 
-@router.get("/queue", response_model=list[CaseOut])
+@router.get("/queue", response_model=list[CaseOut], responses=_AUTH)
 def queue(session: AnalystSessionDep) -> list[CaseOut]:
     """Returns the escalated cases waiting for a human, oldest first."""
     return cases.list_queue(session)
@@ -101,14 +188,14 @@ def queue(session: AnalystSessionDep) -> list[CaseOut]:
 @router.post(
     "/cases/{case_id}/decision",
     response_model=CaseOut,
-    responses={404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422]},
+    responses={**_AUTH, 404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422]},
 )
 def human_decision(case_id: str, body: HumanDecisionIn, session: AnalystSessionDep) -> CaseOut:
     """Records an operator decision on an escalated case."""
     return cases.record_decision(session, case_id, body)
 
 
-@router.get("/metrics", response_model=MetricsOut)
+@router.get("/metrics", response_model=MetricsOut, responses=_AUTH)
 def metrics(session: AnalystSessionDep) -> MetricsOut:
     """Returns operational counters from the cases table and the audit log."""
     return cases.get_metrics(session)

@@ -18,6 +18,7 @@ from app.domain.clock import SimulatedClock
 from app.domain.identification import MAX_OPTIONS, Params, load_params
 from app.domain.policy import PolicyEngine, PolicyError, initial_autonomy
 from app.services.agent import AgentDeps
+from app.services.auth import check_secrets
 
 log = get_logger("api")
 
@@ -67,7 +68,9 @@ def build_runtime(settings: Settings) -> Runtime:
 
     Raises:
         PolicyError: If config/policy.yaml is invalid or does not fit the identification.
+        ValueError: If JWT_SECRET is missing or too short, or DOCUMENT_HASH_KEY is empty.
     """
+    check_secrets(settings)
     policy = PolicyEngine.from_file(settings.policy_path)
     return Runtime(
         settings=settings,

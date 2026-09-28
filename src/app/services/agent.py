@@ -1,7 +1,8 @@
 """One customer turn (design 5): understand, screen, identify, decide, confirm, reply.
 
   1. redact PII
-  2. comprehension: intent and clues with their literal evidence (LLM; rules when it fails)
+  2. comprehension: intent and clues with their literal evidence (LLM; rules when it fails),
+     and the language the turn is answered in (rules, with the LLM's variant)
   3. policy screen, before any identification: security first, then the routes that need no
      charge (out of scope, lost card without a charge, claim status)
   4. identification of the disputed charge with its conformal set
@@ -34,6 +35,8 @@ from app.domain.identification import (
     Params,
     duplicate_twin,
 )
+from app.domain.language import LanguageDecision
+from app.domain.language import decide as decide_language
 from app.domain.pii import redact
 from app.domain.policy import (
     AutonomyLookup,
@@ -41,12 +44,16 @@ from app.domain.policy import (
     PolicyContext,
     PolicyDecision,
     PolicyEngine,
+    PolicyError,
 )
 from app.schemas.comprehension import Comprehension, ComprehensionContext
 from app.services import tools as T
 from app.services.identification import identify_charge
 
 Facts = dict[str, Any]
+
+# Intent of a new case stopped for security before its message was read.
+UNREAD_INTENT = "unread"
 
 # What confirming each pending action runs. The folio, blocking only the card of the charge and
 # the read-back come with TRZ-18 and TRZ-19.
@@ -100,6 +107,7 @@ def handle_message(
     text: str,
     confirm: bool = False,
     case_id: str | None = None,
+    security_event: bool = False,
 ) -> AgentResponse:
     """Handles one customer turn end to end.
 
@@ -110,6 +118,9 @@ def handle_message(
         text: Raw customer message.
         confirm: True when the customer confirms the pending action of `case_id`.
         case_id: Case to continue, or None to open a new one.
+        security_event: True when the request tried to reach another customer's data. The
+            message is not read and no LLM is called: the policy stops the case, and a pending
+            confirmation is not run.
 
     Returns:
         What the system did and replied.
@@ -124,10 +135,18 @@ def handle_message(
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
-        if confirm and case_id is not None:
+        if security_event:
+            case, language, facts = _stop_for_security(
+                session, deps, customer, case_id, redacted, pii_counts
+            )
+            stats = LLMCallStats()
+        elif confirm and case_id is not None:
             case = _own_case(session, customer_id, case_id)
-            language: Language = "pt" if case.language == "pt" else "es"
-            facts = _confirm(session, case, redacted, pii_counts)
+            # No LLM call on a confirmation: a short "sí" or "sim" keeps the case's language.
+            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
+            language: Language = spoken.language
+            case.language = language
+            facts = _confirm(session, case, redacted, pii_counts, spoken)
             stats = LLMCallStats()
         else:
             case, language, facts, stats = _understand_and_decide(
@@ -185,12 +204,20 @@ def _understand_and_decide(
     pii_counts: dict[str, int],
     case_id: str | None,
 ) -> tuple[Case, Language, Facts, LLMCallStats]:
+    # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
+    previous = (
+        _case_language(_own_case(session, customer.customer_id, case_id)) if case_id else None
+    )
     local = local_currency(customer.country_code)
     context = ComprehensionContext(
         now=deps.clock.now, country_code=customer.country_code, local_currency=local
     )
     clues, stats = deps.llm.comprehend(redacted, context)
-    language: Language = "pt" if clues.language == "pt-BR" else "es"
+    # The rules baseline also reads a language, but the LLM's is the one CA2 names.
+    spoken = decide_language(
+        redacted, None if stats.fallback else clues.language, previous, customer.country_code
+    )
+    language: Language = spoken.language
     case = _open_case(session, customer.customer_id, case_id, clues.intent, language)
     write_audit(
         session,
@@ -203,13 +230,14 @@ def _understand_and_decide(
             "fallback": stats.fallback,
             "error": stats.error,
             "dropped_clues": stats.dropped_clues,
+            "language_decision": asdict(spoken),
         },
         stats.latency_ms,
         llm=stats,
     )
 
     card = clues.card_in_possession.value if clues.card_in_possession else None
-    screened = deps.policy.screen(clues.intent, language, card, _security_event(case))
+    screened = deps.policy.screen(clues.intent, language, card, False)
     if screened is not None:
         _audit_decision(
             session,
@@ -253,21 +281,6 @@ def _understand_and_decide(
     decision = deps.policy.decide(ctx, deps.autonomy)
     _audit_decision(session, case, asdict(ctx), decision)
     return case, language, _apply(session, case, decision, tx), stats
-
-
-def _security_event(case: Case) -> bool:
-    """Whether a security event was raised for the case before it is identified.
-
-    No detector raises one yet: access to another customer's data raises it with TRZ-09 (the
-    session) and TRZ-18 CA5 (tools that check ownership). The policy screens it first anyway.
-
-    Args:
-        case: The case of the turn.
-
-    Returns:
-        False until a detector exists.
-    """
-    return False
 
 
 def _chosen(
@@ -399,10 +412,58 @@ def _audit_decision(
     )
 
 
+def _stop_for_security(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case_id: str | None,
+    redacted: str,
+    pii_counts: dict[str, int],
+) -> tuple[Case, Language, Facts]:
+    """Stops a turn that tried to reach another customer's data, without reading the message.
+
+    No comprehension runs, so the turn spends no tokens and its text never reaches the LLM. A
+    new case keeps the intent `unread`; a continued case keeps the intent it had. The language
+    comes from the rules detector alone, which runs locally.
+    """
+    previous = (
+        _case_language(_own_case(session, customer.customer_id, case_id)) if case_id else None
+    )
+    spoken = decide_language(redacted, None, previous, customer.country_code)
+    language: Language = spoken.language
+    if case_id is None:
+        case = _open_case(session, customer.customer_id, None, UNREAD_INTENT, language)
+    else:
+        case = _own_case(session, customer.customer_id, case_id)
+        case.language = language
+    # The other customer's id is not stored: this trail belongs to the session customer.
+    write_audit(
+        session,
+        "agent",
+        "security_event",
+        case.id,
+        {"reason": "foreign_customer_id", "redacted_text": redacted[:500], "pii": pii_counts},
+        {"language_decision": asdict(spoken)},
+    )
+    screened = deps.policy.screen(None, language, None, True)
+    if screened is None:  # screen raises before returning None without an intent
+        raise PolicyError("the policy did not stop a security event")
+    _audit_decision(
+        session, case, {"intent": None, "language": language, "security_event": True}, screened
+    )
+    return case, language, _apply(session, case, screened, None)
+
+
 # ---- confirmation -----------------------------------------------------------------------
 
 
-def _confirm(session: Session, case: Case, redacted: str, pii_counts: dict[str, int]) -> Facts:
+def _confirm(
+    session: Session,
+    case: Case,
+    redacted: str,
+    pii_counts: dict[str, int],
+    spoken: LanguageDecision,
+) -> Facts:
     """Runs the pending action of the case, and only that one, once the customer confirms.
 
     A confirmation with nothing pending runs nothing. The pending action is the one stored when
@@ -415,7 +476,11 @@ def _confirm(session: Session, case: Case, redacted: str, pii_counts: dict[str, 
         "confirm",
         case.id,
         {"redacted_text": redacted[:500], "pii": pii_counts},
-        {"pending_action": pending, "transaction_id": case.transaction_id},
+        {
+            "pending_action": pending,
+            "transaction_id": case.transaction_id,
+            "language_decision": asdict(spoken),
+        },
     )
     facts: Facts = {"intent": case.intent, "action": pending, "actions_taken": []}
     if pending not in CONFIRMED_TOOLS or case.transaction_id is None:
@@ -458,6 +523,10 @@ def _open_case(
     return case
 
 
+def _case_language(case: Case) -> Language | None:
+    return "pt" if case.language == "pt" else "es" if case.language == "es" else None
+
+
 def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
     found = session.get(Case, case_id)
     # Same answer for "missing" and "not yours", so case ids cannot be probed.
@@ -469,9 +538,9 @@ def _own_case(session: Session, customer_id: str, case_id: str) -> Case:
 def _reply(
     deps: AgentDeps, redacted: str, facts: Facts, language: Language
 ) -> tuple[str, LLMCallStats]:
-    # The urgent card block redirect must say the same thing every time, so it is not written
-    # by the LLM.
-    if facts.get("redirect") == "card_block":
+    # The urgent card block redirect must say the same thing every time, and a security stop
+    # must not send the text of the turn to the LLM, so neither is written by it.
+    if facts.get("redirect") == "card_block" or facts["outcome"] == "security_blocked":
         return template_reply(facts, language), LLMCallStats(fallback=True)
     return deps.llm.compose(redacted, _reply_facts(facts), language)
 

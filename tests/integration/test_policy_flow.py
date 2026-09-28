@@ -18,10 +18,10 @@ from app.adapters.db.session import Database, SchemaUrls
 from app.core.config import Settings
 from app.domain.clock import SimulatedClock
 from app.main import create_app
-from app.services import agent as agent_module
 from app.services.agent import handle_message
 from app.services.tools import get_customer_profile
 from tests.agent_support import agent_deps, fake_llm, llm_settings, reading
+from tests.auth_support import analyst_headers, customer_headers
 from tests.serving_data import card, customer, load, transaction
 
 pytestmark = pytest.mark.integration
@@ -137,13 +137,20 @@ def test_an_own_dispute_still_opened_counts(schema: SchemaUrls) -> None:
 # ---- security before identification ------------------------------------------------------
 
 
-def _turn(schema: SchemaUrls, database_url: str, answer: dict, message: str, sent=None):
+def _turn(
+    schema: SchemaUrls,
+    database_url: str,
+    answer: dict,
+    message: str,
+    sent=None,
+    security_event: bool = False,
+):
     settings = llm_settings(database_url)
     deps = agent_deps(settings, fake_llm(settings, answer, sent))
     db = Database(schema.app)
     try:
         with db.session(customer_id="C1") as s:
-            result = handle_message(s, deps, "C1", message)
+            result = handle_message(s, deps, "C1", message, security_event=security_event)
     finally:
         db.dispose()
     owner = Database(schema.admin)
@@ -193,11 +200,16 @@ def test_without_a_security_event_two_charges_are_shown_as_options(
 
 
 def test_security_is_evaluated_before_identification_even_with_options(
-    two_oxxo_charges: SchemaUrls, database_url: str, monkeypatch: pytest.MonkeyPatch
+    two_oxxo_charges: SchemaUrls, database_url: str
 ) -> None:
-    monkeypatch.setattr(agent_module, "_security_event", lambda case: True)
+    sent: list[str] = []
     result, rows, status = _turn(
-        two_oxxo_charges, database_url, OXXO, "No reconozco un cargo en Oxxo"
+        two_oxxo_charges,
+        database_url,
+        OXXO,
+        "No reconozco un cargo en Oxxo",
+        sent,
+        security_event=True,
     )
     actions = [(r.actor, r.action) for r in rows]
 
@@ -208,6 +220,10 @@ def test_security_is_evaluated_before_identification_even_with_options(
     )
     assert status == "security_blocked"
     assert ("tool", "identify_transaction") not in actions
+    # The message is not read: no comprehension, no LLM reply, no tokens.
+    assert sent == []
+    assert (result.tokens, result.intent) == (0, "unread")
+    assert ("agent", "comprehend") not in actions
     decide = next(r for r in rows if r.action == "decide")
     assert decide.result["rule"] == "security.security_event"
     assert actions.index(("policy", "decide")) < actions.index(("tool", "escalate_to_human"))
@@ -288,7 +304,9 @@ def netflix_customer(schema: SchemaUrls) -> SchemaUrls:
 
 
 def _client(settings: Settings) -> Iterator[TestClient]:
+    """A client logged in as customer C1."""
     with TestClient(create_app(settings), raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
         yield c
 
 
@@ -302,7 +320,7 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
 ) -> None:
     first = rules_client.post(
         "/chat",
-        json={"customer_id": "C1", "message": "No reconozco un cargo de 120 dólares en Netflix"},
+        json={"message": "No reconozco un cargo de 120 dólares en Netflix"},
     )
     assert first.status_code == 200
     body = first.json()
@@ -314,7 +332,7 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
     )
     second = rules_client.post(
         "/chat",
-        json={"customer_id": "C1", "message": "sí", "case_id": body["case_id"], "confirm": True},
+        json={"message": "sí", "case_id": body["case_id"], "confirm": True},
     )
     assert (second.json()["outcome"], second.json()["actions_taken"]) == (
         "registered",
@@ -323,13 +341,13 @@ def test_chat_decides_with_the_policy_and_confirms_the_pending_action(
     # The pending action was consumed: a second "sí" runs nothing.
     third = rules_client.post(
         "/chat",
-        json={"customer_id": "C1", "message": "sí", "case_id": body["case_id"], "confirm": True},
+        json={"message": "sí", "case_id": body["case_id"], "confirm": True},
     )
     assert (third.json()["outcome"], third.json()["actions_taken"]) == ("no_pending_action", [])
 
 
 def test_chat_rejects_an_invalid_body(rules_client: TestClient) -> None:
-    r = rules_client.post("/chat", json={"customer_id": "C1", "message": "", "confirm": "maybe"})
+    r = rules_client.post("/chat", json={"message": "", "confirm": "maybe"})
     assert r.status_code == 422
     assert r.json()["error_code"] == "validation_error"
 
@@ -347,10 +365,8 @@ def test_chat_with_the_llm_down_decides_on_the_rules(
     with TestClient(app, raise_server_exceptions=False) as client:
         r = client.post(
             "/chat",
-            json={
-                "customer_id": "C1",
-                "message": "No reconozco un cargo de 120 dólares en Netflix",
-            },
+            json={"message": "No reconozco un cargo de 120 dólares en Netflix"},
+            headers=customer_headers(client, "C1"),
         )
     assert r.status_code == 200
     body = r.json()
@@ -381,32 +397,33 @@ def _executed(schema: SchemaUrls) -> tuple[int, int, int]:
 
 
 def test_an_analyst_decision_on_a_security_stop_runs_no_pending_action(
-    rules_client: TestClient, netflix_customer: SchemaUrls, monkeypatch: pytest.MonkeyPatch
+    rules_client: TestClient, netflix_customer: SchemaUrls
 ) -> None:
-    raised: list[bool] = [False]
-    monkeypatch.setattr(agent_module, "_security_event", lambda case: raised[0])
-    first = rules_client.post("/chat", json={"customer_id": "C1", "message": NETFLIX}).json()
+    first = rules_client.post("/chat", json={"message": NETFLIX}).json()
     assert first["outcome"] == "awaiting_confirmation"
     case_id = first["case_id"]
 
-    # The next turn of the same case raises a security event while the registration is pending.
-    raised[0] = True
+    # The next turn of the same case names another customer while the registration is pending.
     stopped = rules_client.post(
-        "/chat", json={"customer_id": "C1", "message": NETFLIX, "case_id": case_id}
+        "/chat", json={"customer_id": "C2", "message": NETFLIX, "case_id": case_id}
     ).json()
     assert stopped["outcome"] == "security_blocked"
-    case = rules_client.get(f"/cases/{case_id}").json()
+    analyst = analyst_headers(rules_client)
+    case = rules_client.get(f"/cases/{case_id}", headers=analyst).json()
     assert (case["status"], case["recommended_action"]) == ("security_blocked", None)
 
-    back = rules_client.post(f"/cases/{case_id}/decision", json={"decision": "need_info"})
+    back = rules_client.post(
+        f"/cases/{case_id}/decision", json={"decision": "need_info"}, headers=analyst
+    )
     assert back.status_code == 409
     assert back.json()["error_code"] == "decision_not_allowed"
-    closed = rules_client.post(f"/cases/{case_id}/decision", json={"decision": "approve"})
+    closed = rules_client.post(
+        f"/cases/{case_id}/decision", json={"decision": "approve"}, headers=analyst
+    )
     assert closed.status_code == 200 and closed.json()["status"] == "approved"
 
-    raised[0] = False
     late = rules_client.post(
-        "/chat", json={"customer_id": "C1", "message": "sí", "case_id": case_id, "confirm": True}
+        "/chat", json={"message": "sí", "case_id": case_id, "confirm": True}
     ).json()
     assert (late["outcome"], late["actions_taken"]) == ("no_pending_action", [])
     assert _executed(netflix_customer) == (0, 0, 0)
@@ -436,12 +453,14 @@ def two_customers(schema: SchemaUrls, database_url: str) -> Iterator[TestClient]
 def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
     two_customers: TestClient, schema: SchemaUrls
 ) -> None:
-    first = two_customers.post("/chat", json={"customer_id": "C1", "message": NETFLIX}).json()
+    first = two_customers.post("/chat", json={"message": NETFLIX}).json()
     assert first["outcome"] == "awaiting_confirmation"
     case_id = first["case_id"]
 
     r = two_customers.post(
-        "/chat", json={"customer_id": "C2", "message": "sí", "case_id": case_id, "confirm": True}
+        "/chat",
+        json={"message": "sí", "case_id": case_id, "confirm": True},
+        headers=customer_headers(two_customers, "C2"),
     )
     assert r.status_code == 404
     body = r.json()
@@ -453,6 +472,6 @@ def test_confirming_another_customers_case_runs_nothing_and_reveals_nothing(
 
     # The owner's pending action is intact: only C1 can confirm it.
     own = two_customers.post(
-        "/chat", json={"customer_id": "C1", "message": "sí", "case_id": case_id, "confirm": True}
+        "/chat", json={"message": "sí", "case_id": case_id, "confirm": True}
     ).json()
     assert (own["outcome"], own["actions_taken"]) == ("registered", ["open_dispute"])

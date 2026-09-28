@@ -1,0 +1,22 @@
+meta {
+  name: CA8 a customer token gets 403 on an analyst route
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+tests {
+  test("403 forbidden", function() {
+    expect(res.getStatus()).to.equal(403);
+    expect(res.getBody().error_code).to.equal("forbidden");
+  });
+}

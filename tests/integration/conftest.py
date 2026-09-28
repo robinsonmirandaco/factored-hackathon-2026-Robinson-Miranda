@@ -9,6 +9,24 @@ import pytest
 from app.adapters.db.session import SchemaUrls, isolated_schema
 from app.core.config import Settings
 from app.core.logging import trace_id_var
+from tests.auth_support import TEST_ANALYST_PASSWORD, TEST_JWT_SECRET
+from tests.serving_data import KEY
+
+
+@pytest.fixture(autouse=True)
+def auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test-only session secret, analyst password and document key, and the fixed demo code.
+
+    Set in the environment so every Settings() of a test gets them, whatever the local .env
+    holds. The document key is the one test fixtures hash documents with, so a login finds the
+    customer. Tests of the random code turn demo mode off themselves.
+    """
+    monkeypatch.setenv("DOCUMENT_HASH_KEY", KEY)
+    monkeypatch.setenv("JWT_SECRET", TEST_JWT_SECRET)
+    monkeypatch.setenv("ANALYST_DEMO_USER", "analista.demo")
+    monkeypatch.setenv("ANALYST_DEMO_PASSWORD", TEST_ANALYST_PASSWORD)
+    monkeypatch.setenv("DEMO_MODE", "true")
+    monkeypatch.setenv("DEMO_OTP_CODE", "482913")
 
 
 @pytest.fixture
