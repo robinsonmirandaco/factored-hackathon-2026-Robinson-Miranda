@@ -1,0 +1,30 @@
+meta {
+  name: a claim status case, not with a person
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "¿Cómo va mi reclamo?"}
+}
+
+script:post-response {
+  bru.setVar("openCase", res.getBody().case_id);
+}
+
+tests {
+  test("read only", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().intent).to.equal("claim_status");
+  });
+}

@@ -119,6 +119,19 @@ def _label(table: dict[Lang, dict[str, str]], lang: Lang, code: Any) -> str:
     return table[lang].get(str(code), str(code))
 
 
+def intent_label(intent: str | None, lang: Lang) -> str:
+    """The intent of a case in plain words, as the history tells it.
+
+    Args:
+        intent: Intent code, such as unrecognized_charge.
+        lang: Language of the words.
+
+    Returns:
+        The words, or the code itself when it has none.
+    """
+    return _label(_INTENTS, lang, intent)
+
+
 def _extract(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     intent = _label(_INTENTS, lang, r.get("intent"))
     if lang == "es":
@@ -306,6 +319,7 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "merchant": "comercio",
         "number": "número",
         "forbidden_request": "pedido prohibido",
+        "contact_promise": "promesa de contacto",
         "action_claim": "acción no realizada",
     },
     "pt": {
@@ -318,6 +332,7 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "merchant": "estabelecimento",
         "number": "número",
         "forbidden_request": "pedido proibido",
+        "contact_promise": "promessa de contato",
         "action_claim": "ação não realizada",
     },
 }
@@ -442,6 +457,30 @@ def _choose_claim(lang: Lang, r: Fields) -> str:
     return f"O cliente escolheu uma das {r.get('shown', 0)} reclamações mostradas."
 
 
+def _merge_clues(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if not r.get("merged"):
+        if lang == "es":
+            return "El mensaje respondía a una pregunta, pero no había pistas anteriores que sumar."
+        return "A mensagem respondia a uma pergunta, mas não havia pistas anteriores para somar."
+    if lang == "es":
+        return "El mensaje respondía a una pregunta: sus pistas se sumaron a las anteriores."
+    return "A mensagem respondia a uma pergunta: as pistas dela se somaram às anteriores."
+
+
+def _translate(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El sistema tradujo al español el mensaje del cliente (traducción automática)."
+    return "O sistema traduziu para o espanhol a mensagem do cliente (tradução automática)."
+
+
+def _customer_note(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return (
+            "El cliente escribió con el caso ya en manos de una persona: se agregó al expediente."
+        )
+    return "O cliente escreveu com o caso já nas mãos de uma pessoa: foi incluído no dossiê."
+
+
 def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "La sesión del cliente terminó: el caso quedó vencido, sin acción pendiente."
@@ -484,6 +523,9 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "security_event"): _security_event,
     ("agent", "recognize"): _recognize,
     ("agent", "choose"): _choose,
+    ("agent", "merge_clues"): _merge_clues,
+    ("agent", "translate"): _translate,
+    ("agent", "customer_note"): _customer_note,
     ("tool", "show_charge_detail"): _show_charge,
     ("auth", "case_expired"): _case_expired,
     ("auth", "document_locked"): _document_locked,

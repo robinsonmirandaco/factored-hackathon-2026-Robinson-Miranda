@@ -1,0 +1,99 @@
+description: 'A message on a case already with a person decides nothing again: the case stays escalated and the customer is told a person has it'
+tags:
+- golden
+- unrecognized_charge
+- identification
+- escalation
+- multi_turn
+- handoff
+fixtures:
+  customer:
+    customer_id: EVC32
+    document_type: Pasaporte
+    document_number: EVC32-DOC
+    first_name: Eval
+    country: México
+    country_code: MX
+    timezone: America/Mexico_City
+    segment: Basic
+  products:
+  - product_id: P32
+    product_type: credit_card
+    currency: MXN
+    product_status: Active
+  transactions:
+  - transaction_id: EVTX32A
+    transaction_type: Purchase
+    amount: 900.0
+    currency: MXN
+    merchant_name: MercaYa
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 96
+  - transaction_id: EVTX32B
+    transaction_type: Purchase
+    amount: 450.0
+    currency: MXN
+    merchant_name: MercaYa
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 120
+  - transaction_id: EVTX32C
+    transaction_type: Purchase
+    amount: 1200.0
+    currency: MXN
+    merchant_name: MercaYa
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 144
+  - transaction_id: EVTX32D
+    transaction_type: Purchase
+    amount: 300.0
+    currency: MXN
+    merchant_name: MercaYa
+    merchant_category: Food
+    transaction_country: MX
+    channel: POS
+    transaction_status: Approved
+    hours_ago: 168
+turns:
+- message: No reconozco un cargo en MercaYa la semana pasada
+  expect:
+    intent: unrecognized_charge
+    outcome: identifying
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: no sé
+  expect:
+    intent: unrecognized_charge
+    outcome: identifying
+    autonomy_level: L0
+    actions_taken: []
+    policy_action: null
+- message: no me acuerdo
+  expect:
+    intent: unrecognized_charge
+    outcome: escalated
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: escalate
+    policy_rule: escalate.clarifications_exhausted
+    reply_contains:
+    - Tu número de caso es CASE-
+- message: sigo esperando, no sé qué pasó
+  expect:
+    intent: unrecognized_charge
+    outcome: with_person
+    autonomy_level: L3
+    actions_taken: []
+    policy_action: null
+    reply_contains:
+    - Tu caso ya está con una persona
+    - Tu número de caso es CASE-

@@ -30,7 +30,8 @@ from app.schemas.api import (
     TokenOut,
     TraceEventOut,
 )
-from app.services import auth, cases
+from app.schemas.dossier import Dossier
+from app.services import auth, cases, dossier
 from app.services.agent import handle_message
 
 router = APIRouter()
@@ -56,7 +57,7 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
         status="ok",
         app_env=s.app_env,
         db="ok",
-        llm_provider=s.llm_provider,
+        llm_provider=runtime.agent.llm.provider,
         llm_available=runtime.agent.llm.available,
     )
 
@@ -208,6 +209,21 @@ def get_history(
 ) -> list[HistoryEntryOut]:
     """Returns the steps of a case in plain language, in Spanish or Portuguese."""
     return cases.get_history(session, case_id, lang)
+
+
+@router.get(
+    "/cases/{case_id}/dossier",
+    response_model=Dossier,
+    responses={**_AUTH, 404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def get_dossier(
+    case_id: str,
+    session: AnalystSessionDep,
+    runtime: RuntimeDep,
+    lang: Annotated[Lang, Query()] = "es",
+) -> Dossier:
+    """Returns the dossier of a case handed to a person, with every fact and its source."""
+    return dossier.get_dossier(session, runtime.agent.llm, case_id, lang)
 
 
 @router.get("/queue", response_model=list[CaseOut], responses=_AUTH)

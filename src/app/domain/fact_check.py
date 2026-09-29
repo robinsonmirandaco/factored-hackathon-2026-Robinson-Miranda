@@ -16,6 +16,7 @@ What it reads, in this order, each span taken once:
 It also reads, over the whole text:
   forbidden requests   password, PIN, security code, full card number, identity document
   action claims        "registramos", "bloqueamos", "quedó bloqueada", refunds, cancellations
+  contact promises     "en breve", "pronto te contactaremos", "em breve", "você receberá notícias"
 
 Known limits: numbers written in words ("quince días") are not read, and a merchant that is
 not on the customer's list (an invented name) is not detected.
@@ -40,6 +41,7 @@ Kind = Literal[
     "merchant",
     "number",
     "forbidden_request",
+    "contact_promise",
     "action_claim",
 ]
 
@@ -76,8 +78,7 @@ class VerifiedFacts:
         merchants: Merchants of the records read, casefolded.
         known_merchants: Every merchant of the customer's transactions, casefolded; the closed
             list a mentioned merchant is looked for in.
-        actions: Actions verified in the turn, such as register_dispute and block_card, and
-            the registration of a dispute reported in a claim status turn.
+        actions: Actions verified in the turn, such as register_dispute and block_card.
         counts: How many records were shown, such as the number of options to choose from.
     """
 
@@ -140,6 +141,16 @@ _AMOUNT = re.compile(
     re.IGNORECASE,
 )
 _DIGITS = re.compile(r"\d+")
+
+# Promises of news or contact that no step of the case backs: the bank may never call. A person
+# is offered by code, with a fixed sentence, when one is due.
+_CONTACT_PROMISE = re.compile(
+    r"\b(?:en\s+breve|em\s+breve|"
+    r"pronto\s+te\s+(?:contactaremos|llamaremos|escribiremos)|"
+    r"te\s+(?:contactaremos|llamaremos|escribiremos)\s+pronto|"
+    r"voc[eê]\s+receber[aá]\s+(?:not[ií]cias|novidades))\b",
+    re.IGNORECASE,
+)
 
 _FORBIDDEN = re.compile(
     r"\b(?:contrase[nñ]as?|claves?|senhas?|passwords?|PIN|NIP|CVV2?|CVC|"
@@ -227,6 +238,9 @@ def extract(text: str, known_merchants: frozenset[str] = frozenset()) -> list[Cl
     claims += [
         Claim("forbidden_request", m.group(0), m.group(0)) for m in _FORBIDDEN.finditer(text)
     ]
+    claims += [
+        Claim("contact_promise", m.group(0), m.group(0)) for m in _CONTACT_PROMISE.finditer(text)
+    ]
     for action, pattern in _ACTION_CLAIMS:
         claims += [Claim("action_claim", m.group(0), action) for m in pattern.finditer(text)]
     return claims
@@ -266,7 +280,7 @@ def _backed(c: Claim, facts: VerifiedFacts) -> bool:
         return int(c.value) in facts.numbers()
     if c.kind == "action_claim":
         return c.value in facts.actions
-    return False  # forbidden requests are never backed
+    return False  # forbidden requests and contact promises are never backed
 
 
 def _date(year: str | None, month: str, day: str) -> str:

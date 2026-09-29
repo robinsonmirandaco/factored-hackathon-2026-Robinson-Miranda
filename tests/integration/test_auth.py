@@ -501,7 +501,10 @@ def test_a_customer_id_in_the_body_never_selects_another_customer(
     assert r.status_code == 200
     body = r.json()
     assert (body["outcome"], body["actions_taken"]) == ("security_blocked", [])
-    assert "TX2" not in r.text and "C2" not in r.text
+    # The case number and trace id are random hex and may contain "C2" by chance: they are
+    # taken out before looking for the other customer's ids.
+    shown = r.text.replace(body["case_id"], "").replace(body["trace_id"], "")
+    assert "TX2" not in shown and "C2" not in shown
 
     case = _case(seeded, body["case_id"])
     assert (case.customer_id, case.status, case.transaction_id) == ("C1", "security_blocked", None)
@@ -585,6 +588,7 @@ ANALYST_ROUTES = [
     ("GET", "/cases/CASE-1"),
     ("GET", "/cases/CASE-1/trace"),
     ("GET", "/cases/CASE-1/history"),
+    ("GET", "/cases/CASE-1/dossier"),
     ("GET", "/queue"),
     ("POST", "/cases/CASE-1/decision"),
     ("GET", "/metrics"),
@@ -621,7 +625,7 @@ def test_every_route_but_login_and_health_requires_a_session(
         if path not in PUBLIC
         for method in operations
     ]
-    assert len(routes) == 8
+    assert len(routes) == 9
     for method, path in routes:
         r = client.request(method, path, json={"message": "hola", "decision": "approve"})
         _error(r, 401, "not_authenticated")

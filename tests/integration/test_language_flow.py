@@ -50,11 +50,14 @@ def client(schema: SchemaUrls, database_url: str) -> Iterator[TestClient]:
 
 def _in(reply: str, language: str) -> bool:
     """Whether the reply is one of the fixed replies of that language (the LLM is off), with the
-    deadline note of a registration, or the recognition step, which code always writes."""
+    deadline note of a registration or the case number of a handoff, or the recognition step,
+    which code always writes."""
     intro = {"es": "Este es el cargo", "pt": "Esta é a cobrança"}[language]
     note = {"es": "Plazo de respuesta", "pt": "Prazo de resposta"}[language]
+    number = {"es": "Tu número de caso es", "pt": "O número do seu caso é"}[language]
     fixed = (
-        re.escape(t).replace(re.escape("{folio}"), r"DSP-\d{4}-\d{5}") + rf"(?: {note}: .+)?"
+        re.escape(t).replace(re.escape("{folio}"), r"DSP-\d{4}-\d{5}")
+        + rf"(?: {note}: .+)?(?: {number} CASE-[0-9A-F]+\.)?"
         for t in _REPLIES[language].values()
     )
     return any(re.fullmatch(f, reply) for f in fixed) or reply.startswith(intro)

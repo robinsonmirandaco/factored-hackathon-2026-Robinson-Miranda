@@ -94,6 +94,8 @@ class Case(Base):
     card_in_possession: Mapped[bool | None] = mapped_column(Boolean)
     # Transactions shown as options; a choice must name one of them.
     shown_options: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    # Questions asked to identify the charge; the policy caps them (TRZ-25).
+    clarifications: Mapped[int] = mapped_column(Integer, default=0)
     escalation_reason: Mapped[str | None] = mapped_column(Text)
     human_decision: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
@@ -139,6 +141,22 @@ class CaseAction(Base):
     transaction_id: Mapped[str] = mapped_column(Text)
     # pending | replaced | executed | canceled
     status: Mapped[str] = mapped_column(Text, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class QueueItem(Base):
+    """A case handed to a person, with its priority and SLA (TRZ-25)."""
+
+    __tablename__ = "case_queue"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_id: Mapped[str] = mapped_column(Text)
+    customer_id: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(Text, default="normal")
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
 

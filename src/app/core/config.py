@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,14 +31,15 @@ class Settings(BaseSettings):
     # Key of the HMAC that replaces identity document numbers; required to load customers.
     document_hash_key: str = ""
 
-    # anthropic: Claude through the official SDK. local: an OpenAI-compatible server such as
-    # Docker Model Runner or Ollama, so the agent can run without a paid key.
-    llm_provider: Literal["anthropic", "local"] = "anthropic"
-    llm_base_url: str = ""
+    # Claude through the official SDK. Without a key, every turn uses the deterministic fallback.
     anthropic_api_key: str = ""
     llm_model_primary: str = "claude-haiku-4-5-20251001"
+    # Deadline of each attempt, and retries per customer turn across all LLM calls (TRZ-36).
     llm_timeout_seconds: float = 5.0
     llm_max_retries: int = 1
+    llm_retry_wait_seconds: float = 0.5
+    # One comprehension call at startup, in the background, so the first turn is not cold.
+    llm_warm_up: bool = True
     # False forces the deterministic fallback path (CI and golden cases).
     llm_enabled: bool = True
     # Versioned prompt of the comprehension step (TRZ-12); its `version` goes into every call log.

@@ -1,0 +1,67 @@
+{
+  "captured": "2026-09-28",
+  "model": "claude-haiku-4-5-20251001",
+  "prompt_version": "comprehension-4",
+  "context": {
+    "now": "2026-06-17T23:59:00",
+    "country_code": "MX",
+    "local_currency": "MXN"
+  },
+  "note": "Readings of short answers by the real model, without the question they answer (TRZ-25).",
+  "readings": {
+    "fueron 900": {
+      "intent": "out_of_scope",
+      "amount": {
+        "evidence": "900",
+        "value": 900.0,
+        "currency": null,
+        "approximate": false
+      },
+      "date": null,
+      "merchant_hint": null,
+      "channel_hint": null,
+      "card_in_possession": null,
+      "language": "es-MX"
+    },
+    "no sé": {
+      "intent": "out_of_scope",
+      "amount": null,
+      "date": null,
+      "merchant_hint": null,
+      "channel_hint": null,
+      "card_in_possession": null,
+      "language": "es-MX"
+    },
+    "fue el martes": {
+      "intent": "out_of_scope",
+      "amount": null,
+      "date": {
+        "evidence": "fue el martes",
+        "expression": "fue el martes",
+        "kind": "last_tuesday",
+        "count": null,
+        "day": null,
+        "month": null,
+        "year": null
+      },
+      "merchant_hint": null,
+      "channel_hint": null,
+      "card_in_possession": null,
+      "language": "es-MX"
+    },
+    "foram 900 reais": {
+      "intent": "unrecognized_charge",
+      "amount": {
+        "evidence": "900 reais",
+        "value": 900.0,
+        "currency": "BRL",
+        "approximate": false
+      },
+      "date": null,
+      "merchant_hint": null,
+      "channel_hint": null,
+      "card_in_possession": null,
+      "language": "pt-BR"
+    }
+  }
+}

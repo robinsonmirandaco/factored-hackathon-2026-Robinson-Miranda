@@ -1,0 +1,21 @@
+meta {
+  name: a customer token gets 403
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/cases/{{dossierCase}}/dossier
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+tests {
+  test("403", function() {
+    expect(res.getStatus()).to.equal(403);
+  });
+}

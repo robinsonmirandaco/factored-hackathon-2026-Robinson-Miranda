@@ -2,12 +2,13 @@
 simulated clock, security before identification, the policy kept away from the LLM, and /chat
 with success, validation and a failed dependency."""
 
+import dataclasses
 import json
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import httpx
+import httpx2 as httpx
 import pytest
 import yaml
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from sqlalchemy import create_engine, select, text
 
 from app.adapters.db.models import AuditRecord, Case
 from app.adapters.db.session import Database, SchemaUrls
+from app.adapters.llm import LLMClient
 from app.core.config import Settings
 from app.domain.clock import SimulatedClock
 from app.main import create_app
@@ -28,6 +30,7 @@ from tests.agent_support import (
     still_not_recognized,
 )
 from tests.auth_support import analyst_headers, customer_headers
+from tests.llm_support import anthropic_http
 from tests.serving_data import card, customer, load, transaction
 
 pytestmark = pytest.mark.integration
@@ -392,8 +395,11 @@ def test_chat_with_the_llm_down_decides_on_the_rules(
 
     settings = llm_settings(database_url, log_level="WARNING")
     app = create_app(settings)
-    llm = app.state.runtime.agent.llm
-    llm._http = httpx.Client(base_url=settings.llm_base_url, transport=httpx.MockTransport(down))
+    runtime = app.state.runtime
+    llm = LLMClient(settings, http_client=anthropic_http(down))
+    app.state.runtime = dataclasses.replace(
+        runtime, agent=dataclasses.replace(runtime.agent, llm=llm)
+    )
     with TestClient(app, raise_server_exceptions=False) as client:
         r = client.post(
             "/chat",

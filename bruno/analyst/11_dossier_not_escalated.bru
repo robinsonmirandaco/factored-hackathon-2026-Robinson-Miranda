@@ -1,0 +1,22 @@
+meta {
+  name: a case not with a person has no dossier
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/cases/{{openCase}}/dossier
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("409 case_not_escalated", function() {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getBody().error_code).to.equal("case_not_escalated");
+  });
+}

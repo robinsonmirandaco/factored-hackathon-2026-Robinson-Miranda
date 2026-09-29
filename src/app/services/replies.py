@@ -1,6 +1,6 @@
 """What a reply may state, and the check before it is sent (TRZ-20, design 6.5).
 
-The verified facts of a turn come from the records read (charges and claims), the actions whose
+The verified facts of a turn come from the records read (charges), the actions whose
 read-back matched (TRZ-19) and the policy passages that back the turn. The LLM never sees the
 card digits nor the passage text: the deadline and its citation, or the offer of a person when
 no passage backs a deadline, are written by code after the LLM text.
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import write_audit
-from app.adapters.db.models import Dispute, Product, Transaction
+from app.adapters.db.models import Product, Transaction
 from app.domain.fact_check import Claim, VerifiedFacts, amount_fact, unsupported
 from app.domain.policy_passages import Passage
 from app.domain.recognition import long_date
@@ -29,6 +29,10 @@ _NOTES: dict[str, dict[str, str]] = {
             "No tengo un plazo de respuesta respaldado por la política para esta aclaración. "
             "Si quieres, te comunico con una persona."
         ),
+        "claim_status": (
+            "Tu reclamo {claim_id}, abierto el {opened}, está {status}. Último paso: {step}, "
+            "el {step_on}."
+        ),
         "claim_source": "Fuente: registro del reclamo {claim_id}.",
         "claim_overdue": (
             "El plazo de respuesta venció el {due}: {days} {unit} según el {passage} ({label})."
@@ -38,6 +42,7 @@ _NOTES: dict[str, dict[str, str]] = {
             "Si quieres, te comunico con una persona."
         ),
         "person": "Si quieres, te comunico con una persona.",
+        "case_number": "Tu número de caso es {case_number}.",
     },
     "pt": {
         "deadline": ("Prazo de resposta: até {due}, {days} {unit} conforme o {passage} ({label})."),
@@ -46,6 +51,10 @@ _NOTES: dict[str, dict[str, str]] = {
         "no_deadline": (
             "Não tenho um prazo de resposta respaldado pela política para esta contestação. "
             "Se quiser, eu coloco você em contato com uma pessoa."
+        ),
+        "claim_status": (
+            "A sua reclamação {claim_id}, aberta em {opened}, está {status}. Última etapa: "
+            "{step}, em {step_on}."
         ),
         "claim_source": "Fonte: registro da reclamação {claim_id}.",
         "claim_overdue": (
@@ -56,13 +65,46 @@ _NOTES: dict[str, dict[str, str]] = {
             "Se quiser, eu coloco você em contato com uma pessoa."
         ),
         "person": "Se quiser, eu coloco você em contato com uma pessoa.",
+        "case_number": "O número do seu caso é {case_number}.",
+    },
+}
+
+
+# Outcomes that hand the case to a person; the customer is told its number (TRZ-25 CA5).
+HANDOFF_OUTCOMES = (
+    "escalated",
+    "pending_analyst_approval",
+    "security_blocked",
+    "failed",
+    "with_person",
+)
+
+# The closed vocabulary of a claim's status and last step: the LLM never words them (TRZ-22).
+STATUS_WORDS: dict[str, dict[str, str]] = {
+    "es": {
+        "received": "recibido",
+        "in_review": "en revisión",
+        "answered": "con una primera respuesta del banco, pendiente de resolución",
+        "created": "su creación",
+        "assigned": "la asignación a una analista",
+        "first_response": "la primera respuesta del banco",
+        "registered": "el registro de la aclaración",
+    },
+    "pt": {
+        "received": "recebida",
+        "in_review": "em análise",
+        "answered": "com uma primeira resposta do banco, aguardando solução",
+        "created": "a abertura",
+        "assigned": "a atribuição a uma analista",
+        "first_response": "a primeira resposta do banco",
+        "registered": "o registro da contestação",
     },
 }
 
 
 def deadline_note(facts: dict[str, Any], passages: dict[str, Passage], language: str) -> str:
-    """The deadline of a verified registration or of the claim reported, with its citation, or
-    the offer of a person when no passage backs it.
+    """The deadline of a verified registration with its citation; for the claim reported, its
+    status, last step, source and deadline; or the offer of a person when no passage backs it.
 
     Args:
         facts: Facts of the turn.
@@ -85,15 +127,41 @@ def deadline_note(facts: dict[str, Any], passages: dict[str, Passage], language:
     return _deadline_text(notes["deadline"], dispute["due_date"], passage, language, notes)
 
 
+def handoff_note(facts: dict[str, Any], language: str) -> str:
+    """The number of a case handed to a person, for the customer to follow it (TRZ-25 CA5).
+
+    Args:
+        facts: Facts of the turn; `case_number` is set for a handoff.
+        language: Reply language.
+
+    Returns:
+        The note, or "" when the case was not handed over.
+    """
+    number = facts.get("case_number")
+    if not number:
+        return ""
+    return _NOTES["pt" if language == "pt" else "es"]["case_number"].format(case_number=number)
+
+
 def _claim_note(
     facts: dict[str, Any], passages: dict[str, Passage], language: str, notes: dict[str, str]
 ) -> str:
-    """Source and deadline of the claim reported (TRZ-22 CA2, CA4 and CA6)."""
+    """Status, last step, source and deadline of the claim reported (TRZ-22 CA2, CA4 and CA6),
+    in the closed vocabulary of each status."""
     claim = facts.get("claim")
     if claim is None:
         # None of the claims shown is the one the customer means.
         return notes["person"] if facts.get("other_claim") else ""
-    source = notes["claim_source"].format(claim_id=claim["claim_id"])
+    lang = "pt" if language == "pt" else "es"
+    words = STATUS_WORDS[lang]
+    status = notes["claim_status"].format(
+        claim_id=claim["claim_id"],
+        opened=long_date(date.fromisoformat(claim["opened_on"]), lang),
+        status=words[claim["status"]],
+        step=words[claim["last_step"]["step"]],
+        step_on=long_date(date.fromisoformat(claim["last_step"]["on"]), lang),
+    )
+    source = f"{status} " + notes["claim_source"].format(claim_id=claim["claim_id"])
     passage = _passage(passages, claim.get("passage_id"))
     if not claim.get("due_date") or passage is None or language not in passage.label:
         return f"{source} {notes['claim_no_deadline']}"
@@ -138,6 +206,8 @@ def verified_facts(
         if record.get("merchant"):
             merchants.add(str(record["merchant"]).casefold())
     folios, cited, deadlines = set(), set(), set()
+    if facts.get("case_number"):
+        folios.add(str(facts["case_number"]).upper())
     # Set only when the read-back of the registration matched (TRZ-19).
     dispute = facts.get("dispute") or {}
     if dispute:
@@ -146,16 +216,6 @@ def verified_facts(
         passage = _passage(passages, dispute.get("passage"))
         if dispute.get("due_date") and passage is not None:
             dates.add(date.fromisoformat(dispute["due_date"]))
-            cited.add(passage.id)
-            deadlines.add(passage.business_days or passage.calendar_days or 0)
-    claims = [facts["claim"]] if facts.get("claim") else facts.get("claims", [])
-    for claim in claims:
-        folios.add(claim["claim_id"])
-        dates.add(date.fromisoformat(claim["opened_on"]))
-        dates.add(date.fromisoformat(claim["last_step"]["on"]))
-        passage = _passage(passages, claim.get("passage_id"))
-        if claim.get("due_date") and passage is not None:
-            dates.add(date.fromisoformat(claim["due_date"]))
             cited.add(passage.id)
             deadlines.add(passage.business_days or passage.calendar_days or 0)
     tx = (facts.get("transaction") or {}).get("transaction_id")
@@ -182,32 +242,9 @@ def verified_facts(
         last4=frozenset({last4} if last4 else set()),
         merchants=frozenset(merchants),
         known_merchants=frozenset(str(m).casefold() for m in known),
-        actions=frozenset(facts.get("actions_taken", []))
-        | _registered(session, customer_id, facts),
-        counts=frozenset(
-            {len(shown)} if (shown := facts.get("options") or facts.get("claims")) else set()
-        ),
+        actions=frozenset(facts.get("actions_taken", [])),
+        counts=frozenset({len(facts["options"])} if facts.get("options") else set()),
     )
-
-
-def _registered(session: Session, customer_id: str, facts: dict[str, Any]) -> set[str]:
-    """The registration a claim status turn may state: "fue registrado", "foi registrada".
-
-    Only the claim reported in a status turn, and only when it is a dispute of the customer
-    read back from the database by its folio. In any other turn, saying something was
-    registered needs the action among the actions verified in that turn.
-    """
-    claim = facts.get("claim")
-    if facts.get("action") != "report_claim_status" or not claim:
-        return set()
-    if claim.get("source") != "disputes":
-        return set()
-    found = session.execute(
-        select(Dispute.id).where(
-            Dispute.folio == claim["claim_id"], Dispute.customer_id == customer_id
-        )
-    ).first()
-    return {"register_dispute"} if found else set()
 
 
 def check_reply(

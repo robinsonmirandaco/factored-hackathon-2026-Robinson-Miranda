@@ -21,7 +21,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -29,12 +29,14 @@ from sqlalchemy.orm import Session
 from app.adapters.db.audit import timed, write_audit
 from app.adapters.db.models import Case, CaseAction, Customer, Transaction
 from app.adapters.db.rates import rates_near
-from app.adapters.llm import LLMCallStats, LLMClient, template_reply
+from app.adapters.llm import LLMCallStats, LLMClient, TurnBudget, template_reply
 from app.core.errors import AppError
 from app.core.logging import trace_id_var
 from app.core.time import utcnow
 from app.domain.business_days import HolidayCalendar
 from app.domain.clock import SimulatedClock
+from app.domain.comprehension_rules import comprehend_rules
+from app.domain.comprehension_rules import recognizes as rules_recognize
 from app.domain.fx import display_amount, local_currency, to_usd
 from app.domain.identification import (
     Candidate,
@@ -54,20 +56,33 @@ from app.domain.policy import (
     PolicyDecision,
     PolicyEngine,
     PolicyError,
+    Priority,
 )
 from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, policy_deadline
 from app.domain.recognition import Choice, choices, recognition_text
-from app.schemas.comprehension import Comprehension, ComprehensionContext
+from app.schemas.comprehension import Comprehension, ComprehensionContext, evidence_is_faithful
 from app.services import tools as T
+from app.services.cases import HANDOFF_STATUSES
+from app.services.clues import CLUE_FIELDS, Clues, last_clues
 from app.services.identification import candidate_of, identify_charge, load_candidates
 from app.services.recognition import charge_detail
-from app.services.replies import check_reply, deadline_note, verified_facts
+from app.services.replies import (
+    HANDOFF_OUTCOMES,
+    check_reply,
+    deadline_note,
+    handoff_note,
+    verified_facts,
+)
 from app.services.verification import verify_block, verify_dispute
 
 Facts = dict[str, Any]
 
 # Intent of a new case stopped for security before its message was read.
 UNREAD_INTENT = "unread"
+# Outcome of a message on a case already with a person: nothing is decided again.
+WITH_PERSON = "with_person"
+# Who read the clues of an answer to a question of the case: none for an answer without one.
+AnswerRead = Literal["llm", "rules", "none"]
 # The option a customer picks when none of the charges shown is the one.
 NONE_OF_THESE = "none"
 # Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
@@ -175,6 +190,8 @@ def handle_message(
     customer = session.get(Customer, customer_id)
     if customer is None:
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
+    # One retry of the LLM in the whole turn, shared by comprehension and reply (TRZ-36 CA3).
+    budget = deps.llm.new_turn()
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
         if security_event:
@@ -197,15 +214,21 @@ def handle_message(
             else:
                 facts = _choose(session, deps, customer, case, language, str(option), said)
             stats = LLMCallStats()
+        elif case_id is not None and _with_person(session, customer_id, case_id):
+            case = _own_case(session, customer_id, case_id)
+            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
+            language = spoken.language
+            facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
+            stats = LLMCallStats()
         else:
             case, language, facts, stats = _understand_and_decide(
-                session, deps, customer, redacted, pii_counts, case_id
+                session, deps, customer, redacted, pii_counts, case_id, budget
             )
             # A new message that offers nothing new leaves no earlier action to confirm.
             if facts["outcome"] != "awaiting_confirmation":
                 T.settle_pending_action(session, case.id, "canceled")
 
-        reply, rstats = _reply(session, deps, customer, case, redacted, facts, language)
+        reply, rstats = _reply(session, deps, customer, case, redacted, facts, language, budget)
         stats.add(rstats)
         # The charge detail and the recognition text carry the last four digits of the card:
         # shown to the customer, never written to the audit log. The show_charge_detail row
@@ -221,11 +244,14 @@ def handle_message(
                 "reply": None if recognizing else reply,
                 "fallback": rstats.fallback,
                 "error": rstats.error,
+                "attempts": rstats.calls,
             },
             rstats.latency_ms,
             llm=None if recognizing else rstats,
         )
-        case.summary = _summary(case, facts)
+        # A note on a case with a person leaves its summary as the handoff wrote it.
+        if facts["outcome"] != WITH_PERSON:
+            case.summary = _summary(case, facts)
         session.flush()
 
     tokens = stats.input_tokens + stats.output_tokens
@@ -263,23 +289,39 @@ def _understand_and_decide(
     redacted: str,
     pii_counts: dict[str, int],
     case_id: str | None,
+    budget: TurnBudget,
 ) -> tuple[Case, Language, Facts, LLMCallStats]:
     # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
-    previous = (
-        _case_language(_own_case(session, customer.customer_id, case_id)) if case_id else None
-    )
+    existing = _own_case(session, customer.customer_id, case_id) if case_id else None
+    previous = _case_language(existing) if existing else None
     local = local_currency(customer.country_code)
     context = ComprehensionContext(
         now=deps.clock.now, country_code=customer.country_code, local_currency=local
     )
-    clues, stats = deps.llm.comprehend(redacted, context)
+    clues, stats = deps.llm.comprehend(redacted, context, budget)
+    # With the LLM down, the rules answer; when they recognize nothing either, no intent is
+    # known, and the case goes to a person instead of being told it is out of scope (TRZ-36).
+    # An LLM switched off by configuration is not down: the rules are then the design.
+    down = stats.fallback and stats.error != "llm_disabled"
+    unavailable = down and not rules_recognize(redacted)
     # The rules baseline also reads a language, but the LLM's is the one CA2 names.
     spoken = decide_language(
         redacted, None if stats.fallback else clues.language, previous, customer.country_code
     )
     language: Language = spoken.language
-    case = _open_case(session, customer.customer_id, case_id, clues.intent, language)
-    write_audit(
+    # A message sent while the case waits for a clue answers that question (TRZ-25): the case
+    # keeps its intent and adds the new clues to the earlier ones.
+    waiting = (
+        existing is not None
+        and existing.status == "identifying"
+        and existing.intent in deps.policy.config.dispute_intents
+    )
+    answer = _as_answer(clues, redacted, context) if waiting else None
+    answering = answer is not None
+    earlier = last_clues(session, existing) if answering and existing else None
+    intent = existing.intent if answering and existing else clues.intent
+    case = _open_case(session, customer.customer_id, case_id, intent, language)
+    read = write_audit(
         session,
         "agent",
         "comprehend",
@@ -289,24 +331,35 @@ def _understand_and_decide(
             **clues.model_dump(mode="json"),
             "fallback": stats.fallback,
             "error": stats.error,
+            "attempts": stats.calls,
+            "comprehension_unavailable": unavailable,
             "dropped_clues": stats.dropped_clues,
             "language_decision": asdict(spoken),
         },
         stats.latency_ms,
         llm=stats,
     )
+    if answer is not None:
+        clues = _merge_clues(session, case, earlier, answer[0], read.id, answer[1])
 
     card = clues.card_in_possession.value if clues.card_in_possession else None
     case.card_in_possession = card
-    screened = deps.policy.screen(clues.intent, language, card, False)
+    screened = deps.policy.screen(
+        case.intent, language, card, False, unavailable and answer is None
+    )
     if screened is not None:
         _audit_decision(
             session,
             case,
-            {"intent": clues.intent, "language": language, "card_in_possession": card},
+            {
+                "intent": case.intent,
+                "language": language,
+                "card_in_possession": card,
+                "comprehension_unavailable": unavailable and answer is None,
+            },
             screened,
         )
-        facts = _apply(session, case, screened, None)
+        facts = _apply(session, deps, case, screened, None)
         if screened.action == "report_claim_status":
             facts = _claim_status(session, deps, customer, case, language, facts)
         elif screened.action == "abstain_and_redirect" and screened.redirect is None:
@@ -327,6 +380,18 @@ def _understand_and_decide(
     )
     charge, twin = _chosen(clues, found)
     if charge is None and found.decision in ("show_options", "ask_for_detail"):
+        if case.clarifications >= policy.max_clarifications:
+            # One more question than the policy allows: a person takes the case (design 5.1).
+            exhausted = _decide_on_charge(
+                session,
+                deps,
+                customer,
+                case,
+                language,
+                conformal_set_size=len(found.conformal_set),
+                clarifications_exhausted=True,
+            )
+            return case, language, exhausted, stats
         return case, language, _identifying(case, found), stats
     said = Said(redacted, pii_counts, spoken)
     if charge is None:
@@ -337,6 +402,90 @@ def _understand_and_decide(
         _identified(session, deps, customer, case, language, charge, twin, said),
         stats,
     )
+
+
+def _as_answer(
+    clues: Comprehension, redacted: str, context: ComprehensionContext
+) -> tuple[Comprehension, AnswerRead] | None:
+    """Whether a message sent while the case waits for a clue answers it, and with what clues.
+
+    Without the question, the model reads a short answer such as "fueron 900" as out of scope,
+    although it reads the amount. So in a case that waits for a clue:
+      - a claim question is not an answer: it is served with its own intent;
+      - any other reading with a clue is an answer;
+      - an out of scope reading without a clue is read again by the rules, and a clue they find
+        with its literal fragment makes it an answer;
+      - with no clue at all, a request with a known out of scope topic ("quiero un préstamo") is
+        served with its own intent, and anything else ("no sé") is an answer with no clue, which
+        still counts as a clarification.
+
+    Returns:
+        The clues and who read them (llm, rules, or none for an empty answer), or None when the
+        message is not an answer.
+    """
+    if clues.intent == "claim_status":
+        return None
+    if clues.intent != "out_of_scope" or _has_clues(clues):
+        return clues, "llm"
+    ruled = comprehend_rules(redacted, context)
+    found = {
+        k: getattr(ruled, k)
+        for k in CLUE_FIELDS
+        if getattr(ruled, k) is not None
+        and evidence_is_faithful(getattr(ruled, k).evidence, redacted)
+    }
+    if found:
+        return clues.model_copy(update=found), "rules"
+    if out_of_scope_topic(redacted) != "other":
+        return None
+    return clues, "none"
+
+
+def _has_clues(clues: Comprehension) -> bool:
+    return any(getattr(clues, k) is not None for k in CLUE_FIELDS)
+
+
+def _merge_clues(
+    session: Session,
+    case: Case,
+    earlier: Clues | None,
+    new: Comprehension,
+    read_id: int,
+    read_by: AnswerRead,
+) -> Comprehension:
+    """Adds the clues of an answer to the earlier ones of the case (TRZ-25): a new clue replaces
+    the earlier one of its field, the others are kept, and the case keeps its intent.
+
+    Each clue keeps its literal evidence and the comprehension row it was read in, so it can be
+    checked against the message it came from.
+    """
+    if earlier is None:
+        write_audit(
+            session,
+            "agent",
+            "merge_clues",
+            case.id,
+            {"read_id": read_id, "read_by": read_by},
+            {"merged": False, "reason": "no earlier clues that validate"},
+        )
+        return new.model_copy(update={"intent": case.intent})
+    before, sources = earlier.clues, dict(earlier.sources)
+    fields: dict[str, Any] = {}
+    for k in CLUE_FIELDS:
+        if getattr(new, k) is not None:
+            fields[k], sources[k] = getattr(new, k), read_id
+        else:
+            fields[k] = getattr(before, k)
+    merged = Comprehension(intent=case.intent, language=new.language, **fields)
+    write_audit(
+        session,
+        "agent",
+        "merge_clues",
+        case.id,
+        {"read_id": read_id, "read_by": read_by},
+        {"merged": True, "clues": merged.model_dump(mode="json"), "sources": sources},
+    )
+    return merged
 
 
 def _claim_status(
@@ -409,8 +558,14 @@ def _decide_on_charge(
     charge: Candidate | None = None,
     twin: DuplicateTwin | None = None,
     note: dict[str, Any] | None = None,
+    conformal_set_size: int | None = None,
+    clarifications_exhausted: bool = False,
 ) -> Facts:
-    """The policy decision on the identified charge, or on no charge at all."""
+    """The policy decision on the identified charge, or on no charge at all.
+
+    Without a charge the conformal set is empty, unless the charge is still among several and
+    the questions to tell them apart are exhausted.
+    """
     policy = deps.policy.config
     profile = T.get_customer_profile(
         session, deps.clock, customer.customer_id, policy.open_dispute_lookback_days, case.id
@@ -424,12 +579,15 @@ def _decide_on_charge(
         amount_usd=tx["amount_usd"] if tx else None,
         card_in_possession=case.card_in_possession,
         open_dispute_last_90d=bool(profile.get("open_dispute_last_90d")),
-        conformal_set_size=1 if charge else 0,
+        conformal_set_size=(
+            conformal_set_size if conformal_set_size is not None else 1 if charge else 0
+        ),
         duplicate_twin=twin,
+        clarifications_exhausted=clarifications_exhausted,
     )
     decision = deps.policy.decide(ctx, deps.autonomy)
     _audit_decision(session, case, {**asdict(ctx), **(note or {})}, decision)
-    return _apply(session, case, decision, tx)
+    return _apply(session, deps, case, decision, tx)
 
 
 def _chosen(
@@ -480,6 +638,7 @@ def _identifying(case: Case, found: Identification) -> Facts:
     by_id = {s.candidate.transaction_id: s.candidate for s in found.scored}
     case.status = "identifying"
     case.autonomy_level = "L0"
+    case.clarifications += 1
     shown = found.decision == "show_options"
     case.shown_options = list(found.conformal_set) if shown else None
     return {
@@ -503,7 +662,9 @@ def _identifying(case: Case, found: Identification) -> Facts:
     }
 
 
-def _apply(session: Session, case: Case, d: PolicyDecision, tx: Facts | None) -> Facts:
+def _apply(
+    session: Session, deps: AgentDeps, case: Case, d: PolicyDecision, tx: Facts | None
+) -> Facts:
     """Carries out a decision. Nothing that changes customer data runs here: registering and
     blocking wait for the customer's confirmation of the pending action."""
     case.autonomy_level = d.level
@@ -517,14 +678,24 @@ def _apply(session: Session, case: Case, d: PolicyDecision, tx: Facts | None) ->
     if d.action == "security_blocked":
         # A pending action of an earlier turn must not survive a security stop.
         case.recommended_action = None
-        T.escalate_to_human(session, case.id, d.rule, None, status="security_blocked")
+        T.escalate_to_human(
+            session, case.id, d.rule, _sla(deps, d.priority), None, "security_blocked", d.priority
+        )
         facts["outcome"] = "security_blocked"
     elif d.action == "escalate":
-        T.escalate_to_human(session, case.id, d.rule, d.recommended)
+        T.escalate_to_human(
+            session, case.id, d.rule, _sla(deps, d.priority), d.recommended, priority=d.priority
+        )
         facts["outcome"] = "escalated"
     elif d.action == "analyst_approval":
         T.escalate_to_human(
-            session, case.id, d.rule, d.recommended, status="pending_analyst_approval"
+            session,
+            case.id,
+            d.rule,
+            _sla(deps, d.priority),
+            d.recommended,
+            "pending_analyst_approval",
+            d.priority,
         )
         facts["outcome"] = "pending_analyst_approval"
     elif d.action in BLOCKS_CARD:
@@ -540,6 +711,10 @@ def _apply(session: Session, case: Case, d: PolicyDecision, tx: Facts | None) ->
         case.status = "closed"
         facts["outcome"] = "informed"
     return facts
+
+
+def _sla(deps: AgentDeps, priority: Priority) -> float:
+    return deps.policy.config.queue.sla_hours[priority]
 
 
 def _audit_decision(
@@ -563,6 +738,25 @@ def _audit_decision(
             "autonomy_level": d.autonomy_level,
         },
     )
+
+
+def _with_person(session: Session, customer_id: str, case_id: str) -> bool:
+    return _own_case(session, customer_id, case_id).status in HANDOFF_STATUSES
+
+
+def _note_for_the_analyst(session: Session, case: Case, said: Said) -> Facts:
+    """A message on a case already with a person (TRZ-25): it is not read by the LLM nor decided
+    again, and the case keeps its status and its single queue item. The message, redacted, is
+    added to the dossier for the analyst, and the customer is told the case is with a person."""
+    write_audit(
+        session,
+        "agent",
+        "customer_note",
+        case.id,
+        said.audit(),
+        {"status": case.status, "language_decision": asdict(said.spoken)},
+    )
+    return {"intent": case.intent, "outcome": WITH_PERSON, "actions_taken": []}
 
 
 def _stop_for_security(
@@ -621,7 +815,7 @@ def _security_stop(
     _audit_decision(
         session, case, {"intent": None, "language": language, "security_event": True}, screened
     )
-    return _apply(session, case, screened, None)
+    return _apply(session, deps, case, screened, None)
 
 
 # ---- choosing and recognizing -------------------------------------------------------------
@@ -868,7 +1062,9 @@ def _confirm(
     if len(verified) < len(checks):
         # Nothing is confirmed to the customer: the case goes to a person with the reason.
         case.autonomy_level = deps.policy.config.action_level["escalate"]
-        handoff = T.escalate_to_human(session, case.id, VERIFICATION_FAILED_REASON, status="failed")
+        handoff = T.escalate_to_human(
+            session, case.id, VERIFICATION_FAILED_REASON, _sla(deps, "normal"), status="failed"
+        )
         if handoff.message:
             # The case was escalated before: its queue entry stays one, but the failure still
             # moves the case to failed and is written down with its reason.
@@ -961,22 +1157,34 @@ def _reply(
     redacted: str,
     facts: Facts,
     language: Language,
+    budget: TurnBudget,
 ) -> tuple[str, LLMCallStats]:
-    """The reply of the turn. The LLM writes it from the facts; code adds the deadline note,
-    and the fact checker decides whether the LLM text is sent or the fixed reply instead."""
-    note = deadline_note(facts, dict(deps.passages), language)
+    """The reply of the turn. The LLM writes it from the facts; code adds the deadline note and,
+    for a case handed to a person, its number (TRZ-25 CA5); the fact checker decides whether the
+    LLM text is sent or the fixed reply instead."""
+    if facts["outcome"] in HANDOFF_OUTCOMES:
+        facts["case_number"] = case.id
+    notes = (deadline_note(facts, dict(deps.passages), language), handoff_note(facts, language))
+    note = " ".join(n for n in notes if n)
     # The urgent card block redirect must say the same thing every time, a security stop must
     # not send the text of the turn to the LLM, and a failed read-back confirms nothing, so none
     # of them is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
+    # A case with a person is answered the same way every time, with no LLM call.
+    if facts["outcome"] == WITH_PERSON:
+        return _joined(template_reply(facts, language), note), LLMCallStats()
     # The recognition step is written by code by design (TRZ-16), not as an LLM fallback. So is
     # the redirect of a request out of scope (TRZ-23): where to go is never left to the LLM.
     if facts["outcome"] == "recognizing":
         return recognition_text(facts["charge"], language), LLMCallStats()
     if facts["outcome"] == "abstained":
         return template_reply(facts, language), LLMCallStats()
-    body, stats = deps.llm.compose(redacted, _reply_facts(facts), language)
+    # So is the status of a claim (TRZ-22): with the LLM, replies described a status other than
+    # the recorded one and promised news, which the fact checker cannot see.
+    if facts.get("action") == "report_claim_status":
+        return _joined(template_reply(facts, language), note), LLMCallStats()
+    body, stats = deps.llm.compose(redacted, _reply_facts(facts), language, budget)
     text = _joined(body, note)
     if stats.fallback:
         return text, stats
@@ -999,13 +1207,7 @@ def _reply_facts(facts: Facts) -> Facts:
     tx = facts.get("transaction")
     shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
     dispute = facts.get("dispute")
-    claims = [facts["claim"]] if facts.get("claim") else facts.get("claims", [])
-    # A claim status turn always says which claims are open, even none: without the empty list
-    # the LLM does not know there is nothing to report and asks the customer which claim.
-    asked = "claim" in facts or "claims" in facts
     return {
-        **({"claims": [_claim_shown(c) for c in claims]} if asked else {}),
-        **({"other_claim": True} if facts.get("other_claim") else {}),
         "outcome": facts["outcome"],
         "action": facts.get("action"),
         "transaction": shown or None,
@@ -1015,11 +1217,6 @@ def _reply_facts(facts: Facts) -> Facts:
         "dispute": {"folio": dispute["folio"]} if dispute else None,
         "card_not_blocked": facts.get("card_not_blocked"),
     }
-
-
-def _claim_shown(claim: Facts) -> Facts:
-    # The deadline is written by code with its citation, never by the LLM.
-    return {k: claim[k] for k in ("claim_id", "opened_on", "status", "last_step")}
 
 
 def _summary(case: Case, facts: Facts) -> str:

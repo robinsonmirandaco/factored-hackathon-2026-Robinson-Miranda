@@ -1,0 +1,22 @@
+meta {
+  name: an unknown case is 404
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/cases/CASE-NOPE/dossier
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("404 case_not_found", function() {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getBody().error_code).to.equal("case_not_found");
+  });
+}

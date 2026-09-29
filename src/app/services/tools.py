@@ -14,10 +14,10 @@ Which tools may run is decided by the policy engine before the call, never here.
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Literal
 
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
@@ -29,6 +29,7 @@ from app.adapters.db.models import (
     Customer,
     Dispute,
     Product,
+    QueueItem,
     Transaction,
 )
 from app.core.time import utcnow
@@ -43,11 +44,12 @@ DISPUTE_SUBCATEGORIES = ("Cargo no reconocido", "Cobro indebido")
 # Complaints are loaded by the seed, not mapped by the ORM. Resolution or closing, whichever
 # comes first, ends a complaint, as the case generator reads it (TRZ-42).
 _OPEN_COMPLAINTS = text(
-    "SELECT count(*) FROM complaints WHERE customer_id = :customer_id "
+    "SELECT complaint_id FROM complaints WHERE customer_id = :customer_id "
     "AND subcategory = ANY(:subcategories) AND creation_date BETWEEN :since AND :now "
     "AND status <> 'Rejected' "
     "AND (least(resolution_date, closing_date) IS NULL "
-    "OR least(resolution_date, closing_date) > :now)"
+    "OR least(resolution_date, closing_date) > :now) "
+    "ORDER BY complaint_id"
 )
 # Every complaint of the customer still open at the simulated now, whatever its category.
 _OPEN_CLAIMS = text(
@@ -113,24 +115,30 @@ def get_customer_profile(
         if not c:
             res = ToolResult(False, {}, f"customer {customer_id} not found")
         else:
-            complaints = session.execute(
-                _OPEN_COMPLAINTS,
-                {
-                    "customer_id": customer_id,
-                    "subcategories": list(DISPUTE_SUBCATEGORIES),
-                    "since": clock.days_ago(lookback_days),
-                    "now": clock.now,
-                },
-            ).scalar_one()
+            complaints = list(
+                session.execute(
+                    _OPEN_COMPLAINTS,
+                    {
+                        "customer_id": customer_id,
+                        "subcategories": list(DISPUTE_SUBCATEGORIES),
+                        "since": clock.days_ago(lookback_days),
+                        "now": clock.now,
+                    },
+                ).scalars()
+            )
             # Own disputes count on their business date, the same clock and window as the
             # complaints; one registered before business dates existed has none and is left out.
-            disputes = session.execute(
-                select(func.count(Dispute.id)).where(
-                    Dispute.customer_id == customer_id,
-                    Dispute.status == "opened",
-                    Dispute.business_at.between(clock.days_ago(lookback_days), clock.now),
-                )
-            ).scalar_one()
+            disputes = list(
+                session.execute(
+                    select(Dispute.folio)
+                    .where(
+                        Dispute.customer_id == customer_id,
+                        Dispute.status == "opened",
+                        Dispute.business_at.between(clock.days_ago(lookback_days), clock.now),
+                    )
+                    .order_by(Dispute.folio)
+                ).scalars()
+            )
             res = ToolResult(
                 True,
                 {
@@ -138,9 +146,11 @@ def get_customer_profile(
                     "segment": c.segment,
                     "country_code": c.country_code,
                     "customer_status": c.customer_status,
-                    "open_dispute_complaints": int(complaints),
-                    "open_disputes": int(disputes),
-                    "open_dispute_last_90d": complaints + disputes > 0,
+                    "open_dispute_complaints": len(complaints),
+                    "open_disputes": len(disputes),
+                    "open_dispute_last_90d": bool(complaints or disputes),
+                    # The records behind the rule, the sources the analyst's dossier cites.
+                    "open_dispute_ids": {"complaints": complaints, "disputes": disputes},
                 },
             )
     write_audit(
@@ -499,18 +509,30 @@ def escalate_to_human(
     session: Session,
     case_id: str,
     reason: str,
+    sla_hours: float,
     recommended_action: str | None = None,
     status: HandoffStatus = "escalated",
+    priority: str = "normal",
 ) -> ToolResult:
-    """Puts a case in the human queue with the reason and the recommended action.
+    """Puts a case in the human queue with the reason, the recommended action, its priority and
+    the end of its SLA (TRZ-25 CA5).
+
+    Contract:
+        Writes: the case status and reason; one row of case_queue (kind escalation) with the
+            priority and sla_due_at, the real clock now plus `sla_hours`; one audit row keyed
+            `{case_id}:escalate_to_human`.
+        Replay: the same key returns the stored output and writes nothing, so a case is queued
+            once however often it is handed over.
 
     Args:
         session: Open database session.
         case_id: Case to escalate; also the idempotency key.
         reason: Why it was escalated, truncated to 256 characters.
+        sla_hours: Hours until the SLA of the priority ends (policy `queue.sla_hours`).
         recommended_action: What the system suggests the operator do.
         status: escalated, pending_analyst_approval (the analyst approves a prepared action),
             security_blocked, or failed (an action whose read-back did not match).
+        priority: normal, high or urgent, as the policy decided.
 
     Returns:
         The escalation, or the stored result on a replay.
@@ -526,13 +548,33 @@ def escalate_to_human(
         case.escalation_reason = reason[:256]
         if recommended_action:
             case.recommended_action = recommended_action
-        res = ToolResult(True, {"case_id": case_id, "status": status, "reason": reason[:256]})
+        due = utcnow() + timedelta(hours=sla_hours)
+        session.add(
+            QueueItem(
+                case_id=case_id,
+                customer_id=case.customer_id,
+                kind="escalation",
+                reason=reason[:256],
+                priority=priority,
+                sla_due_at=due,
+            )
+        )
+        res = ToolResult(
+            True,
+            {
+                "case_id": case_id,
+                "status": status,
+                "reason": reason[:256],
+                "priority": priority,
+                "sla_due_at": due.isoformat(),
+            },
+        )
     write_audit(
         session,
         "tool",
         "escalate_to_human",
         case_id,
-        {"reason": reason[:256]},
+        {"reason": reason[:256], "priority": priority},
         res.data,
         t["ms"],
         idempotency_key=key,

@@ -4,16 +4,15 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-import httpx
+import httpx2 as httpx
 import pytest
 import yaml
 
 from app.adapters import llm as llm_module
 from app.adapters.llm import LLMClient, load_comprehension_prompt
-from app.core.config import Settings
 from app.schemas.comprehension import ComprehensionContext
+from tests.llm_support import anthropic_http, llm_test_settings, message, request_parts
 
-BASE_URL = "http://llm.test/v1"
 PROMPT_PATH = Path("config/prompts/comprehension.yaml")
 # Wednesday: "last_week" is Monday 8 to Sunday 14 of June, 3 to 9 days back.
 CONTEXT = ComprehensionContext(
@@ -46,28 +45,11 @@ READING = {
 
 def _client(outputs: list[str], calls: list[dict[str, object]]) -> LLMClient:
     def handler(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content))
+        calls.append(request_parts(request)[2])
         content = outputs[min(len(calls), len(outputs)) - 1]
-        return httpx.Response(
-            200,
-            json={
-                "choices": [{"message": {"content": content}}],
-                "usage": {"prompt_tokens": 2000, "completion_tokens": 100},
-            },
-        )
+        return message(content, 2000, 100)
 
-    # The LLM client never connects to the database; the URL only satisfies Settings.
-    settings = Settings(
-        database_url="postgresql+psycopg://unused@localhost:1/unused",
-        llm_enabled=True,
-        llm_provider="local",
-        llm_base_url=BASE_URL,
-        llm_model_primary="test-model",
-        llm_max_retries=1,
-        anthropic_api_key="",
-    )
-    http = httpx.Client(base_url=BASE_URL, transport=httpx.MockTransport(handler))
-    return LLMClient(settings, http_client=http)
+    return LLMClient(llm_test_settings(), http_client=anthropic_http(handler))
 
 
 def _date(**changes: object) -> str:
@@ -131,7 +113,7 @@ def test_valid_json_outside_the_schema_gets_one_retry_then_valid_output_is_used(
     result, stats = _client([wrong, json.dumps(READING)], calls).comprehend(MESSAGE, CONTEXT)
     assert not stats.fallback
     assert len(calls) == 2
-    assert "not valid" in calls[1]["messages"][0]["content"]  # type: ignore[index]
+    assert "not valid" in calls[1]["system"][0]["text"]  # type: ignore[index]
     assert stats.calls == 2
     assert result.intent == "unrecognized_charge"
 

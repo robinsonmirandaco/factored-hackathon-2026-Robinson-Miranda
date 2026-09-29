@@ -6,10 +6,10 @@ from datetime import date
 
 import pytest
 
-from app.adapters.llm import _CLAIM_WORDS, _REPLIES
+from app.adapters.llm import _REPLIES
 from app.domain.fact_check import VerifiedFacts, amount_fact, extract, unsupported
 from app.domain.policy_passages import Passage
-from app.services.replies import deadline_note, long_date
+from app.services.replies import STATUS_WORDS, deadline_note, long_date
 
 FOLIO = "DSP-2026-00042"
 CLAIM = "CMP-TEST000000000000001"
@@ -203,21 +203,8 @@ def test_offering_an_action_is_not_claiming_it() -> None:
 @pytest.mark.parametrize("key", sorted(_REPLIES["es"]))
 def test_every_fixed_reply_passes_the_checker(language: str, key: str) -> None:
     done = {"register_dispute", "block_card"} if key.startswith("registered") else set()
-    facts = VerifiedFacts(
-        folios=frozenset({FOLIO, CLAIM}),
-        dates=frozenset({date(2026, 6, 12), date(2026, 6, 13)}),
-        actions=frozenset(done),
-    )
-    words = _CLAIM_WORDS[language]
-    text = _REPLIES[language][key].format(
-        folio=FOLIO,
-        claim_id=CLAIM,
-        opened=long_date(date(2026, 6, 12), language),
-        status=words["in_review"],
-        step=words["assigned"],
-        step_on=long_date(date(2026, 6, 13), language),
-    )
-    assert _kinds(text, facts) == []
+    facts = VerifiedFacts(folios=frozenset({FOLIO}), actions=frozenset(done))
+    assert _kinds(_REPLIES[language][key].format(folio=FOLIO), facts) == []
 
 
 def _claim(**extra: object) -> dict:
@@ -227,6 +214,7 @@ def _claim(**extra: object) -> dict:
         "claim": {
             "claim_id": CLAIM,
             "opened_on": "2026-06-12",
+            "status": "received",
             "last_step": {"step": "created", "on": "2026-06-12"},
             "due_date": "2026-07-06",
             "passage_id": "§2.1",
@@ -266,8 +254,11 @@ def test_a_claim_without_a_backing_passage_gets_no_deadline_and_a_person(
 ) -> None:
     note = deadline_note(_claim(due_date=None, passage_id=None), {}, language)
     assert CLAIM in note and person in note
-    assert not [c for c in extract(note) if c.kind in ("date", "deadline", "passage")]
-    assert _kinds(note, VerifiedFacts(folios=frozenset({CLAIM}))) == []
+    assert not [c for c in extract(note) if c.kind in ("deadline", "passage")]
+    # The only date is the opening of the claim, in its status sentence; no due date.
+    assert {c.value for c in extract(note) if c.kind == "date"} == {"2026-06-12"}
+    opened = VerifiedFacts(folios=frozenset({CLAIM}), dates=frozenset({date(2026, 6, 12)}))
+    assert _kinds(note, opened) == []
 
 
 def test_no_claim_note_without_a_claim_and_a_person_when_none_of_them_is_the_one() -> None:
@@ -304,3 +295,57 @@ def test_without_a_backing_passage_no_deadline_is_stated_and_a_person_is_offered
 
 def test_no_note_when_nothing_was_registered() -> None:
     assert deadline_note({"outcome": "escalated"}, {"response_deadline": PASSAGE}, "es") == ""
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+@pytest.mark.parametrize(
+    ("status", "step"),
+    [
+        ("received", "created"),
+        ("in_review", "assigned"),
+        ("answered", "first_response"),
+        ("received", "registered"),
+    ],
+)
+def test_the_claim_status_is_written_by_code_in_a_closed_vocabulary(
+    language: str, status: str, step: str
+) -> None:
+    facts = _claim(status=status, last_step={"step": step, "on": "2026-06-13"})
+    note = deadline_note(facts, {"response_deadline": PASSAGE}, language)
+    words = STATUS_WORDS[language]
+    assert f"{words[status]}." in note and words[step] in note
+    assert long_date(date(2026, 6, 13), language) in note
+    backed = VerifiedFacts(
+        folios=frozenset({CLAIM}),
+        dates=frozenset({date(2026, 6, 12), date(2026, 6, 13), date(2026, 7, 6)}),
+        passages=frozenset({"§2.1"}),
+        deadlines=frozenset({15}),
+    )
+    assert _kinds(note, backed) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Revisaremos tu reclamo y te contactaremos en breve.",
+        "Pronto te contactaremos con novedades.",
+        "Te llamaremos pronto.",
+        "Sua reclamação está em análise e em breve teremos novidades.",
+        "Você receberá notícias sobre o andamento.",
+        "Você receberá novidades por e-mail.",
+    ],
+)
+def test_a_contact_promise_is_never_backed(text: str) -> None:
+    assert [k for k, _ in _kinds(text)] == ["contact_promise"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Si quieres, te comunico con una persona.",
+        "Se quiser, eu coloco você em contato com uma pessoa.",
+        "Una analista revisará tu aclaración antes de registrarla.",
+    ],
+)
+def test_offering_a_person_is_not_a_contact_promise(text: str) -> None:
+    assert _kinds(text, VerifiedFacts()) == []

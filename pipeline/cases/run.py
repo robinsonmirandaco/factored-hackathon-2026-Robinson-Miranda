@@ -150,7 +150,6 @@ def _paraphraser(settings: PipelineSettings, config: dict[str, Any], offline: bo
             update={
                 "llm_model_primary": llm["model"],
                 "llm_timeout_seconds": float(llm["timeout_seconds"]),
-                "llm_provider": "anthropic",
             }
         )
         client = LLMClient(app)
