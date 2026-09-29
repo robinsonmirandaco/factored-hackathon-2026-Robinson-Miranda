@@ -440,10 +440,10 @@ def test_a_frozen_held_out_stays_locked_unless_the_config_opens_it(
         load_split(tmp_path, "test", manifest, _cases_config(tmp_path, config))
 
 
-def test_the_repository_config_opens_the_held_out(ctx: Context, tmp_path: Path) -> None:
-    # TRZ-55 opened it after refitting identification with the derived amount tolerance.
-    manifest, count = _frozen_test_split(ctx, tmp_path)
-    assert len(load_split(tmp_path, "test", manifest, ROOT / "config" / "cases.yaml")) == count
+def test_the_repository_config_keeps_the_held_out_locked(ctx: Context, tmp_path: Path) -> None:
+    manifest, _ = _frozen_test_split(ctx, tmp_path)
+    with pytest.raises(HeldOutLocked):
+        load_split(tmp_path, "test", manifest, ROOT / "config" / "cases.yaml")
 
 
 def test_dev_and_calibration_load_without_the_held_out(ctx: Context, tmp_path: Path) -> None:
