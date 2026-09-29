@@ -501,7 +501,10 @@ def test_a_customer_id_in_the_body_never_selects_another_customer(
     assert r.status_code == 200
     body = r.json()
     assert (body["outcome"], body["actions_taken"]) == ("security_blocked", [])
-    assert "TX2" not in r.text and "C2" not in r.text
+    # The case number and trace id are random hex and may contain "C2" by chance: they are
+    # taken out before looking for the other customer's ids.
+    shown = r.text.replace(body["case_id"], "").replace(body["trace_id"], "")
+    assert "TX2" not in shown and "C2" not in shown
 
     case = _case(seeded, body["case_id"])
     assert (case.customer_id, case.status, case.transaction_id) == ("C1", "security_blocked", None)
