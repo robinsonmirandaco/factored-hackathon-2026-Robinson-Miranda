@@ -625,13 +625,7 @@ def test_handwritten_records_mark_assisted_and_non_native_variants(written: Writ
     cases = handwritten.records(bases, handwritten.load_messages(folder), {})
     flags = {c.variant: c.non_native_writer for c in cases}
     assert flags == {"es-MX": False, "es-CO": False, "es-AR": True, "pt-BR": True}
-    sources = {c.variant: c.message_source for c in cases}
-    assert sources == {
-        "es-MX": "assisted",
-        "es-CO": "handwritten",
-        "es-AR": "assisted",
-        "pt-BR": "assisted",
-    }
+    assert {c.message_source for c in cases} == {"assisted"}
 
 
 def _answer(folder: Path, n: int, when: str, bases: list[BaseCase], flip: int = 0) -> None:

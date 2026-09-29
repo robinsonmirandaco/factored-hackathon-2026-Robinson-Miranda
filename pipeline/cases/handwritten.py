@@ -7,9 +7,9 @@ and the expected action. It carries no customer, transaction or product id, no n
 document. Both files live under DATA_DIR because they hold dataset values; neither is versioned.
 Once written, the template is never overwritten, so the author's messages are safe.
 
-The author dictates the ES-CO message of each case (`message_source: handwritten`); the other
-three variants are written with assistance and approved by the author (`assisted`). The ES-AR and
-PT-BR records also say that the author is not a native speaker of those variants.
+All four variants of each case are written with assistance and edited or approved by the author
+(`message_source: assisted`). The ES-AR and PT-BR records also say that the author is not a
+native speaker of those variants.
 """
 
 import json
@@ -27,7 +27,6 @@ from pipeline.cases.schema import VARIANTS, Action, BaseCase, CaseRecord, Intent
 TEMPLATE = "plantilla.yaml"
 BASES = "bases.jsonl"
 NON_NATIVE_VARIANTS = frozenset({"es-AR", "pt-BR"})
-DICTATED_VARIANTS = frozenset({"es-CO"})
 
 _WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _MONTHS = (
@@ -255,8 +254,9 @@ HEADER = """\
 #   `pistas_que_no_menciona`. El resto del mensaje es libre.
 # - Moneda: la del país del cliente, no la de la variante.
 # - Sin nombres, documentos, correos, teléfonos, direcciones ni números de tarjeta o cuenta.
-# - ES-CO se dicta; ES-MX, ES-AR y PT-BR quedan rotulados como asistidos (y ES-AR y PT-BR,
-#   además, como escritos por un hablante no nativo de la variante).
+# - ES-CO: asistido y editado por el autor (A).
+# - ES-MX, ES-AR y PT-BR: asistidos y aprobados por el autor (A).
+# - ES-AR y PT-BR llevan además la marca de hablante no nativo de la variante.
 # - Los casos de seguridad (inyección) llevan el texto de ataque dentro del mensaje.
 #
 # Este archivo tiene valores del dataset: no se versiona ni se comparte.
@@ -352,7 +352,7 @@ def records(
                     language="pt" if v == "pt-BR" else "es",
                     message=messages[(b.base_id, v)],
                     non_native_writer=v in NON_NATIVE_VARIANTS,
-                    message_source="handwritten" if v in DICTATED_VARIANTS else "assisted",
+                    message_source="assisted",
                     versions=versions,
                 )
             )
