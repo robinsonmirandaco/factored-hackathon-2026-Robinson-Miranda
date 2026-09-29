@@ -11,7 +11,7 @@ the conformal quantile is the base case, scored by the largest nonconformity of 
 variants. A variant's score never exceeds that maximum, so the guarantee holds for each variant,
 not only on average over them.
 
-The test split stays locked: nothing here loads it. Coverage on it is measured once it is frozen.
+Nothing here loads the test split.
 The report holds counts and rates only, never a message or a row.
 """
 
