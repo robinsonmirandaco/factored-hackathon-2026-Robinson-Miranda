@@ -275,7 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     settings = PipelineSettings()
     configure_logging(settings.log_level)
     engine = PolicyEngine.from_file(POLICY_PATH)
-    cases = load_split(settings.data_dir / "eval", "dev", settings.cases_manifest_path)
+    cases = load_split(
+        settings.data_dir / "eval", "dev", settings.cases_manifest_path, settings.cases_config_path
+    )
     manifest = read_manifest(settings.cases_manifest_path)
     outcomes = compare(cases, engine)
     meta = {

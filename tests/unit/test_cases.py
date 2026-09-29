@@ -47,6 +47,7 @@ from pipeline.cases.schema import (
     Truth,
 )
 from pipeline.cases.splits import (
+    HeldOutLocked,
     HeldOutNotFrozen,
     SplitMismatch,
     canonical,
@@ -353,25 +354,58 @@ def test_a_changed_test_block_is_refused_unless_refrozen(ctx: Context, tmp_path:
     assert write_split(tmp_path, "test_handwritten", changed[:1], manifest)
 
 
+def _frozen_test_split(ctx: Context, folder: Path) -> tuple[Path, int]:
+    cases = _cases(ctx)
+    hashes = {
+        part: {"sha256": write_split(folder, part, block, {})}
+        for part, block in (("test_generated", cases[:4]), ("test_handwritten", cases[4:]))
+    }
+    manifest = folder / "manifest.json"
+    manifest.write_text(json.dumps({"splits": hashes}))
+    return manifest, len(cases)
+
+
+def _cases_config(folder: Path, text: str) -> Path:
+    path = folder / "cases.yaml"
+    path.write_text(text)
+    return path
+
+
 def test_held_out_is_refused_until_both_blocks_are_frozen(ctx: Context, tmp_path: Path) -> None:
     cases = _cases(ctx)
     generated, written_by_hand = cases[:4], cases[4:]
     hashes = {"test_generated": {"sha256": write_split(tmp_path, "test_generated", generated, {})}}
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"splits": hashes}))
+    unlocked = _cases_config(tmp_path, "held_out_locked: false\n")
     with pytest.raises(HeldOutNotFrozen, match="test_handwritten"):
-        load_split(tmp_path, "test", manifest)
+        load_split(tmp_path, "test", manifest, unlocked)
 
     hashes["test_handwritten"] = {
         "sha256": write_split(tmp_path, "test_handwritten", written_by_hand, {})
     }
     manifest.write_text(json.dumps({"splits": hashes}))
-    assert len(load_split(tmp_path, "test", manifest)) == len(cases)
+    assert len(load_split(tmp_path, "test", manifest, unlocked)) == len(cases)
 
     block = tmp_path / "test_handwritten.jsonl"
     block.write_bytes(block.read_bytes() + b"\n")
     with pytest.raises(SplitMismatch):
-        load_split(tmp_path, "test", manifest)
+        load_split(tmp_path, "test", manifest, unlocked)
+
+
+@pytest.mark.parametrize("config", ["held_out_locked: true\n", "version: 1\n", ""])
+def test_a_frozen_held_out_stays_locked_unless_the_config_opens_it(
+    ctx: Context, tmp_path: Path, config: str
+) -> None:
+    manifest, _ = _frozen_test_split(ctx, tmp_path)
+    with pytest.raises(HeldOutLocked, match="held_out_locked"):
+        load_split(tmp_path, "test", manifest, _cases_config(tmp_path, config))
+
+
+def test_the_repository_config_keeps_the_held_out_locked(ctx: Context, tmp_path: Path) -> None:
+    manifest, _ = _frozen_test_split(ctx, tmp_path)
+    with pytest.raises(HeldOutLocked):
+        load_split(tmp_path, "test", manifest, ROOT / "config" / "cases.yaml")
 
 
 def test_dev_and_calibration_load_without_the_held_out(ctx: Context, tmp_path: Path) -> None:
@@ -380,7 +414,8 @@ def test_dev_and_calibration_load_without_the_held_out(ctx: Context, tmp_path: P
     manifest.write_text(
         json.dumps({"splits": {"dev": {"sha256": write_split(tmp_path, "dev", cases, {})}}})
     )
-    assert len(load_split(tmp_path, "dev", manifest)) == len(cases)
+    locked = _cases_config(tmp_path, "held_out_locked: true\n")
+    assert len(load_split(tmp_path, "dev", manifest, locked)) == len(cases)
 
 
 # --- CA4, CA8 generators and variants ---------------------------------------------------------

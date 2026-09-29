@@ -6,6 +6,12 @@
 # every run from gold/service_complaints and written to the manifest.
 version: 1
 
+# While true, `load_split` refuses the held-out test split even with both blocks frozen. It stays
+# locked until the tolerance of the approximate amount is fixed on dev and calibration, so no run
+# on the held-out comes before that fix. It changes no case, so it does not bump `version`; only a
+# commit that sets it to false opens the held-out.
+held_out_locked: true
+
 # Customers of the cohort are split by md5(seed:customer_id) inside each country x segment
 # stratum, so no customer is in two splits.
 customer_shares:
