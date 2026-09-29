@@ -19,7 +19,11 @@ tests {
     const d = res.getBody();
     expect(res.getStatus()).to.equal(200);
     expect(d.case_kind).to.equal("escalation");
-    expect(d.policy_rule_triggered.rule).to.equal("escalate.conformal_set_empty");
+    // "None of the options" leaves no charge; after the dispute folder the customer also has
+    // an open dispute, which the policy checks first. Either rule hands the case over.
+    expect(["escalate.conformal_set_empty", "escalate.open_dispute_last_90d"]).to.include(
+      d.policy_rule_triggered.rule
+    );
     expect(d.request_summary).to.be.a("string").and.not.empty;
     expect(d.verified_facts).to.not.be.empty;
     d.verified_facts.concat(d.evidence).forEach(function(f) {

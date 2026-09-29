@@ -222,9 +222,8 @@ language, in 2 to 4 short sentences, plain and warm. Use only the facts you are 
 amount, date, folio, duration, card digits or merchant that is not in them, and state as done
 only the actions listed in actions_taken. Never promise refunds or cancellations. Never ask for
 or mention passwords, PINs, security codes, card numbers or identity documents. Do not state
-response deadlines nor cite policy, and do not describe the status or the steps of a claim:
-they are added after your text. Never promise to contact the customer or to send news. Do not
-mention internal scores, rules or system names."""
+response deadlines nor cite policy: they are added after your text. Never promise to contact
+the customer or to send news. Do not mention internal scores, rules or system names."""
 
 
 TRANSLATE_SYSTEM = """Translate the customer's message from Portuguese into Spanish for a bank

@@ -1,6 +1,6 @@
 """What a reply may state, and the check before it is sent (TRZ-20, design 6.5).
 
-The verified facts of a turn come from the records read (charges and claims), the actions whose
+The verified facts of a turn come from the records read (charges), the actions whose
 read-back matched (TRZ-19) and the policy passages that back the turn. The LLM never sees the
 card digits nor the passage text: the deadline and its citation, or the offer of a person when
 no passage backs a deadline, are written by code after the LLM text.
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import write_audit
-from app.adapters.db.models import Dispute, Product, Transaction
+from app.adapters.db.models import Product, Transaction
 from app.domain.fact_check import Claim, VerifiedFacts, amount_fact, unsupported
 from app.domain.policy_passages import Passage
 from app.domain.recognition import long_date
@@ -218,16 +218,6 @@ def verified_facts(
             dates.add(date.fromisoformat(dispute["due_date"]))
             cited.add(passage.id)
             deadlines.add(passage.business_days or passage.calendar_days or 0)
-    claims = [facts["claim"]] if facts.get("claim") else facts.get("claims", [])
-    for claim in claims:
-        folios.add(claim["claim_id"])
-        dates.add(date.fromisoformat(claim["opened_on"]))
-        dates.add(date.fromisoformat(claim["last_step"]["on"]))
-        passage = _passage(passages, claim.get("passage_id"))
-        if claim.get("due_date") and passage is not None:
-            dates.add(date.fromisoformat(claim["due_date"]))
-            cited.add(passage.id)
-            deadlines.add(passage.business_days or passage.calendar_days or 0)
     tx = (facts.get("transaction") or {}).get("transaction_id")
     last4 = (
         session.execute(
@@ -252,32 +242,9 @@ def verified_facts(
         last4=frozenset({last4} if last4 else set()),
         merchants=frozenset(merchants),
         known_merchants=frozenset(str(m).casefold() for m in known),
-        actions=frozenset(facts.get("actions_taken", []))
-        | _registered(session, customer_id, facts),
-        counts=frozenset(
-            {len(shown)} if (shown := facts.get("options") or facts.get("claims")) else set()
-        ),
+        actions=frozenset(facts.get("actions_taken", [])),
+        counts=frozenset({len(facts["options"])} if facts.get("options") else set()),
     )
-
-
-def _registered(session: Session, customer_id: str, facts: dict[str, Any]) -> set[str]:
-    """The registration a claim status turn may state: "fue registrado", "foi registrada".
-
-    Only the claim reported in a status turn, and only when it is a dispute of the customer
-    read back from the database by its folio. In any other turn, saying something was
-    registered needs the action among the actions verified in that turn.
-    """
-    claim = facts.get("claim")
-    if facts.get("action") != "report_claim_status" or not claim:
-        return set()
-    if claim.get("source") != "disputes":
-        return set()
-    found = session.execute(
-        select(Dispute.id).where(
-            Dispute.folio == claim["claim_id"], Dispute.customer_id == customer_id
-        )
-    ).first()
-    return {"register_dispute"} if found else set()
 
 
 def check_reply(

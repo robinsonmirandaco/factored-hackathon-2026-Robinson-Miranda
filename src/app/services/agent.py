@@ -1180,6 +1180,10 @@ def _reply(
         return recognition_text(facts["charge"], language), LLMCallStats()
     if facts["outcome"] == "abstained":
         return template_reply(facts, language), LLMCallStats()
+    # So is the status of a claim (TRZ-22): with the LLM, replies described a status other than
+    # the recorded one and promised news, which the fact checker cannot see.
+    if facts.get("action") == "report_claim_status":
+        return _joined(template_reply(facts, language), note), LLMCallStats()
     body, stats = deps.llm.compose(redacted, _reply_facts(facts), language, budget)
     text = _joined(body, note)
     if stats.fallback:
@@ -1203,13 +1207,7 @@ def _reply_facts(facts: Facts) -> Facts:
     tx = facts.get("transaction")
     shown = {k: v for k, v in (tx or {}).items() if k not in ("amount_usd", "transaction_id")}
     dispute = facts.get("dispute")
-    claims = [facts["claim"]] if facts.get("claim") else facts.get("claims", [])
-    # A claim status turn always says which claims are open, even none: without the empty list
-    # the LLM does not know there is nothing to report and asks the customer which claim.
-    asked = "claim" in facts or "claims" in facts
     return {
-        **({"claims": [_claim_shown(c) for c in claims]} if asked else {}),
-        **({"other_claim": True} if facts.get("other_claim") else {}),
         "outcome": facts["outcome"],
         "action": facts.get("action"),
         "transaction": shown or None,
@@ -1219,11 +1217,6 @@ def _reply_facts(facts: Facts) -> Facts:
         "dispute": {"folio": dispute["folio"]} if dispute else None,
         "card_not_blocked": facts.get("card_not_blocked"),
     }
-
-
-def _claim_shown(claim: Facts) -> Facts:
-    # Status, last step and deadline are written by code in a closed vocabulary, never by the LLM.
-    return {k: claim[k] for k in ("claim_id", "opened_on")}
 
 
 def _summary(case: Case, facts: Facts) -> str:

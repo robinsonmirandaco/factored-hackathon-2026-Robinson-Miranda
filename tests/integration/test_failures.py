@@ -169,18 +169,24 @@ def test_a_slow_llm_is_retried_once_then_the_rules_and_the_fixed_reply_answer(
 def test_after_the_comprehension_spent_the_retry_the_reply_gets_no_second_attempt(
     make_client: Callable[[Llm], TestClient], settings: Settings, schema: Any
 ) -> None:
-    attempts = iter([api_error(503), message(json.dumps(reading("claim_status")))])
+    coppel = reading(
+        "unrecognized_charge",
+        amount={"value": 900, "currency": "USD", "approximate": False, "evidence": "900 dólares"},
+        merchant_hint={"value": "Coppel", "evidence": "Coppel"},
+    )
+    attempts = iter([api_error(503), message(json.dumps(coppel))])
     llm = Llm(settings, lambda _s, _u: next(attempts), _down)
     client = make_client(llm)
 
-    body = client.post("/chat", json={"message": "¿Cómo va mi reclamo?"}).json()
+    # No charge fits: the case is escalated, and that reply is written by the LLM.
+    body = client.post("/chat", json={"message": "No reconozco 900 dólares en Coppel"}).json()
 
-    assert body["outcome"] == "informed"
+    assert body["outcome"] == "escalated"
     # comprehension: one failure and its retry; reply: one attempt, no retry left.
     assert llm.requests == ["comprehend", "comprehend", "compose"]
     wrote = _audit(schema, body["case_id"], "compose")
     assert (wrote["fallback"], wrote["attempts"]) == (True, 1)
-    assert body["reply"].startswith("No encuentro reclamos abiertos")
+    assert body["reply"].startswith("Pasamos tu caso a una analista")
 
 
 # ---- row 1: LLM down; a case that needs comprehension escalates ----------------------------

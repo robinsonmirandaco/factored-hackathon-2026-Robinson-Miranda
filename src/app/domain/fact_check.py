@@ -78,8 +78,7 @@ class VerifiedFacts:
         merchants: Merchants of the records read, casefolded.
         known_merchants: Every merchant of the customer's transactions, casefolded; the closed
             list a mentioned merchant is looked for in.
-        actions: Actions verified in the turn, such as register_dispute and block_card, and
-            the registration of a dispute reported in a claim status turn.
+        actions: Actions verified in the turn, such as register_dispute and block_card.
         counts: How many records were shown, such as the number of options to choose from.
     """
 
