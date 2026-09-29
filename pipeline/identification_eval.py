@@ -1386,6 +1386,16 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         "model, not from results; the refit and this report use only the development and "
         "calibration splits, and the test split stayed locked until a later commit, the last "
         "of story TRZ-55.",
+        "- **Evidence.** On the development and calibration splits no approximate amount "
+        "deviated more than 0.35 from the true charge, so the old tolerance never ruled out a "
+        "true charge there. The only statement found beyond it was in one test split case, "
+        "noticed by reading it, not by running identification. Because the change was "
+        "prompted by a test case, the coverage measured on the test split may be slightly "
+        "biased in favor of the system.",
+        "- **Compared with `identification-2`.** On the development and calibration splits, "
+        "the counts by amount form are identical for rules and LLM: cases, true charge beyond "
+        "one tolerance, outside the set, and size-1 sets holding another charge. "
+        "Temperatures: rules 0.04623 → 0.04622, LLM 0.04297 → 0.04296.",
         "- **Limit.** The tolerance is derived from the noise model of the synthetic case "
         "generator, not from how real customers approximate amounts. Real customers may "
         "deviate more, and a larger deviation counts as evidence against the true charge.",

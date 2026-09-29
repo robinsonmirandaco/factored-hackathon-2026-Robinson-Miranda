@@ -254,6 +254,11 @@ def test_the_amount_tolerance_is_the_worst_deviation_of_the_declared_noise(
     assert worst <= AMOUNT_TOLERANCE[read_as]
     if sets_the_bound:
         assert worst > 0.95 * AMOUNT_TOLERANCE[read_as]
+    if form == "approximate" and more_than == 0.0:
+        # The cost of one tolerance for both hedges: "about" never goes past ln 1.5, so it is
+        # scored with a tolerance about 1.71 times its own worst case.
+        assert worst == pytest.approx(math.log(1.5), rel=0.01)
+        assert worst < AMOUNT_TOLERANCE["approximate"]
 
 
 def test_date_windows_always_contain_the_true_date() -> None:
