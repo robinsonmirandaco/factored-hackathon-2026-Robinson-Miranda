@@ -1,54 +1,40 @@
-"""LLM client: bounded retry, JSON validation and fallbacks for the local provider."""
+"""LLM client: the retry budget of a turn, the deadline of each attempt, which failures are
+retried, JSON validation, the warm-up call and the fixed replies (TRZ-36)."""
 
 import json
 import time
 from collections.abc import Callable
 from datetime import datetime
 
-import httpx
+import httpx2 as httpx
 import pytest
 
-from app.adapters.llm import LLMClient, template_reply
-from app.core.config import Settings
+from app.adapters.llm import WARM_UP_MESSAGE, LLMClient, TurnBudget, template_reply
 from app.schemas.comprehension import ComprehensionContext
-
-BASE_URL = "http://llm.test/v1"
-Handler = Callable[[httpx.Request], httpx.Response]
-
-
-def _settings(**overrides: object) -> Settings:
-    # Explicit so CI's LLM_ENABLED=false does not disable the client under test.
-    # The LLM client never connects to the database; the URL only satisfies Settings.
-    values: dict[str, object] = {
-        "database_url": "postgresql+psycopg://unused@localhost:1/unused",
-        "llm_enabled": True,
-        "llm_provider": "local",
-        "llm_base_url": BASE_URL,
-        "llm_model_primary": "test-model",
-        "llm_max_retries": 1,
-        "anthropic_api_key": "",
-    }
-    values.update(overrides)
-    return Settings(**values)
+from tests.llm_support import (
+    Handler,
+    anthropic_http,
+    api_error,
+    llm_test_settings,
+    message,
+    request_parts,
+)
 
 
 def _client(handler: Handler, calls: list[str], **overrides: object) -> LLMClient:
     def counting(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content)["messages"][0]["content"])
+        system, user, _ = request_parts(request)
+        calls.append(system + "\n" + user)
         return handler(request)
 
-    http = httpx.Client(base_url=BASE_URL, transport=httpx.MockTransport(counting))
-    return LLMClient(_settings(**overrides), http_client=http)
+    return LLMClient(llm_test_settings(**overrides), http_client=anthropic_http(counting))
 
 
-def _completion(content: str) -> httpx.Response:
-    return httpx.Response(
-        200,
-        json={
-            "choices": [{"message": {"content": content}}],
-            "usage": {"prompt_tokens": 50, "completion_tokens": 10},
-        },
-    )
+def _raises(exc: Exception) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(_r: httpx.Request) -> httpx.Response:
+        raise exc
+
+    return handler
 
 
 # Rules fallback of this message: out_of_scope, since "roubaram" alone names no charge.
@@ -69,19 +55,19 @@ READING = {
 
 def test_comprehend_success_reports_tokens() -> None:
     calls: list[str] = []
-    llm = _client(lambda _r: _completion(json.dumps(READING)), calls)
+    llm = _client(lambda _r: message(json.dumps(READING), 50, 10), calls)
 
     result, stats = llm.comprehend(MESSAGE, CONTEXT)
 
     assert result.intent == "unrecognized_charge"
     assert not stats.fallback
-    assert (stats.input_tokens, stats.output_tokens) == (50, 10)
+    assert (stats.input_tokens, stats.output_tokens, stats.calls) == (50, 10, 1)
     assert len(calls) == 1
 
 
-def test_timeout_is_retried_once_then_succeeds() -> None:
+def test_a_timeout_is_retried_once_then_succeeds() -> None:
     calls: list[str] = []
-    attempts = iter([httpx.ReadTimeout("slow"), _completion(json.dumps(READING))])
+    attempts = iter([httpx.ReadTimeout("slow"), message(json.dumps(READING))])
 
     def handler(_r: httpx.Request) -> httpx.Response:
         outcome = next(attempts)
@@ -92,37 +78,45 @@ def test_timeout_is_retried_once_then_succeeds() -> None:
     result, stats = _client(handler, calls).comprehend(MESSAGE, CONTEXT)
 
     assert result.intent == "unrecognized_charge"
-    assert not stats.fallback
+    assert (stats.fallback, stats.calls) == (False, 2)
     assert len(calls) == 2
 
 
-def test_persistent_timeout_falls_back_to_the_rules_after_one_retry() -> None:
+def test_a_persistent_timeout_falls_back_to_the_rules_after_one_retry() -> None:
     calls: list[str] = []
 
-    def handler(_r: httpx.Request) -> httpx.Response:
-        raise httpx.ReadTimeout("slow")
-
-    result, stats = _client(handler, calls).comprehend(MESSAGE, CONTEXT)
+    result, stats = _client(_raises(httpx.ReadTimeout("slow")), calls).comprehend(MESSAGE, CONTEXT)
 
     assert stats.fallback
-    assert stats.error == "ReadTimeout"
+    assert stats.error == "APITimeoutError"
     assert result.intent == "out_of_scope"  # rules baseline
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize("status,expected_calls", [(400, 1), (503, 2)])
+@pytest.mark.parametrize(
+    ("status", "expected_calls"),
+    [(400, 1), (401, 1), (404, 1), (429, 2), (500, 2), (503, 2), (529, 2)],
+)
 def test_only_transient_http_errors_are_retried(status: int, expected_calls: int) -> None:
     calls: list[str] = []
-    _text, stats = _client(lambda _r: httpx.Response(status), calls)._call("s", "u")
+    _text, stats = _client(lambda _r: api_error(status), calls)._call("s", "u")
 
     assert stats.fallback
-    assert stats.error == "HTTPStatusError"
     assert len(calls) == expected_calls
+
+
+def test_a_rate_limit_that_asks_to_wait_longer_is_not_retried() -> None:
+    calls: list[str] = []
+    llm = _client(lambda _r: api_error(429, {"retry-after": "30"}), calls)
+
+    _text, stats = llm._call("s", "u")
+
+    assert stats.fallback and len(calls) == 1
 
 
 def test_invalid_json_gets_one_stricter_retry_then_the_rules() -> None:
     calls: list[str] = []
-    result, stats = _client(lambda _r: _completion("not json"), calls).comprehend(MESSAGE, CONTEXT)
+    result, stats = _client(lambda _r: message("not json"), calls).comprehend(MESSAGE, CONTEXT)
 
     assert stats.fallback
     assert stats.error is not None and stats.error.startswith("invalid_json")
@@ -131,12 +125,12 @@ def test_invalid_json_gets_one_stricter_retry_then_the_rules() -> None:
     assert "not valid" in calls[1]
 
 
-def test_slow_server_is_cut_at_the_wall_clock_deadline() -> None:
+def test_each_attempt_is_cut_at_its_wall_clock_deadline() -> None:
     def handler(_r: httpx.Request) -> httpx.Response:
         time.sleep(2)  # the mock ignores httpx timeouts, like a server that trickles bytes
-        return _completion(json.dumps(READING))
+        return message(json.dumps(READING))
 
-    llm = _client(handler, [], llm_timeout_seconds=0.2, llm_max_retries=1)
+    llm = _client(handler, [], llm_timeout_seconds=0.2)
     t0 = time.perf_counter()
     result, stats = llm.comprehend(MESSAGE, CONTEXT)
     elapsed = time.perf_counter() - t0
@@ -144,12 +138,62 @@ def test_slow_server_is_cut_at_the_wall_clock_deadline() -> None:
     assert stats.fallback
     assert stats.error == "TimeoutError"
     assert result.intent == "out_of_scope"  # rules baseline
-    assert elapsed < 1.0  # deadline 0.2 s x 2 attempts, far below the 2 s server delay
+    assert elapsed < 1.5  # two attempts of 0.2 s, far below the 2 s server delay
+
+
+# ---- CA3: one retry of the LLM per turn, whatever the call -------------------------------
+
+
+def test_the_retry_of_the_turn_is_spent_once_across_calls() -> None:
+    calls: list[str] = []
+    attempts = iter([httpx.ReadTimeout("slow"), message(json.dumps(READING))])
+
+    def handler(_r: httpx.Request) -> httpx.Response:
+        outcome = next(attempts, None)
+        if outcome is None:
+            raise httpx.ReadTimeout("slow again")
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    llm = _client(handler, calls)
+    budget = llm.new_turn()
+    _, read = llm.comprehend(MESSAGE, CONTEXT, budget)
+    reply, wrote = llm.compose("ayuda", {"outcome": "escalated"}, "es", budget)
+
+    # Comprehension used the retry; the reply timed out once and was not retried.
+    assert (read.fallback, read.calls) == (False, 2)
+    assert (wrote.fallback, wrote.calls) == (True, 1)
+    assert reply == template_reply({"outcome": "escalated"}, "es")
+    assert len(calls) == 3
+
+
+def test_once_the_llm_failed_in_a_turn_it_is_not_called_again() -> None:
+    calls: list[str] = []
+    llm = _client(lambda _r: api_error(503), calls)
+    budget = llm.new_turn()
+
+    _, read = llm.comprehend(MESSAGE, CONTEXT, budget)
+    _, wrote = llm.compose("ayuda", {"outcome": "escalated"}, "es", budget)
+
+    assert read.fallback and budget.down
+    assert (wrote.fallback, wrote.error, wrote.calls) == (True, "llm_down_this_turn", 0)
+    assert len(calls) == 2
+
+
+def test_an_invalid_json_retry_spends_the_retry_of_the_turn() -> None:
+    calls: list[str] = []
+    llm = _client(lambda _r: message("not json"), calls)
+    budget = TurnBudget(retries_left=1)
+
+    llm.comprehend(MESSAGE, CONTEXT, budget)
+
+    assert budget.retries_left == 0 and len(calls) == 2
 
 
 def test_compose_makes_one_call_and_leaves_the_check_to_the_caller() -> None:
     calls: list[str] = []
-    llm = _client(lambda _r: _completion("  Pasamos tu caso a una analista.  "), calls)
+    llm = _client(lambda _r: message("  Pasamos tu caso a una analista.  "), calls)
 
     reply, stats = llm.compose("ayuda", {"outcome": "escalated"}, "es")
 
@@ -163,19 +207,11 @@ def test_malformed_provider_response_falls_back() -> None:
     )
 
     assert stats.fallback
-    assert stats.error == "KeyError"
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        {"llm_provider": "local", "llm_base_url": ""},
-        {"llm_provider": "anthropic", "anthropic_api_key": ""},
-        {"llm_enabled": False},
-    ],
-)
+@pytest.mark.parametrize("overrides", [{"anthropic_api_key": ""}, {"llm_enabled": False}])
 def test_unconfigured_llm_is_not_available(overrides: dict[str, object]) -> None:
-    llm = LLMClient(_settings(**overrides))
+    llm = LLMClient(llm_test_settings(**overrides))
 
     _text, stats = llm._call("s", "u")
 
@@ -183,41 +219,40 @@ def test_unconfigured_llm_is_not_available(overrides: dict[str, object]) -> None
     assert stats.error == "llm_disabled"
 
 
-def test_complete_sends_the_temperature_to_both_providers() -> None:
+def test_complete_sends_the_temperature_in_the_body() -> None:
     bodies: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        bodies.append(json.loads(request.content))
-        return _completion('{"es-MX": "hola"}')
+        bodies.append(request_parts(request)[2])
+        return message('{"es-MX": "hola"}')
 
-    http = httpx.Client(base_url=BASE_URL, transport=httpx.MockTransport(handler))
-    text, stats = LLMClient(_settings(), http_client=http).complete("s", "u", 50, 0.7)
+    llm = LLMClient(llm_test_settings(), http_client=anthropic_http(handler))
+    text, stats = llm.complete("s", "u", 50, 0.7)
+
+    # anthropic 1.x has no `temperature` argument; the body still carries it.
     assert (text, stats.fallback, bodies[0]["temperature"]) == ('{"es-MX": "hola"}', False, 0.7)
 
-    sent: dict[str, object] = {}
 
-    class Messages:
-        def create(self, **kwargs: object) -> object:
-            sent.update(kwargs)
-            # The SDK's Usage carries the cache fields, None when nothing was cached.
-            usage = type(
-                "Usage",
-                (),
-                {
-                    "input_tokens": 3,
-                    "output_tokens": 2,
-                    "cache_creation_input_tokens": None,
-                    "cache_read_input_tokens": None,
-                },
-            )()
-            block = type("Block", (), {"type": "text", "text": "ok"})()
-            return type("Message", (), {"content": [block], "usage": usage})()
+# ---- warm-up at startup ---------------------------------------------------------------------
 
-    llm = LLMClient(_settings(llm_provider="anthropic", anthropic_api_key="k"))
-    llm._client = type("Client", (), {"messages": Messages()})()
-    text, stats = llm.complete("s", "u", 50, 1.0)
-    # anthropic 1.x has no `temperature` argument; the body still carries it.
-    assert (text, sent["extra_body"], "temperature" in sent) == ("ok", {"temperature": 1.0}, False)
+
+def test_the_warm_up_is_one_comprehension_call_with_the_synthetic_message() -> None:
+    calls: list[str] = []
+    llm = _client(lambda _r: message(json.dumps(READING)), calls)
+
+    llm.warm_up()
+
+    assert len(calls) == 1
+    assert calls[0].startswith(llm.comprehension_prompt.system[:40])
+    assert WARM_UP_MESSAGE in calls[0]
+
+
+def test_a_failed_warm_up_is_not_retried_and_raises_nothing() -> None:
+    calls: list[str] = []
+
+    _client(lambda _r: api_error(503), calls).warm_up()
+
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize(

@@ -153,7 +153,7 @@ def test_no_open_claim_is_said_and_nothing_is_written(
     assert r.facts["claim"] is None and r.actions_taken == []
     assert r.reply == "No encuentro reclamos abiertos."
     # The LLM is told that no claim is open, not left to guess.
-    user = json.loads(sent[-1])["messages"][1]["content"]
+    user = json.loads(sent[-1])["messages"][0]["content"]
     assert json.loads(user.split("Facts (JSON): ", 1)[1])["claims"] == []
     assert _written(schema) == (0, 0, 0, 0)
 
@@ -419,7 +419,7 @@ def test_the_llm_gets_no_status_and_the_reply_carries_the_status_written_by_code
 
     r = _ask(schema, _deps(settings, sent=sent))
 
-    user = json.loads(sent[-1])["messages"][1]["content"]
+    user = json.loads(sent[-1])["messages"][0]["content"]
     shown = json.loads(user.split("Facts (JSON): ", 1)[1])["claims"]
     assert shown == [{"claim_id": "CMP-TEST000000000000008", "opened_on": _opened(now, 5)}]
     assert "está en revisión. Último paso: la asignación a una analista, el" in r.reply

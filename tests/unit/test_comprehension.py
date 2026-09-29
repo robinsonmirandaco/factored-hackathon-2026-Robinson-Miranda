@@ -3,20 +3,19 @@
 import json
 from datetime import date, datetime
 
-import httpx
+import httpx2 as httpx
 import pytest
 from pydantic import ValidationError
 
 from app.adapters.llm import LLMClient
-from app.core.config import Settings
 from app.schemas.comprehension import (
     Comprehension,
     ComprehensionContext,
     DateClue,
     evidence_is_faithful,
 )
+from tests.llm_support import anthropic_http, llm_test_settings, message, request_parts
 
-BASE_URL = "http://llm.test/v1"
 CONTEXT = ComprehensionContext(
     now=datetime(2026, 6, 17, 23, 59), country_code="MX", local_currency="MXN"
 )
@@ -39,31 +38,14 @@ LLM_OUTPUT = {
 
 def _client(handler, calls: list[str]) -> LLMClient:
     def counting(request: httpx.Request) -> httpx.Response:
-        calls.append(json.loads(request.content)["messages"][0]["content"])
+        calls.append(request_parts(request)[0])
         return handler(request)
 
-    # The LLM client never connects to the database; the URL only satisfies Settings.
-    settings = Settings(
-        database_url="postgresql+psycopg://unused@localhost:1/unused",
-        llm_enabled=True,
-        llm_provider="local",
-        llm_base_url=BASE_URL,
-        llm_model_primary="test-model",
-        llm_max_retries=1,
-        anthropic_api_key="",
-    )
-    http = httpx.Client(base_url=BASE_URL, transport=httpx.MockTransport(counting))
-    return LLMClient(settings, http_client=http)
+    return LLMClient(llm_test_settings(), http_client=anthropic_http(counting))
 
 
 def _completion(content: str) -> httpx.Response:
-    return httpx.Response(
-        200,
-        json={
-            "choices": [{"message": {"content": content}}],
-            "usage": {"prompt_tokens": 80, "completion_tokens": 40},
-        },
-    )
+    return message(content, 80, 40)
 
 
 @pytest.mark.parametrize(
@@ -152,6 +134,6 @@ def test_comprehend_timeout_uses_the_rules():
         "Me robaron la tarjeta, necesito bloquearla ya", CONTEXT
     )
     assert stats.fallback
-    assert stats.error == "ReadTimeout"
+    assert stats.error == "APITimeoutError"
     assert len(calls) == 2  # one bounded retry inside the call, then the rules
     assert result.card_in_possession is not None and result.card_in_possession.value is False

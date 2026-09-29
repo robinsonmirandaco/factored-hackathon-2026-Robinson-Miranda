@@ -551,6 +551,31 @@ def comprehend_rules(message: str, context: ComprehensionContext) -> Comprehensi
     )
 
 
+def recognizes(message: str) -> bool:
+    """Whether the rules read an intent in the message, rather than falling to out of scope
+    because nothing matched (TRZ-36).
+
+    When the LLM is unavailable and the rules recognize nothing, the case needs comprehension
+    and goes to a person instead of being told it is out of scope.
+
+    Args:
+        message: Customer message, PII already replaced by placeholders.
+
+    Returns:
+        True when an intent pattern, an out of scope pattern, what the customer says about the
+        card, an amount, a merchant or a word about charges matched.
+    """
+    folded = _fold(message)
+    return (
+        any(pattern.search(folded) for _, pattern in _INTENT_PATTERNS)
+        or _card_possession(message, folded) is not None
+        or bool(_OUT_OF_SCOPE.search(folded))
+        or bool(_amount_candidates(folded))
+        or _merchant(message) is not None
+        or bool(_CHARGE_WORDS.search(folded))
+    )
+
+
 def _intent(folded: str, has_charge: bool) -> Intent:
     for intent, pattern in _INTENT_PATTERNS:
         if pattern.search(folded):

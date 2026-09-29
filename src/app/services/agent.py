@@ -29,13 +29,14 @@ from sqlalchemy.orm import Session
 from app.adapters.db.audit import timed, write_audit
 from app.adapters.db.models import Case, CaseAction, Customer, Transaction
 from app.adapters.db.rates import rates_near
-from app.adapters.llm import LLMCallStats, LLMClient, template_reply
+from app.adapters.llm import LLMCallStats, LLMClient, TurnBudget, template_reply
 from app.core.errors import AppError
 from app.core.logging import trace_id_var
 from app.core.time import utcnow
 from app.domain.business_days import HolidayCalendar
 from app.domain.clock import SimulatedClock
 from app.domain.comprehension_rules import comprehend_rules
+from app.domain.comprehension_rules import recognizes as rules_recognize
 from app.domain.fx import display_amount, local_currency, to_usd
 from app.domain.identification import (
     Candidate,
@@ -189,6 +190,8 @@ def handle_message(
     customer = session.get(Customer, customer_id)
     if customer is None:
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
+    # One retry of the LLM in the whole turn, shared by comprehension and reply (TRZ-36 CA3).
+    budget = deps.llm.new_turn()
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
         if security_event:
@@ -219,13 +222,13 @@ def handle_message(
             stats = LLMCallStats()
         else:
             case, language, facts, stats = _understand_and_decide(
-                session, deps, customer, redacted, pii_counts, case_id
+                session, deps, customer, redacted, pii_counts, case_id, budget
             )
             # A new message that offers nothing new leaves no earlier action to confirm.
             if facts["outcome"] != "awaiting_confirmation":
                 T.settle_pending_action(session, case.id, "canceled")
 
-        reply, rstats = _reply(session, deps, customer, case, redacted, facts, language)
+        reply, rstats = _reply(session, deps, customer, case, redacted, facts, language, budget)
         stats.add(rstats)
         # The charge detail and the recognition text carry the last four digits of the card:
         # shown to the customer, never written to the audit log. The show_charge_detail row
@@ -241,6 +244,7 @@ def handle_message(
                 "reply": None if recognizing else reply,
                 "fallback": rstats.fallback,
                 "error": rstats.error,
+                "attempts": rstats.calls,
             },
             rstats.latency_ms,
             llm=None if recognizing else rstats,
@@ -285,6 +289,7 @@ def _understand_and_decide(
     redacted: str,
     pii_counts: dict[str, int],
     case_id: str | None,
+    budget: TurnBudget,
 ) -> tuple[Case, Language, Facts, LLMCallStats]:
     # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
     existing = _own_case(session, customer.customer_id, case_id) if case_id else None
@@ -293,7 +298,12 @@ def _understand_and_decide(
     context = ComprehensionContext(
         now=deps.clock.now, country_code=customer.country_code, local_currency=local
     )
-    clues, stats = deps.llm.comprehend(redacted, context)
+    clues, stats = deps.llm.comprehend(redacted, context, budget)
+    # With the LLM down, the rules answer; when they recognize nothing either, no intent is
+    # known, and the case goes to a person instead of being told it is out of scope (TRZ-36).
+    # An LLM switched off by configuration is not down: the rules are then the design.
+    down = stats.fallback and stats.error != "llm_disabled"
+    unavailable = down and not rules_recognize(redacted)
     # The rules baseline also reads a language, but the LLM's is the one CA2 names.
     spoken = decide_language(
         redacted, None if stats.fallback else clues.language, previous, customer.country_code
@@ -321,6 +331,8 @@ def _understand_and_decide(
             **clues.model_dump(mode="json"),
             "fallback": stats.fallback,
             "error": stats.error,
+            "attempts": stats.calls,
+            "comprehension_unavailable": unavailable,
             "dropped_clues": stats.dropped_clues,
             "language_decision": asdict(spoken),
         },
@@ -332,12 +344,19 @@ def _understand_and_decide(
 
     card = clues.card_in_possession.value if clues.card_in_possession else None
     case.card_in_possession = card
-    screened = deps.policy.screen(case.intent, language, card, False)
+    screened = deps.policy.screen(
+        case.intent, language, card, False, unavailable and answer is None
+    )
     if screened is not None:
         _audit_decision(
             session,
             case,
-            {"intent": case.intent, "language": language, "card_in_possession": card},
+            {
+                "intent": case.intent,
+                "language": language,
+                "card_in_possession": card,
+                "comprehension_unavailable": unavailable and answer is None,
+            },
             screened,
         )
         facts = _apply(session, deps, case, screened, None)
@@ -1138,6 +1157,7 @@ def _reply(
     redacted: str,
     facts: Facts,
     language: Language,
+    budget: TurnBudget,
 ) -> tuple[str, LLMCallStats]:
     """The reply of the turn. The LLM writes it from the facts; code adds the deadline note and,
     for a case handed to a person, its number (TRZ-25 CA5); the fact checker decides whether the
@@ -1160,7 +1180,7 @@ def _reply(
         return recognition_text(facts["charge"], language), LLMCallStats()
     if facts["outcome"] == "abstained":
         return template_reply(facts, language), LLMCallStats()
-    body, stats = deps.llm.compose(redacted, _reply_facts(facts), language)
+    body, stats = deps.llm.compose(redacted, _reply_facts(facts), language, budget)
     text = _joined(body, note)
     if stats.fallback:
         return text, stats

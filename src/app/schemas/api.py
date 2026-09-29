@@ -10,9 +10,9 @@ class HealthOut(BaseModel):
     """Liveness and configuration summary.
 
     Attributes:
-        llm_provider: Configured provider (anthropic or local).
+        llm_provider: The LLM provider (anthropic).
         llm_available: True only when real LLM calls can be made; false means every turn
-            uses the deterministic fallback (no key, no base URL, or LLM disabled).
+            uses the deterministic fallback (no key, or LLM disabled).
     """
 
     status: str

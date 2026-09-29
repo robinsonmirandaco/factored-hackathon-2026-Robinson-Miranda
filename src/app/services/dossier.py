@@ -59,6 +59,7 @@ _QUESTIONS: dict[Lang, dict[str, str]] = {
         "verification_mismatch": "La relectura de la acción no coincidió con lo esperado.",
         "dropped_clue": "Se descartaron pistas cuyo fragmento no estaba en el mensaje: {fields}.",
         "card_possession_unknown": "El cliente no dijo si tiene la tarjeta.",
+        "comprehension_unavailable": "El LLM no respondió y las reglas no entendieron el mensaje.",
     },
     "pt": {
         "security_event": "A solicitação tentou acessar dados de outro cliente.",
@@ -68,6 +69,7 @@ _QUESTIONS: dict[Lang, dict[str, str]] = {
         "verification_mismatch": "A releitura da ação não coincidiu com o esperado.",
         "dropped_clue": "Pistas cujo trecho não estava na mensagem foram descartadas: {fields}.",
         "card_possession_unknown": "O cliente não disse se está com o cartão.",
+        "comprehension_unavailable": "O LLM não respondeu e as regras não entenderam a mensagem.",
     },
 }
 _SECURITY_SUMMARY: dict[Lang, str] = {
@@ -382,6 +384,8 @@ def _open_questions(
         codes.append("charge_not_identified")
     if rule and rule.rule == "escalate.clarifications_exhausted":
         codes.append("clarifications_exhausted")
+    if rule and rule.rule == "escalate.comprehension_unavailable":
+        codes.append("comprehension_unavailable")
     if rule and rule.rule == "escalate.amount_unknown":
         codes.append("amount_not_convertible")
     if case.status == "failed":

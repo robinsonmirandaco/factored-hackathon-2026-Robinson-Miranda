@@ -1,5 +1,6 @@
 """Application factory. Run with: uvicorn app.main:create_app --factory"""
 
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -100,7 +101,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     Returns:
         The application. On startup it refuses to run if its database role could bypass row
-        level security; connections are closed on shutdown.
+        level security, and starts the LLM warm-up call in the background; connections are
+        closed on shutdown.
     """
     settings = settings or Settings()
     configure_logging(settings.log_level)
@@ -113,10 +115,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception:
             runtime.db.dispose()
             raise
+        llm = runtime.agent.llm
+        if settings.llm_warm_up and llm.available:
+            # In the background: the service answers /health while the call runs.
+            threading.Thread(target=llm.warm_up, name="llm-warm-up", daemon=True).start()
         log.info(
             "startup",
             app_env=settings.app_env,
-            llm_provider=settings.llm_provider,
+            llm_provider=runtime.agent.llm.provider,
             llm_model=settings.llm_model_primary,
             llm_available=runtime.agent.llm.available,
         )

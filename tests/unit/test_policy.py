@@ -234,6 +234,13 @@ RULES = [
     ),
     ({"verification_failed": True}, "A0", "escalate", "escalate.verification_failed", "L3"),
     (
+        {"intent": "out_of_scope", "comprehension_unavailable": True, "amount_usd": None},
+        "A0",
+        "escalate",
+        "escalate.comprehension_unavailable",
+        "L3",
+    ),
+    (
         {"clarifications_exhausted": True, "conformal_set_size": 3, "amount_usd": None},
         "A0",
         "escalate",

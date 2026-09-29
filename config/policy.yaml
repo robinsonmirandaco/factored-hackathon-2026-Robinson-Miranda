@@ -27,6 +27,7 @@ security_if:
   - security_event
 
 escalate_if:
+  - comprehension_unavailable       # the LLM failed and the rules recognized nothing
   - clarifications_exhausted        # a third question would be needed to identify the charge
   - amount_above_human_review       # amount_usd > amount_usd.human_review_above
   - amount_unknown                  # identified charge not convertible to USD

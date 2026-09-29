@@ -4,13 +4,13 @@ reaches the LLM. Every value here is made up; the check digits are computed, not
 import json
 from datetime import datetime
 
-import httpx
+import httpx2 as httpx
 import pytest
 
 from app.adapters.llm import LLMClient
-from app.core.config import Settings
 from app.domain.pii import ACCOUNT, CARD, DOCUMENT, EMAIL, NAME, PHONE, redact
 from app.schemas.comprehension import ComprehensionContext
+from tests.llm_support import anthropic_http, llm_test_settings, message, request_parts
 
 # (text, value that must disappear, placeholder that must replace it)
 POSITIVES: list[tuple[str, str, str]] = [
@@ -192,9 +192,8 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
     sent: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
+        system, _, body = request_parts(request)
         sent.append(json.dumps(body, ensure_ascii=False))
-        system = body["messages"][0]["content"]
         if system.startswith(llm.comprehension_prompt.system[:40]):
             content = json.dumps(
                 {
@@ -209,21 +208,12 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
             )
         else:
             content = "Bloqueamos tu tarjeta y abrimos la disputa."
-        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+        return message(content)
 
-    settings = Settings(
-        database_url="postgresql+psycopg://unused@localhost:1/unused",
-        llm_enabled=True,
-        llm_provider="local",
-        llm_base_url="http://llm.test/v1",
-        llm_model_primary="test-model",
-        anthropic_api_key="",
-    )
-    http = httpx.Client(base_url="http://llm.test/v1", transport=httpx.MockTransport(handler))
-    llm = LLMClient(settings, http_client=http)
+    llm = LLMClient(llm_test_settings(), http_client=anthropic_http(handler))
 
-    message = " ".join(text for text, _, _ in POSITIVES)
-    redacted, _ = redact(message)
+    with_pii = " ".join(text for text, _, _ in POSITIVES)
+    redacted, _ = redact(with_pii)
     context = ComprehensionContext(
         now=datetime(2026, 6, 17, 10, 0), country_code="MX", local_currency="MXN"
     )

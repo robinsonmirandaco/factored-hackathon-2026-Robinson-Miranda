@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 from fastapi.testclient import TestClient
 
 from app.adapters.llm import TRANSLATE_SYSTEM, LLMClient
@@ -15,6 +15,7 @@ from app.domain.policy import PolicyEngine, initial_autonomy
 from app.domain.policy_passages import load_passages
 from app.main import load_identification
 from app.services.agent import AgentDeps
+from tests.llm_support import anthropic_http, message, request_parts
 
 
 def llm_settings(database_url: str, **overrides: Any) -> Settings:
@@ -22,10 +23,10 @@ def llm_settings(database_url: str, **overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "database_url": database_url,
         "llm_enabled": True,
-        "llm_provider": "local",
-        "llm_base_url": "http://llm.test/v1",
+        "anthropic_api_key": "test-key",
         "llm_model_primary": "test-model",
-        "anthropic_api_key": "",
+        "llm_retry_wait_seconds": 0.0,
+        "llm_warm_up": False,
     }
     values.update(overrides)
     return Settings(**values)
@@ -54,27 +55,21 @@ def fake_llm(
     client: LLMClient
 
     def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
+        system, user, body = request_parts(request)
         if sent is not None:
             sent.append(json.dumps(body, ensure_ascii=False))
-        system = body["messages"][0]["content"]
-        user = body["messages"][1]["content"]
         if system.startswith(client.comprehension_prompt.system[:40]):
-            message = user.split("Message: ", 1)[1]
-            content = json.dumps(answer(message) if callable(answer) else answer)
+            said = user.split("Message: ", 1)[1]
+            content = json.dumps(answer(said) if callable(answer) else answer)
         elif system == TRANSLATE_SYSTEM:
             content = translation
         elif callable(reply):
             content = reply(json.loads(user.split("Facts (JSON): ", 1)[1]))
         else:
             content = reply
-        usage = {"prompt_tokens": 120, "completion_tokens": 30}
-        return httpx.Response(
-            200, json={"choices": [{"message": {"content": content}}], "usage": usage}
-        )
+        return message(content)
 
-    http = httpx.Client(base_url=settings.llm_base_url, transport=httpx.MockTransport(handler))
-    client = LLMClient(settings, http_client=http)
+    client = LLMClient(settings, http_client=anthropic_http(handler))
     return client
 
 

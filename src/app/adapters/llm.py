@@ -1,7 +1,8 @@
 """LLM client and its deterministic fallbacks.
 
-Two providers, chosen by settings: Claude through the Anthropic SDK, or a local model behind an
-OpenAI-compatible endpoint (Docker Model Runner, Ollama). Prompts and fallbacks are shared.
+Claude through the Anthropic SDK. Each attempt has a 5 s deadline; the LLM is retried at most
+once per customer turn, across all its calls, and a turn whose LLM failed with its retry spent
+makes no further call (TRZ-36). A warm-up call at startup pays the cost of a cold call.
 
 Calls:
   comprehend(text, ctx)    -> Comprehension of design 6.1; the rules baseline is its fallback
@@ -18,10 +19,10 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
 import yaml
 from anthropic import transform_schema
 from pydantic import ValidationError
@@ -231,17 +232,41 @@ analyst. Keep every placeholder in brackets, such as [NAME] or [CARD], exactly a
 nothing: no explanation, no greeting, no note. Output only the translation."""
 
 
-class LLMClient:
-    """LLM client with timeout, one bounded retry and deterministic fallbacks."""
+@dataclass
+class TurnBudget:
+    """How much the LLM may still be retried in one customer turn (TRZ-36 CA3).
 
-    def __init__(self, settings: Settings, http_client: httpx.Client | None = None) -> None:
-        """Creates the provider client when the LLM is enabled and configured.
+    Comprehension, reply and translation share it: the LLM is retried at most once per turn,
+    and once it has failed with its retry spent, no further call is made in that turn.
+
+    Attributes:
+        retries_left: Retries still allowed in the turn.
+        down: The LLM failed with no retry left; the rest of the turn uses the fallbacks.
+    """
+
+    retries_left: int = 1
+    down: bool = False
+
+
+# A synthetic message for the warm-up call, written for it: no evaluation case repeats it.
+WARM_UP_MESSAGE = "Hola, quiero revisar un movimiento de mi tarjeta."
+WARM_UP_TIMEOUT_SECONDS = 15.0
+
+
+class LLMClient:
+    """Claude through the Anthropic SDK, with a timeout per attempt, one retry per turn and
+    deterministic fallbacks."""
+
+    provider = "anthropic"
+
+    def __init__(self, settings: Settings, http_client: Any = None) -> None:
+        """Creates the SDK client when the LLM is enabled and has a key.
 
         Args:
-            settings: Application settings (provider, model, timeout, retries, key, base URL).
-            http_client: Client for the local provider; built from settings when omitted.
+            settings: Application settings (model, timeout, retries, key, prices).
+            http_client: HTTP client of the SDK's own httpx fork (httpx2); tests pass one with a
+                simulated transport.
         """
-        self.provider = settings.llm_provider
         self.model = settings.llm_model_primary
         self.comprehension_prompt = load_comprehension_prompt(
             settings.llm_comprehension_prompt_path
@@ -249,36 +274,37 @@ class LLMClient:
         self._price_in = settings.llm_price_input_per_mtok
         self._price_out = settings.llm_price_output_per_mtok
         self._max_retries = settings.llm_max_retries
-        # httpx timeouts bound each network phase, not the whole call, so a slow server can
-        # hold a turn far longer than the design's 5 s. The pool enforces a wall-clock deadline.
-        self._deadline_seconds = settings.llm_timeout_seconds * (settings.llm_max_retries + 1)
+        self._timeout = settings.llm_timeout_seconds
+        self._retry_wait = settings.llm_retry_wait_seconds
         self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm")
         self._client: Any = None
-        self._http: httpx.Client | None = None
-        if not settings.llm_enabled:
+        if not settings.llm_enabled or not settings.anthropic_api_key:
             return
-        if self.provider == "local":
-            if settings.llm_base_url:
-                self._http = http_client or httpx.Client(
-                    base_url=settings.llm_base_url.rstrip("/"),
-                    timeout=settings.llm_timeout_seconds,
-                )
-        elif settings.anthropic_api_key:
-            try:
-                import anthropic
+        try:
+            import anthropic
 
-                self._client = anthropic.Anthropic(
-                    api_key=settings.anthropic_api_key,
-                    timeout=settings.llm_timeout_seconds,
-                    max_retries=settings.llm_max_retries,
-                )
-            except Exception as exc:  # pragma: no cover
-                log.error("llm_init_failed", error=type(exc).__name__)
+            # The SDK does not retry: this client does, so one retry per turn is countable.
+            self._client = anthropic.Anthropic(
+                api_key=settings.anthropic_api_key,
+                timeout=settings.llm_timeout_seconds,
+                max_retries=0,
+                http_client=http_client,
+            )
+        except Exception as exc:  # pragma: no cover
+            log.error("llm_init_failed", error=type(exc).__name__)
 
     @property
     def available(self) -> bool:
         """True when real LLM calls can be made."""
-        return self._client is not None or self._http is not None
+        return self._client is not None
+
+    def new_turn(self) -> TurnBudget:
+        """The retry budget of one customer turn.
+
+        Returns:
+            A budget with the configured retries.
+        """
+        return TurnBudget(retries_left=self._max_retries)
 
     def _call(
         self,
@@ -289,28 +315,49 @@ class LLMClient:
         *,
         schema: dict[str, Any] | None = None,
         prompt_version: str | None = None,
+        budget: TurnBudget | None = None,
+        timeout: float | None = None,
     ) -> tuple[str, LLMCallStats]:
+        """One LLM request, retried once within the turn's budget when the failure is transient.
+
+        Retried: a timeout, a connection error, 429 and 5xx (529 overloaded included). Not
+        retried: any other 4xx, which another attempt cannot fix, and a 429 whose Retry-After
+        is longer than the wait allowed. Each attempt has its own wall-clock deadline, because
+        httpx timeouts bound each network phase and a slow server could hold the turn longer.
+        """
+        budget = budget or self.new_turn()
         stats = LLMCallStats(
             model=self.model, prompt_version=prompt_version or prompt_version_of(system)
         )
-        if not self.available:
+        if not self.available or budget.down:
             stats.fallback = True
-            stats.error = "llm_disabled"
+            stats.error = "llm_disabled" if not self.available else "llm_down_this_turn"
             return "", stats
         t0 = time.perf_counter()
-        complete = self._complete_local if self._http is not None else self._complete_anthropic
-        try:
-            future = self._pool.submit(complete, system, user, max_tokens, temperature, schema)
-            text, usage = future.result(timeout=self._deadline_seconds)
-            stats.input_tokens, stats.output_tokens = usage[0], usage[1]
-            stats.cache_write_tokens, stats.cache_read_tokens = usage[2], usage[3]
-        except Exception as exc:
-            stats.fallback = True
-            stats.error = type(exc).__name__
-            log.warning("llm_call_failed", provider=self.provider, error=stats.error)
-            text = ""
+        text = ""
+        while True:
+            stats.calls += 1
+            try:
+                future = self._pool.submit(
+                    self._complete, system, user, max_tokens, temperature, schema
+                )
+                text, usage = future.result(timeout=timeout or self._timeout)
+                stats.input_tokens, stats.output_tokens = usage[0], usage[1]
+                stats.cache_write_tokens, stats.cache_read_tokens = usage[2], usage[3]
+                stats.error = None
+                break
+            except Exception as exc:
+                stats.error = type(exc).__name__
+                log.warning("llm_call_failed", error=stats.error, attempt=stats.calls)
+                if _retryable(exc, self._retry_wait) and budget.retries_left > 0:
+                    budget.retries_left -= 1
+                    time.sleep(self._retry_wait)
+                    continue
+                budget.down = True
+                stats.fallback = True
+                text = ""
+                break
         stats.latency_ms = int((time.perf_counter() - t0) * 1000)
-        stats.calls = 1
         # Anthropic list prices: a cache write costs 1.25 times an input token, a read 0.1 times.
         billed_input = (
             stats.input_tokens + 1.25 * stats.cache_write_tokens + 0.1 * stats.cache_read_tokens
@@ -328,11 +375,12 @@ class LLMClient:
             cache_read_tokens=stats.cache_read_tokens,
             latency_ms=stats.latency_ms,
             cost_usd=round(stats.cost_usd, 6),
+            attempts=stats.calls,
             failed=stats.fallback,
         )
         return text, stats
 
-    def _complete_anthropic(
+    def _complete(
         self,
         system: str,
         user: str,
@@ -340,9 +388,8 @@ class LLMClient:
         temperature: float | None,
         schema: dict[str, Any] | None,
     ) -> tuple[str, tuple[int, int, int, int]]:
-        # The SDK applies the timeout and the bounded retry configured in __init__. SDK 1.x
-        # dropped `temperature` from its signature; models before Opus 4.7, such as Haiku 4.5,
-        # still accept it in the request body.
+        # SDK 1.x dropped `temperature` from its signature; models before Opus 4.7, such as
+        # Haiku 4.5, still accept it in the request body.
         extra: dict[str, Any] = {}
         if temperature is not None:
             extra["extra_body"] = {"temperature": temperature}
@@ -361,44 +408,30 @@ class LLMClient:
         cached = (u.cache_creation_input_tokens or 0, u.cache_read_input_tokens or 0)
         return text, (u.input_tokens, u.output_tokens, *cached)
 
-    def _complete_local(
-        self,
-        system: str,
-        user: str,
-        max_tokens: int,
-        temperature: float | None,
-        schema: dict[str, Any] | None,
-    ) -> tuple[str, tuple[int, int, int, int]]:
-        # Local servers differ in how they constrain output, so the schema is left to the
-        # prompt and to the validation that follows.
-        assert self._http is not None
-        body: dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }
-        if temperature is not None:
-            body["temperature"] = temperature
-        for attempt in range(self._max_retries + 1):
-            try:
-                response = self._http.post("/chat/completions", json=body)
-                response.raise_for_status()
-                break
-            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
-                # Same policy as the SDK: retry timeouts, network errors, 429 and 5xx only.
-                retryable = not isinstance(exc, httpx.HTTPStatusError) or (
-                    exc.response.status_code == 429 or exc.response.status_code >= 500
-                )
-                if not retryable or attempt == self._max_retries:
-                    raise
-        data = response.json()
-        usage = data.get("usage") or {}
-        text = data["choices"][0]["message"]["content"] or ""
-        tokens = int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0))
-        return text, (*tokens, 0, 0)
+    def warm_up(self) -> None:
+        """One comprehension call with a fixed synthetic message, run at startup (TRZ-36).
+
+        A cold call with structured output took 7.5 s, over the 5 s timeout, so the first
+        customer turn after a deploy would fall to the rules. This call pays that cost instead,
+        with a longer deadline. The message is written for it and repeats no evaluation case.
+        """
+        context = ComprehensionContext(
+            now=datetime(2026, 6, 17, 12, 0), country_code="MX", local_currency="MXN"
+        )
+        user = comprehension_user(WARM_UP_MESSAGE, context.country_code, context.local_currency)
+        _, stats = self._call(
+            self.comprehension_prompt.system,
+            user,
+            max_tokens=600,
+            temperature=0.0,
+            schema=READING_SCHEMA,
+            prompt_version=self.comprehension_prompt.version,
+            budget=TurnBudget(retries_left=0),
+            timeout=WARM_UP_TIMEOUT_SECONDS,
+        )
+        log.info(
+            "llm_warm_up", ok=not stats.fallback, latency_ms=stats.latency_ms, error=stats.error
+        )
 
     def complete(
         self, system: str, user: str, max_tokens: int, temperature: float
@@ -420,7 +453,10 @@ class LLMClient:
         return self._call(system, user, max_tokens, temperature)
 
     def read_clues(
-        self, redacted_text: str, context: ComprehensionContext
+        self,
+        redacted_text: str,
+        context: ComprehensionContext,
+        budget: TurnBudget | None = None,
     ) -> tuple[Comprehension | None, LLMCallStats]:
         """Reads intent and clues with the LLM, before the faithfulness check.
 
@@ -430,26 +466,32 @@ class LLMClient:
         Args:
             redacted_text: Customer message with PII already replaced.
             context: Simulated "now" and the customer's country and currency.
+            budget: Retry budget of the turn; a fresh one when omitted.
 
         Returns:
             The comprehension, or None when the LLM failed or answered invalid output twice,
             and the call stats.
         """
-        reading, stats = self.read_raw(redacted_text, context)
+        reading, stats = self.read_raw(redacted_text, context, budget)
         return (None if reading is None else resolve_reading(reading, context)), stats
 
     def read_raw(
-        self, redacted_text: str, context: ComprehensionContext
+        self,
+        redacted_text: str,
+        context: ComprehensionContext,
+        budget: TurnBudget | None = None,
     ) -> tuple[ComprehensionReading | None, LLMCallStats]:
         """Reads intent and clues as the model states them, with the date still unresolved.
 
         The output is constrained to the reading schema and validated by Pydantic; an invalid
-        one gets a single stricter retry. The evaluation cache keeps this form, so a change to
-        the window table applies to cached answers without calling the model again.
+        one gets a stricter retry when the turn still has one (TRZ-36 CA3). The evaluation cache
+        keeps this form, so a change to the window table applies to cached answers without
+        calling the model again.
 
         Args:
             redacted_text: Customer message with PII already replaced.
             context: Simulated "now" and the customer's country and currency.
+            budget: Retry budget of the turn; a fresh one when omitted.
 
         Returns:
             The reading, or None when the LLM failed or answered invalid output twice, and the
@@ -459,7 +501,8 @@ class LLMClient:
         user = comprehension_user(redacted_text, context.country_code, context.local_currency)
         system = prompt.system
         stats = LLMCallStats(model=self.model, prompt_version=prompt.version)
-        for _ in range(2):
+        budget = budget or self.new_turn()
+        while True:
             raw, call = self._call(
                 system,
                 user,
@@ -467,24 +510,30 @@ class LLMClient:
                 temperature=0.0,
                 schema=READING_SCHEMA,
                 prompt_version=prompt.version,
+                budget=budget,
             )
             stats.add(call)
             if call.fallback:
-                # Timeouts and transport errors were already retried by the provider client.
+                # Timeouts and transport errors were already retried within the budget.
                 stats.error = call.error
                 return None, stats
             try:
                 reading = ComprehensionReading.model_validate_json(_strip_fence(raw))
             except ValidationError as exc:
                 stats.error = f"invalid_json:{type(exc).__name__}"
+                if budget.retries_left == 0:
+                    return None, stats
+                budget.retries_left -= 1
                 system = prompt.system + "\nYour previous output was not valid. Output JSON only."
                 continue
             stats.error = None
             return reading, stats
-        return None, stats
 
     def comprehend(
-        self, redacted_text: str, context: ComprehensionContext
+        self,
+        redacted_text: str,
+        context: ComprehensionContext,
+        budget: TurnBudget | None = None,
     ) -> tuple[Comprehension, LLMCallStats]:
         """Reads intent and clues; the rules baseline answers when the LLM cannot.
 
@@ -494,12 +543,13 @@ class LLMClient:
         Args:
             redacted_text: Customer message with PII already replaced.
             context: Simulated "now" and the customer's country and currency.
+            budget: Retry budget of the turn; a fresh one when omitted.
 
         Returns:
             The comprehension and the call stats; `stats.fallback` is set when the rules
             produced it.
         """
-        reading, stats = self.read_clues(redacted_text, context)
+        reading, stats = self.read_clues(redacted_text, context, budget)
         if reading is None:
             stats.fallback = True
             log.warning("comprehension_fallback_to_rules", error=stats.error)
@@ -527,7 +577,11 @@ class LLMClient:
         return text.strip(), stats
 
     def compose(
-        self, redacted_text: str, facts: dict[str, Any], language: str
+        self,
+        redacted_text: str,
+        facts: dict[str, Any],
+        language: str,
+        budget: TurnBudget | None = None,
     ) -> tuple[str, LLMCallStats]:
         """Writes the customer reply from facts.
 
@@ -538,6 +592,7 @@ class LLMClient:
             redacted_text: Customer message with PII already replaced.
             facts: What the system did, as decided by code.
             language: Reply language.
+            budget: Retry budget of the turn; a fresh one when omitted.
 
         Returns:
             The reply (LLM or template) and the call stats.
@@ -546,7 +601,7 @@ class LLMClient:
             f"Customer language: {language}\nCustomer message: {redacted_text}\n"
             f"Facts (JSON): {json.dumps(facts, ensure_ascii=False)}"
         )
-        reply, stats = self._call(COMPOSE_SYSTEM, user, max_tokens=300)
+        reply, stats = self._call(COMPOSE_SYSTEM, user, max_tokens=300, budget=budget)
         if stats.fallback or not reply.strip():
             stats.fallback = True
             return template_reply(facts, language), stats
@@ -824,3 +879,22 @@ def _strip_fence(s: str) -> str:
         if s.startswith("json"):
             s = s[4:]
     return s.strip()
+
+
+def _retryable(exc: Exception, wait: float) -> bool:
+    """Whether another attempt may succeed: a transient failure, not a request the provider
+    rejects."""
+    import anthropic
+
+    if isinstance(exc, TimeoutError | anthropic.APIConnectionError):
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        status = exc.status_code
+        if status == 429:
+            after = exc.response.headers.get("retry-after")
+            try:
+                return after is None or float(after) <= wait
+            except ValueError:
+                return False
+        return status >= 500
+    return False

@@ -6,6 +6,7 @@ Stack traces are logged, never sent to the client.
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging import get_logger, trace_id_var
@@ -63,6 +64,20 @@ async def _http_error(_request: Request, exc: Exception) -> JSONResponse:
     return error_response(exc.status_code, f"http_{exc.status_code}", str(exc.detail))
 
 
+# Said to the customer, in both languages of the service, when the database cannot be reached:
+# the request's language cannot be known without the database (TRZ-36 CA2).
+MAINTENANCE = (
+    "Estamos en mantenimiento. No se hizo ningún cambio; intenta de nuevo en unos minutos. / "
+    "Estamos em manutenção. Nenhuma alteração foi feita; tente novamente em alguns minutos."
+)
+
+
+async def _db_unreachable(_request: Request, exc: Exception) -> JSONResponse:
+    # The audit log lives in the database that failed, so the failure is only logged here.
+    log.error("db_unavailable", error=type(exc).__name__)
+    return error_response(503, "db_unavailable", MAINTENANCE)
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """Installs the handlers that map every known exception type to the error envelope.
 
@@ -75,3 +90,6 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, _app_error)
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(StarletteHTTPException, _http_error)
+    # A lost connection rolls the request's transaction back: no action is left half done.
+    app.add_exception_handler(OperationalError, _db_unreachable)
+    app.add_exception_handler(InterfaceError, _db_unreachable)

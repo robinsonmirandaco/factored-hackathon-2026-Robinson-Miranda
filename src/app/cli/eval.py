@@ -62,6 +62,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app.adapters.db.session import Database, SchemaUrls, isolated_schema
+from app.adapters.llm import LLMClient
 from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger
 from app.core.time import utcnow
@@ -425,7 +426,7 @@ def write_report(results: list[CaseResult], summary: dict[str, Any], out_dir: st
     meta = {
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
         "llm_enabled": os.getenv("LLM_ENABLED", "true"),
-        "llm_provider": settings.llm_provider,
+        "llm_provider": LLMClient.provider,
         "llm_model": settings.llm_model_primary,
         "fact_check_enabled": settings.fact_check_enabled,
     }
