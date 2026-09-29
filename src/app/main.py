@@ -41,6 +41,7 @@ def load_identification(settings: Settings, policy: PolicyEngine) -> dict[str, P
 
     Raises:
         PolicyError: If the policy's alpha or option limit differ from the identification's.
+        ValueError: If the parameters were fitted with other amount tolerances (`load_params`).
     """
     with open(settings.identification_path, encoding="utf-8") as f:
         fitted_alpha = float(yaml.safe_load(f)["alpha"])

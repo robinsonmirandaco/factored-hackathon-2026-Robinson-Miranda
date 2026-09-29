@@ -35,6 +35,7 @@ from app.core.logging import configure_logging, get_logger
 from app.domain.comprehension_rules import RULES_VERSION, comprehend_rules
 from app.domain.fx import Rates
 from app.domain.identification import (
+    AMOUNT_TOLERANCE,
     COMPONENTS,
     Candidate,
     Params,
@@ -69,7 +70,7 @@ REPORT_PATH = Path("docs/reports/identificacion.md")
 POLICY_PATH = Path("config/policy.yaml")
 # The service reads the same value, so the evaluated candidates are the served ones.
 WINDOW_DAYS = load_policy(POLICY_PATH).dispute_window_days
-VERSION = "identification-2"
+VERSION = "identification-3"
 ALPHA = 0.05
 WEIGHT_STEP = 0.1
 TEMPERATURE_RANGE = (0.01, 10.0)
@@ -637,12 +638,30 @@ def summarize(outs: Sequence[Outcome]) -> dict[str, Any]:
     }
 
 
+def amount_form(case: CaseRecord) -> str:
+    """How the first message states the amount, as the case generator drew it.
+
+    Args:
+        case: Evaluation case.
+
+    Returns:
+        exact, rounded, about, more_than, or none when the amount is not in the message.
+    """
+    amount = case.noise.amount
+    if not amount.mentioned or amount.form is None:
+        return "none"
+    if amount.form == "approximate" and amount.qualifier is not None:
+        return amount.qualifier
+    return amount.form
+
+
 _DECISIONS = ("identified", "show_options", "ask_for_detail", "not_found")
 GROUPS: dict[str, Callable[[CaseRecord], str]] = {
     "language": lambda c: c.language,
     "variant": lambda c: c.variant,
     "segment": lambda c: c.truth.segment,
     "category": lambda c: c.category,
+    "amount form": amount_form,
 }
 
 
@@ -852,6 +871,7 @@ def fit_command(settings: PipelineSettings, budget_usd: float, out: Path = CONFI
         "version": VERSION,
         "alpha": ALPHA,
         "unit": "base case, largest nonconformity of its four variants",
+        "amount_tolerance": dict(AMOUNT_TOLERANCE),
         "fitted_on": {
             "weights_and_temperature": "dev",
             "reject_below": "dev, no_match included",
@@ -1074,6 +1094,9 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         f"- Development split sha256 `{config['fitted_on']['dev_sha256']}`",
         f"- Calibration split sha256 `{config['fitted_on']['calibration_sha256']}`",
         f"- Case generator seed: {meta['seed']}; policy version: {meta['policy_version']}",
+        f"- Amount tolerance (log scale): exact or rounded "
+        f"{config['amount_tolerance']['exact']:.4f}, approximate "
+        f"{config['amount_tolerance']['approximate']:.4f}; see Amount tolerance below",
         f"- LLM spend of this run: {meta['llm_spend_usd']:.4f} USD new; the "
         f"{meta['cached_requests']} cached LLM readings it used cost "
         f"{meta['cached_cost_usd']:.4f} USD when first requested; total recorded in the "
@@ -1344,6 +1367,28 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         cal = results[name]["runs"][0]["calibration"]
         lines.append(f"| {name} | {cal['true_missing']} | {cal['not_convertible']} |")
     lines += [
+        "",
+        "## Amount tolerance",
+        "",
+        "- **Derivation.** Each tolerance is the largest log deviation the declared noise model "
+        "of the case generator (`config/cases.yaml`, `pipeline/cases/noise.py`) gives the "
+        "statements comprehension reads that way. Rounding to two significant digits deviates "
+        'at most ln 1.05 (0.0488); one digit to the nearest ("about") at most ln 1.5 '
+        '(0.405); one digit rounded down ("more than") at most ln 2 (0.693). Comprehension '
+        "reads both hedges as approximate, so the approximate tolerance is ln 2, and the true "
+        "charge costs at most one unit of the amount component at the worst declared "
+        "deviation. A unit test checks the bound against the generator. Up to "
+        "`identification-2` the approximate tolerance was 0.35, below both hedged bounds.",
+        "- **Provenance.** The inconsistency was noticed while reviewing one case of the test "
+        "split during the preparation of the curated cases (story TRZ-42), before any run on "
+        "the test split. Nothing was fitted, tuned or checked on that case, and it stays in "
+        "the test split like any other. The tolerance comes from the definition of the noise "
+        "model, not from results; the refit and this report use only the development and "
+        "calibration splits, and the test split stayed locked until a later commit, the last "
+        "of story TRZ-55.",
+        "- **Limit.** The tolerance is derived from the noise model of the synthetic case "
+        "generator, not from how real customers approximate amounts. Real customers may "
+        "deviate more, and a larger deviation counts as evidence against the true charge.",
         "",
         "## Pending until the test split is frozen",
         "",

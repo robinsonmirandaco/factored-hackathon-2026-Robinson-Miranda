@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from app.domain.identification import (
     COMPONENTS,
@@ -122,7 +123,7 @@ def test_amount_closeness_is_on_a_log_scale_with_a_tolerance_per_form() -> None:
 
     assert exact["amount"] == 0.0
     assert near["amount"] == pytest.approx(-math.log(1.05) / 0.05)
-    assert hedged["amount"] == pytest.approx(-math.log(1.05) / 0.35)
+    assert hedged["amount"] == pytest.approx(-math.log(1.05) / math.log(2))
     assert far["amount"] == -4.0
     assert exact["currency"] == 1.0
 
@@ -234,10 +235,24 @@ def test_the_button_checks_the_chosen_charge_is_a_candidate() -> None:
 def test_the_fitted_parameters_are_versioned_per_comprehension() -> None:
     for name in ("rules", "llm"):
         params = load_params(Path("config/identification.yaml"), name)
-        assert params.version == "identification-2" and params.comprehension == name
+        assert params.version == "identification-3" and params.comprehension == name
         assert sum(params.weights.values()) == pytest.approx(1.0)
         assert params.temperature > 0 and 0 < params.qhat <= 1
         assert math.isfinite(params.reject_below)
+
+
+@pytest.mark.parametrize("tolerance", [None, {"exact": 0.05, "approximate": 0.35}])
+def test_parameters_fitted_with_another_amount_tolerance_are_refused(
+    tmp_path: Path, tolerance: dict[str, float] | None
+) -> None:
+    config = yaml.safe_load(Path("config/identification.yaml").read_text(encoding="utf-8"))
+    config.pop("amount_tolerance")
+    if tolerance is not None:
+        config["amount_tolerance"] = tolerance
+    path = tmp_path / "identification.yaml"
+    path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="amount tolerance"):
+        load_params(path, "rules")
 
 
 def test_a_best_candidate_below_the_threshold_empties_the_set() -> None:

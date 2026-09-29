@@ -2,9 +2,12 @@
 # do not edit by hand. Weights, temperature and the rejection threshold come from the
 # development split and q-hat from the accepted calibration cases, once per
 # comprehension. A new fit is a new version.
-version: identification-2
+version: identification-3
 alpha: 0.05
 unit: base case, largest nonconformity of its four variants
+amount_tolerance:
+  exact: 0.05
+  approximate: 0.6931471805599453
 fitted_on:
   weights_and_temperature: dev
   reject_below: dev, no_match included
@@ -22,10 +25,10 @@ comprehension:
       merchant: 0.4
       channel: 0.2
       currency: 0.0
-    temperature: 0.04623128372016089
+    temperature: 0.04621891668277176
     qhat: 0.8
     reject_below: -0.8285663834709383
-    dev_mean_nll: 0.28203047518511803
+    dev_mean_nll: 0.2820313521034639
     dev_cases: 496
     dev_real_rejected: 0
     dev_no_match_cases: 32
@@ -39,10 +42,10 @@ comprehension:
       merchant: 0.5
       channel: 0.2
       currency: 0.0
-    temperature: 0.04297300161705705
+    temperature: 0.04295988524913415
     qhat: 0.8
     reject_below: -0.3613397660312458
-    dev_mean_nll: 0.28886709995870197
+    dev_mean_nll: 0.28886809521931406
     dev_cases: 496
     dev_real_rejected: 0
     dev_no_match_cases: 32
