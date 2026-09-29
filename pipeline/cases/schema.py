@@ -294,9 +294,9 @@ class CaseRecord(BaseCase):
         language: es or pt.
         message: First message of the customer.
         non_native_writer: Handwritten by someone who is not a native speaker of the variant.
-        message_source: llm, template (LLM output rejected or unavailable), handwritten
-            (dictated by the author: ES-CO) or assisted (the other variants of a handwritten
-            case, written with assistance and approved by the author).
+        message_source: llm, template (LLM output rejected or unavailable) or assisted (every
+            variant of a handwritten case, written with assistance and edited or approved by
+            the author).
         versions: Generator, templates, prompt and model that produced the message.
     """
 
@@ -305,5 +305,5 @@ class CaseRecord(BaseCase):
     language: Literal["es", "pt"]
     message: str
     non_native_writer: bool = False
-    message_source: Literal["llm", "template", "handwritten", "assisted"]
+    message_source: Literal["llm", "template", "assisted"]
     versions: dict[str, str]
