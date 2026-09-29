@@ -502,6 +502,75 @@
     "prompt": "b-1",
     "templates": "b-1"
    }
+  },
+  "test_handwritten": {
+   "base_cases": 15,
+   "by_category": {
+    "ambiguous": 2,
+    "billing_amount": 1,
+    "duplicate_pending": 1,
+    "fraud_card_lost": 1,
+    "high_amount": 1,
+    "injection": 1,
+    "missing_data": 1,
+    "multilingual": 2,
+    "no_match": 1,
+    "normal": 2,
+    "out_of_scope": 1,
+    "recognized": 1
+   },
+   "by_channel": {
+    "ATM": 6,
+    "App": 2,
+    "POS": 6,
+    "Web": 1
+   },
+   "by_country": {
+    "AR": 5,
+    "CO": 2,
+    "MX": 8
+   },
+   "by_expected_action": {
+    "abstain_and_redirect": 1,
+    "escalate": 2,
+    "explain_and_watch": 1,
+    "recognized_closed": 1,
+    "register": 1,
+    "register_and_block": 1,
+    "register_and_offer_block": 7,
+    "security_blocked": 1
+   },
+   "by_message_source": {
+    "assisted": 60
+   },
+   "by_provenance": {
+    "handwritten": 15
+   },
+   "by_segment": {
+    "Basic": 10,
+    "Plus": 5
+   },
+   "by_transaction_type": {
+    "Payment": 2,
+    "Purchase": 7,
+    "Withdrawal": 6
+   },
+   "by_variant": {
+    "es-AR": 15,
+    "es-CO": 15,
+    "es-MX": 15,
+    "pt-BR": 15
+   },
+   "cases": 60,
+   "customers": 15,
+   "file": "DATA_DIR/eval/test_handwritten.jsonl",
+   "non_native_cases": 30,
+   "sha256": "eae92d95b724570885c29ccb6ff62bc8f8ae4e8466566de9fac4d39118b4be87",
+   "versions": {
+    "author": "handwritten",
+    "config": "1",
+    "generator": "1"
+   }
   }
  }
 }
