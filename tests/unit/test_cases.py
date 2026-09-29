@@ -2,8 +2,10 @@
 
 import ast
 import json
+import math
 import random
 import tempfile
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +14,7 @@ import yaml
 
 from app.adapters.llm import LLMCallStats
 from app.domain.clock import SimulatedClock
+from app.domain.identification import AMOUNT_TOLERANCE
 from pipeline.cases import handwritten
 from pipeline.cases.labels import LabelRules, expected_action
 from pipeline.cases.noise import (
@@ -223,6 +226,41 @@ def test_every_stated_amount_is_compatible_with_the_true_one() -> None:
     ) in forms
 
 
+@pytest.mark.parametrize(
+    ("form", "more_than", "read_as", "sets_the_bound"),
+    [
+        ("exact", 0.0, "exact", False),
+        ("rounded", 0.0, "exact", True),
+        ("approximate", 0.0, "approximate", False),
+        ("approximate", 1.0, "approximate", True),
+    ],
+)
+def test_the_amount_tolerance_is_the_worst_deviation_of_the_declared_noise(
+    form: str, more_than: float, read_as: str, sets_the_bound: bool
+) -> None:
+    # TRZ-55: exact and rounded amounts are read as exact, both hedges as approximate. The
+    # tolerance covers every form read that way and is not looser than the worst of them.
+    noise = replace(
+        NOISE, amount_form={form: 1.0}, approximate_more_than=more_than, amount_local_currency=0.0
+    )
+    steps = 10_000
+    worst = 0.0
+    for i in range(steps):
+        # One decade is enough: rounding to significant digits deviates the same at any scale.
+        amount = round(10 ** (2 + i / steps), 2)
+        clue = draw_amount(_truth(amount=amount), random.Random(i), noise, True)
+        assert clue.form == form
+        worst = max(worst, abs(math.log(clue.value / amount)))
+    assert worst <= AMOUNT_TOLERANCE[read_as]
+    if sets_the_bound:
+        assert worst > 0.95 * AMOUNT_TOLERANCE[read_as]
+    if form == "approximate" and more_than == 0.0:
+        # The cost of one tolerance for both hedges: "about" never goes past ln 1.5, so it is
+        # scored with a tolerance about 1.71 times its own worst case.
+        assert worst == pytest.approx(math.log(1.5), rel=0.01)
+        assert worst < AMOUNT_TOLERANCE["approximate"]
+
+
 def test_date_windows_always_contain_the_true_date() -> None:
     today = date(2026, 3, 20)
     for back in range(0, 60):
@@ -402,10 +440,10 @@ def test_a_frozen_held_out_stays_locked_unless_the_config_opens_it(
         load_split(tmp_path, "test", manifest, _cases_config(tmp_path, config))
 
 
-def test_the_repository_config_keeps_the_held_out_locked(ctx: Context, tmp_path: Path) -> None:
-    manifest, _ = _frozen_test_split(ctx, tmp_path)
-    with pytest.raises(HeldOutLocked):
-        load_split(tmp_path, "test", manifest, ROOT / "config" / "cases.yaml")
+def test_the_repository_config_opens_the_held_out(ctx: Context, tmp_path: Path) -> None:
+    # TRZ-55 opened it after refitting identification with the derived amount tolerance.
+    manifest, count = _frozen_test_split(ctx, tmp_path)
+    assert len(load_split(tmp_path, "test", manifest, ROOT / "config" / "cases.yaml")) == count
 
 
 def test_dev_and_calibration_load_without_the_held_out(ctx: Context, tmp_path: Path) -> None:

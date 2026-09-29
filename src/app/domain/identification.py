@@ -29,9 +29,13 @@ COMPONENTS = ("amount", "date", "merchant", "channel", "currency")
 MAX_OPTIONS = 3
 
 # Fixed scales, not fitted: they put the components on comparable units so the fitted weights
-# stay readable. A plain amount is often rounded to two significant digits (up to ~5% off); a
-# hedged one keeps one digit or says "more than", so it can be off by half or double.
-AMOUNT_TOLERANCE = {"exact": 0.05, "approximate": 0.35}
+# stay readable. Each amount tolerance is the largest log deviation the case generator's noise
+# model (pipeline/cases/noise.py) gives the statements read that way, so the true charge costs
+# at most one unit at the worst declared deviation (TRZ-55). A plain amount is exact or rounded
+# to two significant digits: up to ln 1.05, about 0.049. A hedged one keeps one digit, to the
+# nearest ("about", up to ln 1.5) or down ("more than", up to ln 2); comprehension reads both
+# as approximate, so it takes the larger. Real customers may round further than this model.
+AMOUNT_TOLERANCE = {"exact": 0.05, "approximate": math.log(2)}
 DATE_SCALE_DAYS = 3.0
 # A far-off amount or date is evidence against a candidate, but one clue read wrong must not
 # rule the true charge out on its own.
@@ -389,8 +393,17 @@ def load_params(path: Path, comprehension: str) -> Params:
 
     Returns:
         The parameters.
+
+    Raises:
+        ValueError: If the file was fitted with other amount tolerances than the code scores
+            with: its weights, temperature and q-hat would not describe the served scores.
     """
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if config.get("amount_tolerance") != AMOUNT_TOLERANCE:
+        raise ValueError(
+            f"{path} was fitted with amount tolerance {config.get('amount_tolerance')}, "
+            f"the code scores with {AMOUNT_TOLERANCE}: fit the identification again"
+        )
     fitted = config["comprehension"][comprehension]
     return Params(
         version=str(config["version"]),
