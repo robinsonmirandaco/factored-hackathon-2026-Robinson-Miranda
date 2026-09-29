@@ -769,8 +769,10 @@ def load_inputs(settings: PipelineSettings, budget_usd: float) -> Inputs:
     """
     eval_dir = settings.data_dir / "eval"
     manifest = read_manifest(settings.cases_manifest_path)
-    dev_all = load_split(eval_dir, "dev", settings.cases_manifest_path)
-    cal_all = load_split(eval_dir, "calibration", settings.cases_manifest_path)
+    dev_all = load_split(eval_dir, "dev", settings.cases_manifest_path, settings.cases_config_path)
+    cal_all = load_split(
+        eval_dir, "calibration", settings.cases_manifest_path, settings.cases_config_path
+    )
     no_match = [c for c in dev_all if c.category == "no_match"]
     dev = [c for c in dev_all if in_population(c)]
     cal = [c for c in cal_all if in_population(c)]

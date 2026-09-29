@@ -252,7 +252,9 @@ def run(settings: PipelineSettings, out: Path) -> dict[str, Any]:
         The scores.
     """
     manifest = read_manifest(settings.cases_manifest_path)
-    cases = load_split(settings.data_dir / "eval", "dev", settings.cases_manifest_path)
+    cases = load_split(
+        settings.data_dir / "eval", "dev", settings.cases_manifest_path, settings.cases_config_path
+    )
     single = {
         "detector": score(cases, detector),
         "turn_rules": score(cases, lambda c: turn(c, None)),

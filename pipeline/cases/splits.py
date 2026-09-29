@@ -13,7 +13,9 @@ to write a block that differs from its frozen hash unless told to refreeze.
 
 `load_split` is the only way into a split. It refuses a file whose hash is not the committed
 one, and it refuses the held-out test split while the handwritten block has no frozen hash, so
-no evaluation can run on half of it.
+no evaluation can run on half of it. It also refuses the test split while `held_out_locked` in
+`config/cases.yaml` is true: freezing a block is not the same as opening the held-out, and the
+lock is only lifted by a commit once nothing pending would still be tuned against it.
 """
 
 import hashlib
@@ -22,6 +24,8 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+
+import yaml
 
 from pipeline.cases.schema import CaseRecord, Split
 
@@ -35,6 +39,10 @@ class SplitMismatch(RuntimeError):
 
 class HeldOutNotFrozen(RuntimeError):
     """The test split is requested while one of its blocks has no frozen hash."""
+
+
+class HeldOutLocked(RuntimeError):
+    """The test split is requested while the case configuration keeps it locked."""
 
 
 def canonical(cases: list[CaseRecord]) -> bytes:
@@ -171,21 +179,26 @@ def write_split(
     return digest
 
 
-def load_split(folder: Path, split: Split, manifest_path: Path) -> list[CaseRecord]:
+def load_split(
+    folder: Path, split: Split, manifest_path: Path, config_path: Path
+) -> list[CaseRecord]:
     """Reads a split after checking every file against the versioned manifest.
 
-    The test split is the union of its two blocks and is only served when both are frozen.
+    The test split is the union of its two blocks and is only served when both are frozen and
+    the case configuration does not lock it.
 
     Args:
         folder: DATA_DIR/eval.
         split: dev, calibration or test.
         manifest_path: eval/splits/manifest.json.
+        config_path: config/cases.yaml, whose `held_out_locked` gates the test split.
 
     Returns:
         The cases.
 
     Raises:
         HeldOutNotFrozen: When the test split is asked for and a block has no frozen hash.
+        HeldOutLocked: When the test split is asked for and `held_out_locked` is not false.
         SplitMismatch: When a file is not the one the manifest names.
     """
     hashes = read_manifest(manifest_path).get("splits", {})
@@ -196,6 +209,14 @@ def load_split(folder: Path, split: Split, manifest_path: Path) -> list[CaseReco
             f"the held-out test split is not frozen yet ({', '.join(missing)} has no hash); "
             "no evaluation may run on it"
         )
+    if split == "test":
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        # A missing key keeps the lock: opening the held-out must be an explicit, committed act.
+        if config.get("held_out_locked", True) is not False:
+            raise HeldOutLocked(
+                f"the held-out test split is locked by held_out_locked in {config_path}; "
+                "no evaluation may run on it"
+            )
     cases = []
     for part in parts:
         data = (folder / f"{part}.jsonl").read_bytes()

@@ -480,7 +480,9 @@ def run(
         Results per system name.
     """
     manifest = read_manifest(settings.cases_manifest_path)
-    cases = load_split(settings.data_dir / "eval", split, settings.cases_manifest_path)
+    cases = load_split(
+        settings.data_dir / "eval", split, settings.cases_manifest_path, settings.cases_config_path
+    )
     split_cases = len(cases)
     cases = sample_bases(cases, bases)
     parts = ("test_generated", "test_handwritten") if split == "test" else (split,)
@@ -502,9 +504,13 @@ def run(
     if "llm" in names:
         client = _llm_client()
         eval_dir = settings.data_dir / "eval"
-        dev = load_split(eval_dir, "dev", settings.cases_manifest_path)
+        dev = load_split(eval_dir, "dev", settings.cases_manifest_path, settings.cases_config_path)
         check_prompt_sources(
-            client, dev, load_split(eval_dir, "calibration", settings.cases_manifest_path)
+            client,
+            dev,
+            load_split(
+                eval_dir, "calibration", settings.cases_manifest_path, settings.cases_config_path
+            ),
         )
         runner = LLMRuns(client, ReadingCache(eval_dir / CACHE_FILE), max_cost_usd)
         per_run, usage = [], []
