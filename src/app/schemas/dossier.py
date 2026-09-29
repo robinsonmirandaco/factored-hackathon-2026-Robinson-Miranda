@@ -109,6 +109,18 @@ class OpenQuestion(_Strict):
     text: str
 
 
+class LaterMessage(_Strict):
+    """A message the customer wrote once the case was with a person, redacted (TRZ-25).
+
+    Attributes:
+        text: The message with PII replaced.
+        source: The audit row that keeps it.
+    """
+
+    text: str
+    source: Source
+
+
 class RuleTriggered(_Strict):
     """The policy rule that handed the case over.
 
@@ -143,3 +155,4 @@ class Dossier(_Strict):
     open_questions: list[OpenQuestion]
     policy_rule_triggered: RuleTriggered | None
     recommended_action: str | None
+    later_messages: list[LaterMessage]

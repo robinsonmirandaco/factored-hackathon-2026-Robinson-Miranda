@@ -647,6 +647,10 @@ _REPLIES: dict[str, dict[str, str]] = {
         ),
         "no_pending_recognition": "No hay ningún cargo esperando tu respuesta en este caso.",
         "no_pending_choice": "No hay opciones esperando tu elección en este caso.",
+        "with_person": (
+            "Tu caso ya está con una persona. Agregamos tu mensaje a su expediente para que lo "
+            "tenga en cuenta."
+        ),
     },
     "pt": {
         "registered_verified": (
@@ -744,6 +748,10 @@ _REPLIES: dict[str, dict[str, str]] = {
         ),
         "no_pending_recognition": "Não há nenhuma cobrança aguardando a sua resposta neste caso.",
         "no_pending_choice": "Não há opções aguardando a sua escolha neste caso.",
+        "with_person": (
+            "O seu caso já está com uma pessoa. Incluímos a sua mensagem no dossiê para que ela "
+            "a considere."
+        ),
     },
 }
 
@@ -789,6 +797,7 @@ def reply_key(facts: dict[str, Any]) -> str:
         "recognized_closed": "recognized_closed",
         "no_pending_recognition": "no_pending_recognition",
         "no_pending_choice": "no_pending_choice",
+        "with_person": "with_person",
     }.get(str(outcome), "escalated")
 
 

@@ -71,7 +71,13 @@ _NOTES: dict[str, dict[str, str]] = {
 
 
 # Outcomes that hand the case to a person; the customer is told its number (TRZ-25 CA5).
-HANDOFF_OUTCOMES = ("escalated", "pending_analyst_approval", "security_blocked", "failed")
+HANDOFF_OUTCOMES = (
+    "escalated",
+    "pending_analyst_approval",
+    "security_blocked",
+    "failed",
+    "with_person",
+)
 
 # The closed vocabulary of a claim's status and last step: the LLM never words them (TRZ-22).
 STATUS_WORDS: dict[str, dict[str, str]] = {

@@ -61,6 +61,7 @@ from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, pol
 from app.domain.recognition import Choice, choices, recognition_text
 from app.schemas.comprehension import Comprehension, ComprehensionContext, evidence_is_faithful
 from app.services import tools as T
+from app.services.cases import HANDOFF_STATUSES
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
 from app.services.identification import candidate_of, identify_charge, load_candidates
 from app.services.recognition import charge_detail
@@ -77,6 +78,8 @@ Facts = dict[str, Any]
 
 # Intent of a new case stopped for security before its message was read.
 UNREAD_INTENT = "unread"
+# Outcome of a message on a case already with a person: nothing is decided again.
+WITH_PERSON = "with_person"
 # Who read the clues of an answer to a question of the case: none for an answer without one.
 AnswerRead = Literal["llm", "rules", "none"]
 # The option a customer picks when none of the charges shown is the one.
@@ -208,6 +211,12 @@ def handle_message(
             else:
                 facts = _choose(session, deps, customer, case, language, str(option), said)
             stats = LLMCallStats()
+        elif case_id is not None and _with_person(session, customer_id, case_id):
+            case = _own_case(session, customer_id, case_id)
+            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
+            language = spoken.language
+            facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
+            stats = LLMCallStats()
         else:
             case, language, facts, stats = _understand_and_decide(
                 session, deps, customer, redacted, pii_counts, case_id
@@ -236,7 +245,9 @@ def handle_message(
             rstats.latency_ms,
             llm=None if recognizing else rstats,
         )
-        case.summary = _summary(case, facts)
+        # A note on a case with a person leaves its summary as the handoff wrote it.
+        if facts["outcome"] != WITH_PERSON:
+            case.summary = _summary(case, facts)
         session.flush()
 
     tokens = stats.input_tokens + stats.output_tokens
@@ -710,6 +721,25 @@ def _audit_decision(
     )
 
 
+def _with_person(session: Session, customer_id: str, case_id: str) -> bool:
+    return _own_case(session, customer_id, case_id).status in HANDOFF_STATUSES
+
+
+def _note_for_the_analyst(session: Session, case: Case, said: Said) -> Facts:
+    """A message on a case already with a person (TRZ-25): it is not read by the LLM nor decided
+    again, and the case keeps its status and its single queue item. The message, redacted, is
+    added to the dossier for the analyst, and the customer is told the case is with a person."""
+    write_audit(
+        session,
+        "agent",
+        "customer_note",
+        case.id,
+        said.audit(),
+        {"status": case.status, "language_decision": asdict(said.spoken)},
+    )
+    return {"intent": case.intent, "outcome": WITH_PERSON, "actions_taken": []}
+
+
 def _stop_for_security(
     session: Session,
     deps: AgentDeps,
@@ -1121,6 +1151,9 @@ def _reply(
     # of them is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
+    # A case with a person is answered the same way every time, with no LLM call.
+    if facts["outcome"] == WITH_PERSON:
+        return _joined(template_reply(facts, language), note), LLMCallStats()
     # The recognition step is written by code by design (TRZ-16), not as an LLM fallback. So is
     # the redirect of a request out of scope (TRZ-23): where to go is never left to the LLM.
     if facts["outcome"] == "recognizing":

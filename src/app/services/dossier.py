@@ -36,6 +36,7 @@ from app.schemas.dossier import (
     Dossier,
     Fact,
     Identification,
+    LaterMessage,
     OpenQuestion,
     RuleTriggered,
     ScoredCandidate,
@@ -154,6 +155,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             open_questions=[_question("security_event", lang)],
             policy_rule_triggered=rule,
             recommended_action=None,
+            later_messages=[],
         )
     read = [r for r in rows if (r.actor, r.action) == ("agent", "comprehend")]
     original = (read[0].payload or {}).get("redacted_text") if read else None
@@ -188,6 +190,14 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         open_questions=_open_questions(case, rule, read, lang),
         policy_rule_triggered=rule,
         recommended_action=case.recommended_action,
+        later_messages=[
+            LaterMessage(
+                text=(r.payload or {}).get("redacted_text", ""),
+                source=Source(table="audit_log", id=str(r.id)),
+            )
+            for r in rows
+            if (r.actor, r.action) == ("agent", "customer_note")
+        ],
     )
 
 
