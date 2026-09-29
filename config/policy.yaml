@@ -7,10 +7,11 @@
 # escalation and approval stages apply only to `dispute_intents`. Each rule list must name every
 # rule the code knows, exactly once; the order of the list is the order of evaluation.
 
-version: "2026.09.1"
+version: "2026.09.2"
 
 dispute_window_days: 120            # [assumption] the only source of this number at runtime
 open_dispute_lookback_days: 90      # [assumption] look-back of open_dispute_last_90d
+max_clarifications: 2               # [assumption] questions to identify the charge (design 5.1)
 
 conformal:
   alpha: 0.05                       # [assumption] must match config/identification.yaml
@@ -26,6 +27,7 @@ security_if:
   - security_event
 
 escalate_if:
+  - clarifications_exhausted        # a third question would be needed to identify the charge
   - amount_above_human_review       # amount_usd > amount_usd.human_review_above
   - amount_unknown                  # identified charge not convertible to USD
   - open_dispute_last_90d           # dispute complaints + own disputes still open
@@ -51,6 +53,13 @@ routing:
   # A lost or stolen card with no charge mentioned is out of scope: redirect to the bank's card
   # block channel at once.
   lost_card_without_charge: {action: abstain_and_redirect, redirect: card_block, priority: urgent}
+
+# Handoff queue (TRZ-25): hours until the SLA of a case ends, by priority, on the real clock.
+queue:
+  sla_hours:                        # [assumption]
+    urgent: 1
+    high: 4
+    normal: 24
 
 # Display level of each action (design 3.2): L0 read, L1 register, L2 block, L3 a person.
 action_level:

@@ -585,6 +585,7 @@ ANALYST_ROUTES = [
     ("GET", "/cases/CASE-1"),
     ("GET", "/cases/CASE-1/trace"),
     ("GET", "/cases/CASE-1/history"),
+    ("GET", "/cases/CASE-1/dossier"),
     ("GET", "/queue"),
     ("POST", "/cases/CASE-1/decision"),
     ("GET", "/metrics"),
@@ -621,7 +622,7 @@ def test_every_route_but_login_and_health_requires_a_session(
         if path not in PUBLIC
         for method in operations
     ]
-    assert len(routes) == 8
+    assert len(routes) == 9
     for method, path in routes:
         r = client.request(method, path, json={"message": "hola", "decision": "approve"})
         _error(r, 401, "not_authenticated")

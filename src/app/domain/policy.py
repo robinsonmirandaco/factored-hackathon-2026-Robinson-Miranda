@@ -40,6 +40,7 @@ AutonomyLookup = Callable[[Intent, Language], AutonomyLevel]
 
 SECURITY_RULES = ("security_event",)
 ESCALATION_RULES = (
+    "clarifications_exhausted",
     "amount_above_human_review",
     "amount_unknown",
     "open_dispute_last_90d",
@@ -128,12 +129,19 @@ class Autonomy(_Strict):
     reversal_reasons: tuple[str, ...] = Field(min_length=1)
 
 
+class Queue(_Strict):
+    """Handoff queue settings (TRZ-25)."""
+
+    sla_hours: dict[Priority, float]
+
+
 class PolicyConfig(_Strict):
     """Validated contents of config/policy.yaml."""
 
     version: str = Field(min_length=1)
     dispute_window_days: int = Field(ge=1)
     open_dispute_lookback_days: int = Field(ge=1)
+    max_clarifications: int = Field(ge=0)
     conformal: Conformal
     amount_usd: AmountBands
     dispute_intents: tuple[Intent, ...] = Field(min_length=1)
@@ -142,6 +150,7 @@ class PolicyConfig(_Strict):
     require_analyst_approval_if: tuple[str, ...]
     routing: Routing
     action_level: dict[Action, Level]
+    queue: Queue
     autonomy: Autonomy
     slots_required: dict[str, tuple[str, ...]]
 
@@ -157,6 +166,8 @@ class PolicyConfig(_Strict):
         ):
             if sorted(listed) != sorted(known):
                 raise ValueError(f"{name} must list each of {sorted(known)} exactly once")
+        if set(self.queue.sla_hours) != set(get_args(Priority)):
+            raise ValueError(f"queue.sla_hours must set every priority of {get_args(Priority)}")
         missing = set(get_args(Action)) - set(self.action_level)
         if missing:
             raise ValueError(f"action_level has no level for {sorted(missing)}")
@@ -177,6 +188,8 @@ class PolicyContext:
         duplicate_twin: For a duplicate charge, the status of the pair; None without a twin.
         verification_failed: The re-read after an action did not match (TRZ-19).
         security_event: A security event was raised for the case.
+        clarifications_exhausted: Identifying the charge would need one more question than
+            `max_clarifications` allows (TRZ-25).
     """
 
     intent: Intent
@@ -188,6 +201,7 @@ class PolicyContext:
     duplicate_twin: DuplicateTwin | None = None
     verification_failed: bool = False
     security_event: bool = False
+    clarifications_exhausted: bool = False
 
 
 @dataclass(frozen=True)
@@ -323,7 +337,8 @@ class PolicyEngine:
         routing = self.config.routing
         for name in self.config.security_if:
             if name == "security_event" and security_event:
-                return self._decision(Route(action="security_blocked"), f"security.{name}")
+                route = Route(action="security_blocked", priority="urgent")
+                return self._decision(route, f"security.{name}")
         if intent is None:
             raise PolicyError("only a security event may be decided without an intent")
         if intent == "out_of_scope":
@@ -370,6 +385,7 @@ class PolicyEngine:
         bands = self.config.amount_usd
         amount = ctx.amount_usd
         checks = {
+            "clarifications_exhausted": ctx.clarifications_exhausted,
             "amount_above_human_review": amount is not None and amount > bands.human_review_above,
             # With an empty set there is no charge, so no amount to convert.
             "amount_unknown": ctx.conformal_set_size >= 1 and amount is None,
@@ -407,10 +423,12 @@ class PolicyEngine:
             return screened
         level = autonomy(ctx.intent, ctx.language)
         route, route_rule = self.route(ctx)
+        # A handoff keeps the priority of the route it replaces: a customer without the card is
+        # as urgent in the queue as in the chat.
         if hit := self._escalation_hit(ctx, level):
-            return self._decision(Route(action="escalate"), f"escalate.{hit}", route.action, level)
+            escalate = Route(action="escalate", priority=route.priority)
+            return self._decision(escalate, f"escalate.{hit}", route.action, level)
         if hit := self._approval_hit(ctx, level):
-            return self._decision(
-                Route(action="analyst_approval"), f"approval.{hit}", route.action, level
-            )
+            approval = Route(action="analyst_approval", priority=route.priority)
+            return self._decision(approval, f"approval.{hit}", route.action, level)
         return self._decision(route, route_rule, None, level)

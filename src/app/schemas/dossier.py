@@ -1,0 +1,145 @@
+"""The dossier of a case handed to a person (design 12, TRZ-25).
+
+Strict: no field outside design 12 and no transcript. Every fact and every piece of evidence
+names the table and the id it was read from; clues carry their literal fragment and the
+comprehension row of the message they were read in. Nothing in it is written by the LLM except
+the translation of a Portuguese message, which is labeled automatic.
+"""
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Source(_Strict):
+    """Where a fact was read.
+
+    Attributes:
+        table: Table of the record, such as transactions or complaints.
+        id: Id of the record in that table.
+    """
+
+    table: str = Field(min_length=1)
+    id: str = Field(min_length=1)
+
+
+class Fact(_Strict):
+    """A verified fact or a piece of evidence, with its source."""
+
+    name: str
+    value: Any
+    source: Source
+
+
+class Translation(_Strict):
+    """The automatic translation of the original message into Spanish.
+
+    Attributes:
+        text: The translation, or None when the LLM failed.
+        automatic: Always true: a model wrote it, nobody checked it.
+        model: Model that translated.
+        prompt_version: Version of the translation prompt.
+        error: Why there is no translation, if there is none.
+    """
+
+    text: str | None
+    automatic: Literal[True] = True
+    model: str | None = None
+    prompt_version: str | None = None
+    error: str | None = None
+
+
+class Clue(_Strict):
+    """A clue of the customer with its literal fragment.
+
+    Attributes:
+        field: amount, date, merchant_hint, channel_hint or card_in_possession.
+        value: What was read.
+        evidence: Literal fragment of the message.
+        read_in: Id of the comprehension row of the message it was read in.
+    """
+
+    field: str
+    value: Any
+    evidence: str
+    read_in: int
+
+
+class ScoredCandidate(_Strict):
+    """A candidate charge with its probability and its score by component."""
+
+    transaction_id: str
+    probability: float
+    components: dict[str, float]
+
+
+class Identification(_Strict):
+    """The identification of the charge: candidates, conformal set and scores."""
+
+    decision: str
+    candidates: int
+    conformal_set: list[str]
+    top: list[ScoredCandidate]
+
+
+class ActionTaken(_Strict):
+    """An action of the case and what became of it.
+
+    Attributes:
+        action: register, register_and_offer_block or register_and_block.
+        state: verified (read back and matched), not_executed (never confirmed, replaced or
+            canceled), failed (read back and did not match), or not_verified (executed with no
+            read-back row, only possible for rows older than TRZ-19).
+        source: The case_actions row.
+    """
+
+    action: str
+    state: Literal["verified", "not_executed", "failed", "not_verified"]
+    source: Source
+
+
+class OpenQuestion(_Strict):
+    """Something the system could not confirm, from a closed list."""
+
+    code: str
+    text: str
+
+
+class RuleTriggered(_Strict):
+    """The policy rule that handed the case over.
+
+    Attributes:
+        rule: Rule id, such as escalate.conformal_set_empty.
+        version: Policy version.
+        level: Display level of the action.
+        autonomy_level: Autonomy level of the intent x language cell, when consulted.
+    """
+
+    rule: str
+    version: str
+    level: str
+    autonomy_level: str | None
+
+
+class Dossier(_Strict):
+    """Everything the analyst needs to decide without asking again (design 12)."""
+
+    case_id: str
+    trace_id: str
+    case_kind: Literal["escalation", "security_event"]
+    language: str | None
+    original_message: str | None
+    machine_translation: Translation | None
+    request_summary: str
+    verified_facts: list[Fact]
+    extraction: list[Clue]
+    identification: Identification | None
+    actions_taken: list[ActionTaken]
+    evidence: list[Fact]
+    open_questions: list[OpenQuestion]
+    policy_rule_triggered: RuleTriggered | None
+    recommended_action: str | None

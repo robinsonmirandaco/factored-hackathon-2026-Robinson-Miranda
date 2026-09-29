@@ -24,7 +24,7 @@ from app.main import build_runtime
 from app.schemas.comprehension import ComprehensionContext, Intent
 
 POLICY = Path(__file__).resolve().parents[2] / "config" / "policy.yaml"
-VERSION = "2026.09.1"
+VERSION = "2026.09.2"
 
 
 @pytest.fixture(scope="module")
@@ -96,6 +96,8 @@ def test_the_policy_file_is_the_design_4_2_policy() -> None:
     assert policy.dispute_window_days == 120
     assert policy.open_dispute_lookback_days == 90
     assert policy.autonomy.initial_level == "A0"
+    assert policy.max_clarifications == 2
+    assert policy.queue.sla_hours == {"urgent": 1, "high": 4, "normal": 24}
 
 
 def _broken(tmp_path: Path, change) -> Path:
@@ -118,6 +120,8 @@ BROKEN = {
     "unknown key": lambda r: r.update(risk_bands=[0.3, 0.7]),
     "negative window": lambda r: r.update(dispute_window_days=-1),
     "unknown autonomy level": lambda r: r["autonomy"].update(initial_level="A9"),
+    "priority without an SLA": lambda r: r["queue"]["sla_hours"].pop("urgent"),
+    "negative clarifications": lambda r: r.update(max_clarifications=-1),
 }
 
 
@@ -229,6 +233,13 @@ RULES = [
         "L3",
     ),
     ({"verification_failed": True}, "A0", "escalate", "escalate.verification_failed", "L3"),
+    (
+        {"clarifications_exhausted": True, "conformal_set_size": 3, "amount_usd": None},
+        "A0",
+        "escalate",
+        "escalate.clarifications_exhausted",
+        "L3",
+    ),
     ({}, "A2", "escalate", "escalate.autonomy_a2", "L3"),
     ({}, "A1", "analyst_approval", "approval.autonomy_a1", "L3"),
     (
@@ -322,6 +333,18 @@ def test_confirmation_and_priority_follow_the_route(engine: PolicyEngine) -> Non
     assert watch.confirm is False
     lost = engine.screen("out_of_scope", "pt", False, False)
     assert lost is not None and (lost.redirect, lost.priority) == ("card_block", "urgent")
+    stopped = engine.screen(None, "es", None, True)
+    assert stopped is not None and stopped.priority == "urgent"
+
+
+def test_a_handoff_keeps_the_priority_of_the_route_it_replaces(engine: PolicyEngine) -> None:
+    # Without the card the case is urgent to the customer, and so in the queue.
+    d = engine.decide(ctx(amount_usd=2000.0, card_in_possession=False), A0)
+    assert (d.action, d.priority) == ("escalate", "high")
+    a = engine.decide(ctx(amount_usd=800.0, card_in_possession=False), A0)
+    assert (a.action, a.priority) == ("analyst_approval", "high")
+    n = engine.decide(ctx(amount_usd=2000.0), A0)
+    assert n.priority == "normal"
 
 
 def test_an_escalation_carries_the_action_routing_would_have_taken(engine: PolicyEngine) -> None:

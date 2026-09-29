@@ -1,0 +1,22 @@
+meta {
+  name: an unsupported language is 422
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/cases/{{dossierCase}}/dossier?lang=fr
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("422 validation_error", function() {
+    expect(res.getStatus()).to.equal(422);
+    expect(res.getBody().error_code).to.equal("validation_error");
+  });
+}

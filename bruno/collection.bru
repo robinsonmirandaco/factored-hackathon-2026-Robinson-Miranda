@@ -3,12 +3,13 @@ docs {
   
   TRAZO is a governed agentic flow for disputed card charges in LATAM digital banking (Factored AI & Data Hackathon 2026). The customer signs in with a document and a one-time code, reviews the charge before disputing it, and confirms each action explicitly. Business rules live in a policy engine outside the model, and cases the system should not resolve alone go to an analyst queue.
   
-  This collection covers four areas:
+  This collection covers five areas:
   
   - **auth**: customer sign-in with document + OTP, analyst sign-in, role separation and session handling (TRZ-09).
   - **dispute**: the dispute flow end to end: recognizing the charge before disputing (TRZ-16), registering the dispute and blocking the card (TRZ-18), and choosing between several matching charges.
   - **claims**: the status of an open claim, read only (TRZ-22).
   - **out_of_scope**: requests this channel does not serve, answered with where to go (TRZ-23).
+  - **analyst**: a case handed to a person and its dossier (TRZ-25).
   
   ## How to run
   
@@ -22,7 +23,7 @@ docs {
   
      The file is already covered by `.gitignore`. Never write the value in this collection.
   4. Reload the collection so Bruno reads the `.env` file.
-  5. Run `auth` first, then `dispute`, `claims` and `out_of_scope`.
+  5. Run `auth` first, then `dispute`, `claims`, `out_of_scope` and `analyst`.
   
   ### Environment variables (`local`)
   
@@ -44,6 +45,7 @@ docs {
   | `dispute` | Several matching charges are shown as options · a chosen option goes to the recognition step · options belong to their own case · "none of the options" escalates | Charge identification |
   | `claims` | Setup (demo code + customer login) · CA2/CA5 the status of a claim in Spanish and Portuguese, read only (L0, no action) · CA3 several claims come as a list | TRZ-22 |
   | `out_of_scope` | Setup (demo code + customer login) · CA1 the reply says what is not served and where to go, in Spanish and Portuguese · CA2 no action | TRZ-23 |
+  | `analyst` | Setup (demo code + customer login) · CA5 an escalation tells the customer its case number · CA1 to CA4 the dossier with every fact and evidence sourced, clues with their fragment, scores, rule and version · 403 for a customer, 404, 422 and 409 for a case not with a person | TRZ-25 |
   
   ## Gotchas
   

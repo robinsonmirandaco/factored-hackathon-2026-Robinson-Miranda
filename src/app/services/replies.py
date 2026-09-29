@@ -42,6 +42,7 @@ _NOTES: dict[str, dict[str, str]] = {
             "Si quieres, te comunico con una persona."
         ),
         "person": "Si quieres, te comunico con una persona.",
+        "case_number": "Tu número de caso es {case_number}.",
     },
     "pt": {
         "deadline": ("Prazo de resposta: até {due}, {days} {unit} conforme o {passage} ({label})."),
@@ -64,9 +65,13 @@ _NOTES: dict[str, dict[str, str]] = {
             "Se quiser, eu coloco você em contato com uma pessoa."
         ),
         "person": "Se quiser, eu coloco você em contato com uma pessoa.",
+        "case_number": "O número do seu caso é {case_number}.",
     },
 }
 
+
+# Outcomes that hand the case to a person; the customer is told its number (TRZ-25 CA5).
+HANDOFF_OUTCOMES = ("escalated", "pending_analyst_approval", "security_blocked", "failed")
 
 # The closed vocabulary of a claim's status and last step: the LLM never words them (TRZ-22).
 STATUS_WORDS: dict[str, dict[str, str]] = {
@@ -114,6 +119,22 @@ def deadline_note(facts: dict[str, Any], passages: dict[str, Passage], language:
         # No passage backs a deadline: none is stated, and a person is offered (TRZ-20 CA7).
         return notes["no_deadline"]
     return _deadline_text(notes["deadline"], dispute["due_date"], passage, language, notes)
+
+
+def handoff_note(facts: dict[str, Any], language: str) -> str:
+    """The number of a case handed to a person, for the customer to follow it (TRZ-25 CA5).
+
+    Args:
+        facts: Facts of the turn; `case_number` is set for a handoff.
+        language: Reply language.
+
+    Returns:
+        The note, or "" when the case was not handed over.
+    """
+    number = facts.get("case_number")
+    if not number:
+        return ""
+    return _NOTES["pt" if language == "pt" else "es"]["case_number"].format(case_number=number)
 
 
 def _claim_note(
@@ -179,6 +200,8 @@ def verified_facts(
         if record.get("merchant"):
             merchants.add(str(record["merchant"]).casefold())
     folios, cited, deadlines = set(), set(), set()
+    if facts.get("case_number"):
+        folios.add(str(facts["case_number"]).upper())
     # Set only when the read-back of the registration matched (TRZ-19).
     dispute = facts.get("dispute") or {}
     if dispute:

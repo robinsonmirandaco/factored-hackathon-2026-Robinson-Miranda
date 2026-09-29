@@ -7,6 +7,7 @@ Calls:
   comprehend(text, ctx)    -> Comprehension of design 6.1; the rules baseline is its fallback
   compose(...)             -> customer reply; the deterministic fact checker of TRZ-20 decides
                               whether it is sent
+  translate(text)          -> Spanish translation of a Portuguese message for the analyst
 
 Every call is logged with model, prompt version, tokens, latency and cost (TRZ-12 CA6). Every
 failure returns a typed fallback. Callers never see an exception from this module.
@@ -223,6 +224,11 @@ or mention passwords, PINs, security codes, card numbers or identity documents. 
 response deadlines nor cite policy, and do not describe the status or the steps of a claim:
 they are added after your text. Never promise to contact the customer or to send news. Do not
 mention internal scores, rules or system names."""
+
+
+TRANSLATE_SYSTEM = """Translate the customer's message from Portuguese into Spanish for a bank
+analyst. Keep every placeholder in brackets, such as [NAME] or [CARD], exactly as it is. Add
+nothing: no explanation, no greeting, no note. Output only the translation."""
 
 
 class LLMClient:
@@ -502,6 +508,23 @@ class LLMClient:
         if stats.dropped_clues:
             log.warning("unfaithful_clues_dropped", clues=stats.dropped_clues)
         return result, stats
+
+    def translate(self, redacted_text: str) -> tuple[str | None, LLMCallStats]:
+        """Translates a redacted Portuguese message into Spanish for the analyst (TRZ-25 CA3).
+
+        The translation is labeled automatic wherever it is shown and is never used as a fact.
+
+        Args:
+            redacted_text: Customer message with PII already replaced.
+
+        Returns:
+            The translation, or None when the call failed, and the call stats.
+        """
+        text, stats = self._call(TRANSLATE_SYSTEM, redacted_text, max_tokens=600)
+        if stats.fallback or not text.strip():
+            stats.fallback = True
+            return None, stats
+        return text.strip(), stats
 
     def compose(
         self, redacted_text: str, facts: dict[str, Any], language: str

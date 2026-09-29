@@ -1,0 +1,28 @@
+meta {
+  name: CA5 none of the options escalates and the customer gets the case number
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+body:json {
+  {"message": "Ninguno es", "case_id": "{{dossierCase}}", "option": "none"}
+}
+
+tests {
+  test("escalated with the case number in the reply", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(body.outcome).to.equal("escalated");
+    expect(body.reply).to.include("Tu número de caso es " + bru.getVar("dossierCase"));
+  });
+}
