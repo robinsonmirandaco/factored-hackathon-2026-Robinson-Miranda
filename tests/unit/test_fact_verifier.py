@@ -353,3 +353,60 @@ def test_a_contact_promise_is_never_backed(text: str) -> None:
 )
 def test_offering_a_person_is_not_a_contact_promise(text: str) -> None:
     assert _kinds(text, VerifiedFacts()) == []
+
+
+# ---- wider lexicon of contact promises and vague deadlines (QA of TRZ-34) ------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nos pondremos en contacto contigo.",
+        "Te contactaremos cuando haya novedades.",
+        "Nuestro equipo se pondrá en contacto contigo.",
+        "La analista te contactará.",
+        "Nos comunicaremos contigo.",
+        "Te escribiremos por correo.",
+        "Nossa equipe entrará em contato com você.",
+        "Eles entrarão em contato para ajudar.",
+        "Vamos entrar em contato com você.",
+        "Entraremos em contato.",
+        "A analista vai entrar em contato.",
+    ],
+)
+def test_more_contact_promises_are_never_backed(text: str) -> None:
+    assert [k for k, _ in _kinds(text)] == ["contact_promise"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Lo revisaremos en los próximos días.",
+        "Tendrás una respuesta en unos días.",
+        "Se resuelve en pocos días.",
+        "Lo verán en las próximas horas.",
+        "Te responderemos a la brevedad.",
+        "Próximamente tendrás una respuesta.",
+        "Vamos analisar nos próximos dias.",
+        "Você terá resposta em alguns dias.",
+        "Isso se resolve em poucos dias.",
+        "A analista vai revisar nas próximas horas.",
+    ],
+)
+def test_a_vague_deadline_is_never_backed(text: str) -> None:
+    assert [k for k, _ in _kinds(text)] == ["vague_deadline"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "¿Quieres hablar con una persona?",
+        "Si quieres, te comunicamos con una persona.",
+        "Você quer falar com uma pessoa?",
+        "Se quiser, colocamos você em contato com uma pessoa.",
+        "Plazo de respuesta: a más tardar el 8 de julio de 2026 (15 días hábiles).",
+    ],
+)
+def test_offering_a_person_or_a_backed_deadline_still_passes(text: str) -> None:
+    facts = VerifiedFacts(dates=frozenset({date(2026, 7, 8)}), deadlines=frozenset({15}))
+    assert _kinds(text, facts) == []

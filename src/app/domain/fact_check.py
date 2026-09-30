@@ -42,6 +42,7 @@ Kind = Literal[
     "number",
     "forbidden_request",
     "contact_promise",
+    "vague_deadline",
     "action_claim",
 ]
 
@@ -146,9 +147,21 @@ _DIGITS = re.compile(r"\d+")
 # is offered by code, with a fixed sentence, when one is due.
 _CONTACT_PROMISE = re.compile(
     r"\b(?:en\s+breve|em\s+breve|"
-    r"pronto\s+te\s+(?:contactaremos|llamaremos|escribiremos)|"
-    r"te\s+(?:contactaremos|llamaremos|escribiremos)\s+pronto|"
+    r"(?:pronto\s+)?te\s+(?:contactaremos|llamaremos|escribiremos)"
+    r"(?:\s+(?:pronto|en\s+breve))?|"
+    r"te\s+(?:contactar[aá]|llamar[aá]|escribir[aá])|"
+    r"nos\s+(?:pondremos\s+en\s+contacto|comunicaremos\s+contigo)|"
+    r"se\s+(?:pondr[aá]n?\s+en\s+contacto|comunicar[aá]n?\s+contigo)|"
+    r"entrar(?:[aá]|[aã]o)\s+em\s+contato|entraremos\s+em\s+contato|"
+    r"(?:vai|v[aã]o|vamos|iremos|ir[aá])\s+entrar\s+em\s+contato|"
     r"voc[eê]\s+receber[aá]\s+(?:not[ií]cias|novidades))\b",
+    re.IGNORECASE,
+)
+# Timelines no passage backs: only a deadline written by code, with its passage, may be stated.
+_VAGUE_DEADLINE = re.compile(
+    r"\b(?:en\s+(?:los\s+pr[oó]ximos|unos|pocos)\s+d[ií]as|"
+    r"en\s+las\s+pr[oó]ximas\s+horas|a\s+la\s+brevedad|pr[oó]ximamente|"
+    r"n[oa]s\s+pr[oó]xim[oa]s\s+(?:dias|horas)|em\s+(?:alguns|poucos)\s+dias)\b",
     re.IGNORECASE,
 )
 
@@ -241,6 +254,9 @@ def extract(text: str, known_merchants: frozenset[str] = frozenset()) -> list[Cl
     claims += [
         Claim("contact_promise", m.group(0), m.group(0)) for m in _CONTACT_PROMISE.finditer(text)
     ]
+    claims += [
+        Claim("vague_deadline", m.group(0), m.group(0)) for m in _VAGUE_DEADLINE.finditer(text)
+    ]
     for action, pattern in _ACTION_CLAIMS:
         claims += [Claim("action_claim", m.group(0), action) for m in pattern.finditer(text)]
     return claims
@@ -280,7 +296,7 @@ def _backed(c: Claim, facts: VerifiedFacts) -> bool:
         return int(c.value) in facts.numbers()
     if c.kind == "action_claim":
         return c.value in facts.actions
-    return False  # forbidden requests and contact promises are never backed
+    return False  # forbidden requests, contact promises and vague deadlines are never backed
 
 
 def _date(year: str | None, month: str, day: str) -> str:
