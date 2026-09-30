@@ -53,6 +53,8 @@ const TEXT = {
     dueBy: "Respuesta a más tardar el {date}",
     overdueSince: "Plazo vencido el {date}",
     noDeadline: "Sin plazo registrado",
+    reviewTime: "Plazo de revisión: {hours} horas",
+    reviewLabel: "plazo de la política de demostración, no del banco",
     deadlineNote:
       "[simulado] Plazos en días hábiles con los feriados de tu país, según la política de demostración.",
     bankRecord: "Aclaración en el registro del banco",
@@ -199,6 +201,8 @@ const TEXT = {
     dueBy: "Resposta até {date}",
     overdueSince: "Prazo vencido em {date}",
     noDeadline: "Sem prazo registrado",
+    reviewTime: "Prazo de revisão: {hours} horas",
+    reviewLabel: "prazo da política de demonstração, não do banco",
     deadlineNote:
       "[simulado] Prazos em dias úteis com os feriados do seu país, segundo a política de demonstração.",
     bankRecord: "Contestação no registro do banco",

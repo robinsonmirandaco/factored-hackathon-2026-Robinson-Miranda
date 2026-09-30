@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import select, text, tuple_
 from sqlalchemy.orm import Session
 
 from app.adapters.db.models import Case, Customer, Dispute, Product, Transaction
@@ -33,6 +33,8 @@ from app.services.tools import read_open_claims
 # by one. A case still in conversation lives in the chat; one that only informed or redirected is
 # over; a registered one is shown through its dispute. A case stopped for security is not a
 # clarification of the customer: it is reviewed by the bank and never listed.
+# Statuses of a case a person is reviewing: they carry the review time of their queue priority.
+WITH_PERSON_STATUSES = ("failed", "pending_analyst_approval", "escalated")
 FOLLOWED_STATUSES = (
     "failed",
     "pending_analyst_approval",
@@ -180,6 +182,7 @@ def list_clarifications(
     passages: Mapping[str, Passage],
     calendars: Mapping[str, HolidayCalendar],
     customer_id: str,
+    sla_hours: Mapping[str, float],
 ) -> list[ClarificationOut]:
     """The customer's clarifications: disputes registered by TRAZO, cases with a person, then
     the bank's open claims.
@@ -194,6 +197,7 @@ def list_clarifications(
         passages: Demo policy passages, which back the response deadline.
         calendars: Holiday calendars by country code.
         customer_id: Customer of the session.
+        sla_hours: Review time of the queue by priority, `queue.sla_hours` of the policy.
 
     Returns:
         Disputes newest first, then cases with a person or decided by one, then the open
@@ -249,10 +253,16 @@ def list_clarifications(
         if c.id in with_dispute:
             continue
         tx = session.get(Transaction, c.transaction_id) if c.transaction_id else None
+        priority = session.execute(
+            text("SELECT priority FROM case_queue WHERE case_id = :c ORDER BY id DESC LIMIT 1"),
+            {"c": c.id},
+        ).scalar_one_or_none()
+        with_person = c.status in WITH_PERSON_STATUSES and priority is not None
         out.append(
             ClarificationOut(
                 id=c.id,
                 source="cases",
+                review_hours=sla_hours.get(priority) if with_person and priority else None,
                 status=c.status,
                 case_id=c.id,
                 intent=c.intent,

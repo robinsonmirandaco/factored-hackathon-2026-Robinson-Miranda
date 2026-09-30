@@ -125,3 +125,42 @@ def test_the_review_time_is_labeled_as_demo_policy(client: TestClient) -> None:
 
 def test_the_llm_text_never_reaches_the_customer_on_a_handoff(client: TestClient) -> None:
     assert LLM_TEXT not in _escalate(client, "pt")["reply"]
+
+
+def test_the_review_time_follows_the_priority_of_the_case(
+    schema: SchemaUrls, client: TestClient, database_url: str
+) -> None:
+    # Without the card the route is urgent enough to be high priority: 4 hours, not 24.
+    settings = llm_settings(database_url, log_level="WARNING")
+    without_card = reading(
+        "unrecognized_charge",
+        "es-CO",
+        merchant_hint={"value": "Netflix", "evidence": "Netflix"},
+        card_in_possession={"value": False, "evidence": "me robaron la tarjeta"},
+    )
+    app = create_app(settings)
+    llm = fake_llm(settings, without_card, reply=LLM_TEXT)
+    app.state.runtime = dataclasses.replace(app.state.runtime, agent=agent_deps(settings, llm))
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
+        first = c.post(
+            "/chat", json={"message": "Me robaron la tarjeta y no reconozco un cargo de Netflix"}
+        ).json()
+        body = c.post(
+            "/chat",
+            json={
+                "message": STILL["es"],
+                "case_id": first["case_id"],
+                "recognition": "not_recognized",
+            },
+        ).json()
+
+    assert body["outcome"] == "escalated"
+    assert "Plazo de revisión: 4 horas." in body["reply"]
+    engine = create_engine(schema.admin)
+    with engine.connect() as conn:
+        priority = conn.execute(
+            text("SELECT priority FROM case_queue WHERE case_id = :c"), {"c": body["case_id"]}
+        ).scalar()
+    engine.dispose()
+    assert priority == "high"

@@ -148,3 +148,10 @@ function chargeRows(t, lang, c) {
 export function canSend(text) {
   return String(text).trim().length > 0;
 }
+
+// The review time of a case with a person, as the chat gave it, with its label: it comes from
+// the demo policy's queue.
+export function reviewLine(t, item) {
+  if (item.review_hours == null) return null;
+  return { text: t("reviewTime", { hours: item.review_hours }), label: t("reviewLabel") };
+}

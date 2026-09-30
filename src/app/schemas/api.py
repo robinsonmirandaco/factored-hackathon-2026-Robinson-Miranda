@@ -446,6 +446,8 @@ class ClarificationOut(BaseModel):
         due_date: Response deadline, in business days with the country's holidays.
         overdue: The deadline is before the simulated today.
         passage_id: The demo policy passage that backs the deadline.
+        review_hours: For a case with a person, the review time of its queue priority, the
+            one the chat gave (demo policy).
     """
 
     id: str
@@ -462,3 +464,4 @@ class ClarificationOut(BaseModel):
     due_date: str | None = None
     overdue: bool = False
     passage_id: str | None = None
+    review_hours: float | None = None

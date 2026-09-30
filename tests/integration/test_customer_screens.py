@@ -840,3 +840,14 @@ def test_two_cases_cannot_register_two_disputes_on_one_charge(schema_rows: Schem
 
     assert first.ok and not second.ok
     assert _counts(schema_rows)[0] == 1
+
+
+def test_a_case_with_a_person_shows_the_review_time_the_chat_gave(client: TestClient) -> None:
+    escalated = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TXOLD"}).json()
+    assert "Plazo de revisión: 24 horas." in escalated["reply"]
+
+    item = next(
+        i for i in client.get("/me/clarifications").json() if i["case_id"] == escalated["case_id"]
+    )
+
+    assert item["review_hours"] == 24 and item["due_date"] is None

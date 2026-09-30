@@ -21,3 +21,13 @@ test("a dispute is named by its charge and referenced by its folio and case", ()
   assert.match(title, /^Netflix · USD\s21\.84 · 11 jun 2026$/);
   assert.equal(`${title} ${ref}`.split("DSP-2026-00001").length - 1, 1);
 });
+
+test("a case with a person shows the review time with its simulated label", async () => {
+  const { reviewLine } = await import("../../web/assets/view.js");
+  const item = { id: "CASE-1", source: "cases", status: "escalated", case_id: "CASE-1", review_hours: 24 };
+  assert.deepEqual(reviewLine(es, item), {
+    text: "Plazo de revisión: 24 horas",
+    label: "plazo de la política de demostración, no del banco",
+  });
+  assert.equal(reviewLine(es, { ...item, review_hours: null }), null);
+});

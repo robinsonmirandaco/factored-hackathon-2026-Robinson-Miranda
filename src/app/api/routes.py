@@ -244,7 +244,14 @@ def get_clarifications(
 ) -> list[ClarificationOut]:
     """Returns the session customer's clarifications with their status and deadline."""
     a = runtime.agent
-    return me.list_clarifications(session, a.clock, a.passages, a.calendars, customer.subject)
+    return me.list_clarifications(
+        session,
+        a.clock,
+        a.passages,
+        a.calendars,
+        customer.subject,
+        a.policy.config.queue.sla_hours,
+    )
 
 
 @router.get("/cases/{case_id}", response_model=CaseOut, responses={**_AUTH, 404: _ERRORS[404]})
