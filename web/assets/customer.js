@@ -6,7 +6,7 @@ import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
   buttonMessage, canSend, clarificationLines, codeStep, errorText, movementDetail, reviewLine,
-  turnModel,
+  statusTone, turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -326,7 +326,7 @@ async function renderClarifications() {
         return el("div", { class: "card" },
           el("div", { class: "row" },
             el("strong", { text: title }), el("span", { class: "spacer" }),
-            el("span", { class: "pill warn", text: label(t, "status", c.status) })),
+            el("span", { class: `pill tone-${statusTone(c.status)}`, text: label(t, "status", c.status) })),
           el("div", { class: "row small" },
             c.opened_on ? el("span", { class: "muted", text: t("openedOn", { date: day(state.lang, c.opened_on) }) }) : null,
             due),

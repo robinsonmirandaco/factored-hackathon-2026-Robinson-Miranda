@@ -158,3 +158,6 @@ input, select, textarea {
 .question { font-weight: 600; margin: 10px 0 0; white-space: normal; }
 .msg .line { display: block; }
 .sim-label { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--muted); white-space: normal; }
+.pill.tone-ok { background: var(--accent-soft); color: var(--accent); }
+.pill.tone-warn { background: var(--warn-soft); color: var(--warn); }
+.pill.tone-bad { background: var(--bad-soft); color: var(--bad); }

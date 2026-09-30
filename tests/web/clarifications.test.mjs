@@ -31,3 +31,14 @@ test("a case with a person shows the review time with its simulated label", asyn
   });
   assert.equal(reviewLine(es, { ...item, review_hours: null }), null);
 });
+
+test("registered, in review and rejected have different colors", async () => {
+  const { statusTone } = await import("../../web/assets/view.js");
+  assert.equal(statusTone("registered"), "ok");
+  assert.equal(statusTone("approved"), "ok");
+  for (const s of ["escalated", "pending_analyst_approval", "failed", "in_review", "received"]) {
+    assert.equal(statusTone(s), "warn", s);
+  }
+  assert.equal(statusTone("rejected"), "bad");
+  assert.notEqual(statusTone("registered"), statusTone("escalated"));
+});

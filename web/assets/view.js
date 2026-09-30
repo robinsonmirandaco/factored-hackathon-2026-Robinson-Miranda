@@ -162,3 +162,10 @@ export function movementDetail(t, m) {
   const type = m.transaction_type === "Purchase" ? null : label(t, "type", m.transaction_type);
   return [type, m.city, label(t, "channel", m.channel)].filter(Boolean).join(" · ");
 }
+
+// The color of a status: done (registered, approved), in review, or rejected.
+export function statusTone(status) {
+  if (status === "registered" || status === "approved" || status === "answered") return "ok";
+  if (status === "rejected") return "bad";
+  return "warn";
+}
