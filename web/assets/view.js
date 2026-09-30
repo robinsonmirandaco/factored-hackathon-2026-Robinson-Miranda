@@ -201,3 +201,13 @@ export function infoRequestView(t, lang, item) {
 export function openQuestions(items) {
   return items.filter((i) => i.info_request?.status === "open").length;
 }
+
+// Which deadline a clarification shows: the review time of a case with a person, the response
+// deadline of a dispute or claim, or none. A case waiting for the customer's answer shows only
+// the deadline to answer, in its question (TRZ-28).
+export function deadlineKind(item) {
+  if (item.info_request?.status === "open") return "answer";
+  if (item.review_hours != null) return "review";
+  if (item.due_date) return "due";
+  return "none";
+}

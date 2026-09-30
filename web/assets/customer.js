@@ -5,7 +5,7 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, canSend, clarificationLines, codeStep, createConversation, errorText,
+  buttonMessage, canSend, clarificationLines, codeStep, createConversation, deadlineKind, errorText,
   infoRequestView, movementDetail, openQuestions, reviewLine, statusTone, turnModel,
 } from "./view.js";
 
@@ -330,10 +330,13 @@ async function renderClarifications() {
       ? items.map((c) => {
         const { title, ref } = clarificationLines(t, state.lang, c);
         const review = reviewLine(t, c);
-        const due = review
+        const kind = deadlineKind(c);
+        const due = kind === "answer"
+          ? null
+          : kind === "review"
           ? el("span", { class: "sim-label" }, el("span", { class: "pill warn", text: review.text }), " ",
             el("span", { class: "badge sim", text: "simulado" }), ` ${review.label}`)
-          : c.due_date
+          : kind === "due"
           ? el("span", {
             class: `pill${c.overdue ? " bad" : ""}`,
             text: c.overdue ? t("overdueSince", { date: day(state.lang, c.due_date) }) : t("dueBy", { date: day(state.lang, c.due_date) }),

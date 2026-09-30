@@ -58,3 +58,12 @@ test("an open question of the analyst shows its deadline and a form (TRZ-28)", a
   const pt = translator("pt");
   assert.equal(infoRequestView(pt, "pt", item).due, "Responda até 24 de jun de 2026");
 });
+
+test("a case waiting for the customer's answer shows only the deadline to answer", async () => {
+  const { deadlineKind } = await import("../../web/assets/view.js");
+  const waiting = { source: "cases", status: "awaiting_customer", info_request: { status: "open" } };
+  assert.equal(deadlineKind(waiting), "answer");
+  assert.equal(deadlineKind({ source: "cases", status: "escalated", review_hours: 4 }), "review");
+  assert.equal(deadlineKind({ source: "disputes", due_date: "2026-07-08" }), "due");
+  assert.equal(deadlineKind({ source: "cases", status: "escalated", info_request: { status: "answered" } }), "none");
+});
