@@ -179,7 +179,8 @@ def test_an_action_cancelled_by_a_security_stop_runs_nothing(
     ).json()
     assert stopped["outcome"] == "security_blocked"
     late = _confirm(client, pending["case_id"], action_id)
-    assert (late["outcome"], late["actions_taken"]) == ("no_pending_action", [])
+    # The stopped case is with a person: the late "sí" is added to its dossier and runs nothing.
+    assert (late["outcome"], late["actions_taken"]) == ("with_person", [])
     assert _counts(schema) == (0, 0)
 
 

@@ -73,6 +73,7 @@ _ACTIONS: dict[Lang, dict[str, str]] = {
     "es": {
         "register_and_offer_block": "registrar y ofrecer el bloqueo de la tarjeta",
         "register_and_block": "registrar y bloquear la tarjeta",
+        "block": "bloquear la tarjeta",
         "register": "registrar la aclaración",
         "explain_and_watch": "explicar la retención y esperar",
         "report_claim_status": "informar el estado del reclamo",
@@ -84,6 +85,7 @@ _ACTIONS: dict[Lang, dict[str, str]] = {
     "pt": {
         "register_and_offer_block": "registrar e oferecer o bloqueio do cartão",
         "register_and_block": "registrar e bloquear o cartão",
+        "block": "bloquear o cartão",
         "register": "registrar a contestação",
         "explain_and_watch": "explicar a retenção e aguardar",
         "report_claim_status": "informar o status da reclamação",
@@ -195,6 +197,24 @@ def _confirm(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if status == "executed":
         return f"O cliente confirmou de novo uma ação já executada: {action}."
     return f"O cliente confirmou a ação pendente: {action}."
+
+
+def _existing_case(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El cargo ya tenía un caso: el cliente volvió a ese caso en lugar de abrir otro."
+    return "A cobrança já tinha um caso: o cliente voltou a esse caso em vez de abrir outro."
+
+
+def _decline(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    pending = r.get("pending_action")
+    if not pending:
+        if lang == "es":
+            return "El cliente dijo que no, pero no había ninguna acción pendiente."
+        return "O cliente disse que não, mas não havia nenhuma ação pendente."
+    action = _label(_ACTIONS, lang, pending)
+    if lang == "es":
+        return f"El cliente no aceptó la acción ofrecida: {action}. No se hizo nada."
+    return f"O cliente não aceitou a ação oferecida: {action}. Nada foi feito."
 
 
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -481,6 +501,12 @@ def _customer_note(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return "O cliente escreveu com o caso já nas mãos de uma pessoa: foi incluído no dossiê."
 
 
+def _button_press(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El cliente abrió el caso con el botón de un movimiento: el cargo llegó elegido."
+    return "O cliente abriu o caso pelo botão de uma movimentação: a cobrança chegou escolhida."
+
+
 def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "La sesión del cliente terminó: el caso quedó vencido, sin acción pendiente."
@@ -503,6 +529,8 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "extract"): _extract,
     ("agent", "comprehend"): _extract,
     ("agent", "confirm"): _confirm,
+    ("agent", "decline"): _decline,
+    ("agent", "existing_case"): _existing_case,
     ("agent", "compose"): _compose,
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,
@@ -526,6 +554,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "merge_clues"): _merge_clues,
     ("agent", "translate"): _translate,
     ("agent", "customer_note"): _customer_note,
+    ("agent", "button_press"): _button_press,
     ("tool", "show_charge_detail"): _show_charge,
     ("auth", "case_expired"): _case_expired,
     ("auth", "document_locked"): _document_locked,

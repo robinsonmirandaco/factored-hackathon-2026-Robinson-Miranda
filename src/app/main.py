@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import yaml
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.adapters.db.session import Database
 from app.adapters.llm import LLMClient
@@ -101,9 +102,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings: Settings to use; read from the environment when omitted.
 
     Returns:
-        The application. On startup it refuses to run if its database role could bypass row
-        level security, and starts the LLM warm-up call in the background; connections are
-        closed on shutdown.
+        The application, which also serves the customer and analyst web from `web/` (TRZ-34
+        CA5). On startup it refuses to run if its database role could bypass row level
+        security, and starts the LLM warm-up call in the background; connections are closed
+        on shutdown.
     """
     settings = settings or Settings()
     configure_logging(settings.log_level)
@@ -136,4 +138,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     install_trace_middleware(app)
     app.include_router(router)
+    # Mounted last, so every API route above takes precedence over a file of the same path.
+    app.mount("/", StaticFiles(directory=settings.web_dir, html=True), name="web")
     return app

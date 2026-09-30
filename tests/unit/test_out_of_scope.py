@@ -10,20 +10,20 @@ from tests.out_of_scope_data import PHRASES
 
 # What each reply must name: what is not served, and where to go instead.
 SAYS = {
-    ("es", "loan"): ("no puedo tramitar préstamos", "sección de préstamos de la app"),
-    ("es", "branch"): ("no tengo información de sucursales", "sitio oficial"),
-    ("es", "app"): ("no puedo resolver problemas de la app", "línea de atención"),
-    ("es", "personal_data"): ("no puedo cambiar tus datos personales", "Actualízalos en la app"),
-    ("es", "investment"): ("no puedo asesorarte sobre inversiones", "habla con un asesor"),
-    ("pt", "loan"): ("não consigo contratar empréstimos", "área de empréstimos do app"),
-    ("pt", "branch"): ("não tenho informações de agências", "site oficial"),
-    ("pt", "app"): ("não consigo resolver problemas do app", "central de atendimento"),
-    ("pt", "personal_data"): ("não consigo alterar os seus dados", "Atualize-os no app"),
-    ("pt", "investment"): ("não consigo orientar sobre investimentos", "fale com um assessor"),
+    ("es", "loan"): ("no podemos tramitar préstamos", "sección de préstamos de la app"),
+    ("es", "branch"): ("no tenemos información de sucursales", "sitio oficial"),
+    ("es", "app"): ("no podemos resolver problemas de la app", "línea de atención"),
+    ("es", "personal_data"): ("no podemos cambiar tus datos personales", "Actualízalos en la app"),
+    ("es", "investment"): ("no podemos asesorarte sobre inversiones", "habla con un asesor"),
+    ("pt", "loan"): ("não conseguimos contratar empréstimos", "área de empréstimos do app"),
+    ("pt", "branch"): ("não temos informações de agências", "site oficial"),
+    ("pt", "app"): ("não conseguimos resolver problemas do app", "central de atendimento"),
+    ("pt", "personal_data"): ("não conseguimos alterar os seus dados", "Atualize-os no app"),
+    ("pt", "investment"): ("não conseguimos orientar sobre investimentos", "fale com um assessor"),
 }
 SCOPE = {
-    "es": "Por aquí atiendo aclaraciones de cargos y el estado de tus reclamos.",
-    "pt": "Por aqui eu atendo contestações de cobranças e o status das suas reclamações.",
+    "es": "Por aquí atendemos aclaraciones de cargos y te informamos su estado.",
+    "pt": "Por aqui atendemos contestações de cobranças e informamos o status delas.",
 }
 
 

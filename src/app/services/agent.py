@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
-from app.adapters.db.models import Case, CaseAction, Customer, Transaction
+from app.adapters.db.models import Case, CaseAction, Customer, Dispute, Product, Transaction
 from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMCallStats, LLMClient, TurnBudget, template_reply
 from app.core.errors import AppError
@@ -64,7 +64,12 @@ from app.schemas.comprehension import Comprehension, ComprehensionContext, evide
 from app.services import tools as T
 from app.services.cases import HANDOFF_STATUSES
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
-from app.services.identification import candidate_of, identify_charge, load_candidates
+from app.services.identification import (
+    candidate_of,
+    identify_by_button,
+    identify_charge,
+    load_candidates,
+)
 from app.services.recognition import charge_detail
 from app.services.replies import (
     HANDOFF_OUTCOMES,
@@ -85,15 +90,55 @@ WITH_PERSON = "with_person"
 AnswerRead = Literal["llm", "rules", "none"]
 # The option a customer picks when none of the charges shown is the one.
 NONE_OF_THESE = "none"
+# A case that ended is never reopened: a registered dispute, a recognized charge, an answer, a
+# redirect or a decision of a person stays as it ended. A new message names a new case.
+FINAL_STATUSES = (
+    "registered_verified",
+    "recognized_closed",
+    "closed",
+    "abstained",
+    "approved",
+    "rejected",
+    "expired",
+)
+# A case in one of these statuses holds its charge: another case on the same charge would be a
+# second clarification of one charge, so the customer is taken back to it instead.
+HOLDS_CHARGE = (
+    "recognizing",
+    "awaiting_confirmation",
+    "escalated",
+    "pending_analyst_approval",
+    "failed",
+    "registered_verified",
+)
+# Outcomes answered with a fixed reply instead of the LLM's: a security stop must not send the
+# text of the turn to the LLM, and a failed read-back confirms nothing.
+FIXED_OUTCOMES = ("security_blocked", "failed")
+# Outcomes code writes by design, not as a fallback: what happened to the card or to a declined
+# offer, and a handoff, whose reason and review time come from the decision (the LLM once wrote
+# a doubt the customer never voiced and a contact promise instead).
+CODE_WRITTEN_OUTCOMES = (
+    "existing_case",
+    "no_pending_action",
+    "no_pending_recognition",
+    "no_pending_choice",
+    "card_blocked",
+    "declined",
+    "block_declined",
+    "escalated",
+    "pending_analyst_approval",
+)
 # Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
 VERIFICATION_FAILED_REASON = "verification.registration_failed"
 
 # The actions that wait for the customer's confirmation, and whether confirming blocks the card
-# of the charge. The offered block is not run by the "sí": the customer asks for it apart.
+# of the charge. The "sí" to register_and_offer_block registers only: the block is then offered
+# as its own action, "block", with its own confirmation (design 3.2: explicit for L2).
 BLOCKS_CARD: dict[str, bool] = {
     "register": False,
     "register_and_offer_block": False,
     "register_and_block": True,
+    "block": True,
 }
 
 
@@ -150,6 +195,7 @@ class AgentResponse:
     tokens: int = 0
     latency_ms: int = 0
     facts: Facts = field(default_factory=dict)
+    clues: list["Chip"] = field(default_factory=list)
 
 
 def handle_message(
@@ -162,6 +208,8 @@ def handle_message(
     security_event: bool = False,
     recognition: Choice | None = None,
     option: str | None = None,
+    transaction_id: str | None = None,
+    decline_action_id: str | None = None,
 ) -> AgentResponse:
     """Handles one customer turn end to end.
 
@@ -178,6 +226,11 @@ def handle_message(
         recognition: The customer's answer to the recognition step of `case_id`.
         option: The charge the customer chose among the options shown in `case_id`, or
             `none` when none of them is the one.
+        transaction_id: The charge a "No lo reconozco" or "¿Qué es esto?" button was pressed
+            on. It opens a new case through the button door (TRZ-15 CA9): the charge arrives
+            chosen, is only checked, and no LLM is called; `text` is the button's label.
+        decline_action_id: The pending action of `case_id` the customer declines ("No,
+            gracias"): it is cancelled and nothing runs.
 
     Returns:
         What the system did and replied.
@@ -192,6 +245,8 @@ def handle_message(
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
     # One retry of the LLM in the whole turn, shared by comprehension and reply (TRZ-36 CA3).
     budget = deps.llm.new_turn()
+    # What the system read in this message, shown back to the customer; buttons read nothing.
+    read: list[Chip] = []
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
         if security_event:
@@ -199,7 +254,26 @@ def handle_message(
                 session, deps, customer, case_id, redacted, pii_counts
             )
             stats = LLMCallStats()
-        elif case_id is not None and (confirm_action_id or recognition or option):
+        elif transaction_id is not None:
+            case, language, facts = _by_button(
+                session,
+                deps,
+                customer,
+                Said(redacted, pii_counts, _button_language(redacted, customer)),
+                transaction_id,
+            )
+            stats = LLMCallStats()
+        elif case_id is not None and _with_person(session, customer_id, case_id):
+            # A person has the case: a message or a button pressed on it is added to the
+            # dossier and answered the same way, by code; nothing is decided again.
+            case = _own_case(session, customer_id, case_id)
+            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
+            language = spoken.language
+            facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
+            stats = LLMCallStats()
+        elif case_id is not None and (
+            confirm_action_id or recognition or option or decline_action_id
+        ):
             case = _own_case(session, customer_id, case_id)
             # No LLM call on a confirmation or a button: a short "sí" or "sim" keeps the case's
             # language.
@@ -209,25 +283,24 @@ def handle_message(
             said = Said(redacted, pii_counts, spoken)
             if confirm_action_id:
                 facts = _confirm(session, deps, customer, case, language, confirm_action_id, said)
+            elif decline_action_id:
+                facts = _decline(session, case, decline_action_id, said)
             elif recognition:
                 facts = _recognize(session, deps, customer, case, language, recognition, said)
             else:
                 facts = _choose(session, deps, customer, case, language, str(option), said)
             stats = LLMCallStats()
-        elif case_id is not None and _with_person(session, customer_id, case_id):
-            case = _own_case(session, customer_id, case_id)
-            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
-            language = spoken.language
-            facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
-            stats = LLMCallStats()
         else:
-            case, language, facts, stats = _understand_and_decide(
+            case, language, facts, stats, read = _understand_and_decide(
                 session, deps, customer, redacted, pii_counts, case_id, budget
             )
             # A new message that offers nothing new leaves no earlier action to confirm.
             if facts["outcome"] != "awaiting_confirmation":
                 T.settle_pending_action(session, case.id, "canceled")
 
+        if moved := facts.pop("moved_to", None):
+            # The charge already had a case: the turn continues on it.
+            case = _own_case(session, customer_id, moved)
         reply, rstats = _reply(session, deps, customer, case, redacted, facts, language, budget)
         stats.add(rstats)
         # The charge detail and the recognition text carry the last four digits of the card:
@@ -247,7 +320,8 @@ def handle_message(
                 "attempts": rstats.calls,
             },
             rstats.latency_ms,
-            llm=None if recognizing else rstats,
+            # A reply written by code made no LLM call and has no model, tokens or cost.
+            llm=None if recognizing or not rstats.calls else rstats,
         )
         # A note on a case with a person leaves its summary as the handoff wrote it.
         if facts["outcome"] != WITH_PERSON:
@@ -276,10 +350,54 @@ def handle_message(
         tokens=tokens,
         latency_ms=total["ms"],
         facts=facts,
+        clues=read,
     )
 
 
 # ---- understanding and deciding ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Chip:
+    """One clue as the customer's screen shows it: what was read and the literal fragment of
+    the (redacted) message it was read from. Nothing in it comes from the database."""
+
+    field: str
+    value: str
+    evidence: str
+    # A date is read as a window of days, resolved against the simulated now.
+    window_from: date | None = None
+    window_to: date | None = None
+
+
+def chips(clues: Comprehension) -> list[Chip]:
+    """The clues of a reading as chips, in the order of CLUE_FIELDS.
+
+    Args:
+        clues: The comprehension of the turn, after merging an answer with earlier clues.
+
+    Returns:
+        One chip per clue that was read.
+    """
+    out = []
+    if clues.amount:
+        a = clues.amount
+        out.append(
+            Chip(
+                "amount", f"{a.value:g} {a.currency}" if a.currency else f"{a.value:g}", a.evidence
+            )
+        )
+    if clues.date:
+        first, last = clues.date.window()
+        out.append(Chip("date", clues.date.expression, clues.date.evidence, first, last))
+    if clues.merchant_hint:
+        out.append(Chip("merchant_hint", clues.merchant_hint.value, clues.merchant_hint.evidence))
+    if clues.channel_hint:
+        out.append(Chip("channel_hint", str(clues.channel_hint.value), clues.channel_hint.evidence))
+    if clues.card_in_possession:
+        c = clues.card_in_possession
+        out.append(Chip("card_in_possession", "yes" if c.value else "no", c.evidence))
+    return out
 
 
 def _understand_and_decide(
@@ -290,10 +408,13 @@ def _understand_and_decide(
     pii_counts: dict[str, int],
     case_id: str | None,
     budget: TurnBudget,
-) -> tuple[Case, Language, Facts, LLMCallStats]:
+) -> tuple[Case, Language, Facts, LLMCallStats, list[Chip]]:
     # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
     existing = _own_case(session, customer.customer_id, case_id) if case_id else None
     previous = _case_language(existing) if existing else None
+    if existing is not None and existing.status in FINAL_STATUSES:
+        # Its language still guides a short message; everything else starts over.
+        existing, case_id = None, None
     local = local_currency(customer.country_code)
     context = ComprehensionContext(
         now=deps.clock.now, country_code=customer.country_code, local_currency=local
@@ -364,7 +485,7 @@ def _understand_and_decide(
             facts = _claim_status(session, deps, customer, case, language, facts)
         elif screened.action == "abstain_and_redirect" and screened.redirect is None:
             facts["topic"] = out_of_scope_topic(redacted)
-        return case, language, facts, stats
+        return case, language, facts, stats, chips(clues)
 
     policy = deps.policy.config
     params = deps.identification["rules" if stats.fallback else "llm"]
@@ -391,16 +512,18 @@ def _understand_and_decide(
                 conformal_set_size=len(found.conformal_set),
                 clarifications_exhausted=True,
             )
-            return case, language, exhausted, stats
-        return case, language, _identifying(case, found), stats
+            return case, language, exhausted, stats, chips(clues)
+        return case, language, _identifying(case, found), stats, chips(clues)
     said = Said(redacted, pii_counts, spoken)
     if charge is None:
-        return case, language, _decide_on_charge(session, deps, customer, case, language), stats
+        decided = _decide_on_charge(session, deps, customer, case, language)
+        return case, language, decided, stats, chips(clues)
     return (
         case,
         language,
         _identified(session, deps, customer, case, language, charge, twin, said),
         stats,
+        chips(clues),
     )
 
 
@@ -524,7 +647,21 @@ def _identified(
     said: Said,
 ) -> Facts:
     """Once the charge is known: an unrecognized one is shown for recognition first (TRZ-16);
-    a billing error, which the customer already recognizes, goes to the policy."""
+    a billing error, which the customer already recognizes, goes to the policy. A charge that
+    another case already holds sends the turn to that case, and this one is closed."""
+    held = _case_on_charge(session, customer.customer_id, charge.transaction_id, case.id)
+    if held is not None:
+        write_audit(
+            session,
+            "agent",
+            "existing_case",
+            case.id,
+            said.audit(),
+            {"existing_case_id": held.id, "status": held.status},
+        )
+        T.settle_pending_action(session, case.id, "canceled")
+        case.status, case.shown_options = "closed", None
+        return {"moved_to": held.id, **_resume(session, deps, customer, held, language, said)}
     case.transaction_id = charge.transaction_id
     if case.intent != "unrecognized_charge":
         return _decide_on_charge(session, deps, customer, case, language, charge, twin)
@@ -571,8 +708,9 @@ def _decide_on_charge(
         session, deps.clock, customer.customer_id, policy.open_dispute_lookback_days, case.id
     ).data
     tx = _charge_facts(session, charge, local_currency(customer.country_code)) if charge else None
-    if charge is not None:
-        case.transaction_id = charge.transaction_id
+    # A decision without a charge leaves none on the case: one kept from an earlier step would
+    # show the case as that charge's and hold the charge against a real claim.
+    case.transaction_id = charge.transaction_id if charge is not None else None
     ctx = PolicyContext(
         intent=case.intent,
         language=language,
@@ -637,6 +775,7 @@ def _charge_facts(session: Session, charge: Candidate, local: str) -> Facts:
 def _identifying(case: Case, found: Identification) -> Facts:
     by_id = {s.candidate.transaction_id: s.candidate for s in found.scored}
     case.status = "identifying"
+    case.transaction_id = None
     case.autonomy_level = "L0"
     case.clarifications += 1
     shown = found.decision == "show_options"
@@ -687,6 +826,7 @@ def _apply(
             session, case.id, d.rule, _sla(deps, d.priority), d.recommended, priority=d.priority
         )
         facts["outcome"] = "escalated"
+        facts["handoff_reason"], facts["review_hours"] = d.rule, _sla(deps, d.priority)
     elif d.action == "analyst_approval":
         T.escalate_to_human(
             session,
@@ -698,6 +838,7 @@ def _apply(
             d.priority,
         )
         facts["outcome"] = "pending_analyst_approval"
+        facts["handoff_reason"], facts["review_hours"] = d.rule, _sla(deps, d.priority)
     elif d.action in BLOCKS_CARD:
         case.status = "awaiting_confirmation"
         case.recommended_action = d.action
@@ -816,6 +957,69 @@ def _security_stop(
         session, case, {"intent": None, "language": language, "security_event": True}, screened
     )
     return _apply(session, deps, case, screened, None)
+
+
+def _button_language(redacted: str, customer: Customer) -> LanguageDecision:
+    # The label is written in the language of the customer's screen.
+    return decide_language(redacted, None, None, customer.country_code)
+
+
+def _by_button(
+    session: Session, deps: AgentDeps, customer: Customer, said: Said, transaction_id: str
+) -> tuple[Case, Language, Facts]:
+    """Opens an unrecognized charge case on the charge whose button was pressed.
+
+    One of the customer's disputable charges goes to the recognition step, as a charge
+    identified in conversation does. A charge the session cannot see is another customer's, or
+    does not exist, and stops the case for security. One of the customer's own that is not
+    disputable is decided as no charge found.
+    """
+    language: Language = said.spoken.language
+    held = (
+        _case_on_charge(session, customer.customer_id, transaction_id)
+        if session.get(Transaction, transaction_id) is not None
+        else None
+    )
+    if held is not None:
+        write_audit(
+            session,
+            "agent",
+            "existing_case",
+            held.id,
+            said.audit(),
+            {"door": "button", "status": held.status},
+        )
+        return held, language, _resume(session, deps, customer, held, language, said)
+    case = _open_case(session, customer.customer_id, None, "unrecognized_charge", language)
+    # The id is not written here: until it is known to be the customer's, it stays out of
+    # this customer's trail, as in _security_stop.
+    write_audit(
+        session,
+        "agent",
+        "button_press",
+        case.id,
+        said.audit(),
+        {"language_decision": asdict(said.spoken)},
+    )
+    found = identify_by_button(
+        session,
+        deps.clock,
+        customer.customer_id,
+        transaction_id,
+        deps.policy.config.dispute_window_days,
+        case.id,
+    )
+    tx = session.get(Transaction, transaction_id)
+    if tx is None:
+        return (
+            case,
+            language,
+            _security_stop(session, deps, case, language, said, "foreign_transaction_id"),
+        )
+    if found.decision != "identified":
+        return case, language, _decide_on_charge(session, deps, customer, case, language)
+    charge = candidate_of(tx)
+    return case, language, _identified(session, deps, customer, case, language, charge, None, said)
 
 
 # ---- choosing and recognizing -------------------------------------------------------------
@@ -1004,6 +1208,8 @@ def _confirm(
             "outcome": "no_pending_action",
             "actions_taken": [],
         }
+    if row.action == "block":
+        return _confirm_block(session, deps, case, language, row, said)
     facts: Facts = {"intent": case.intent, "action": row.action, "actions_taken": []}
     try:
         # A foreign id found by a tool must leave nothing behind, not even the dispute.
@@ -1094,8 +1300,189 @@ def _confirm(
         )
     if first_run:
         case.status = "registered_verified"
+    if row.action == "register_and_offer_block":
+        offer = T.offer_action(session, case, "block") if first_run else _pending_row(session, case)
+        if offer is not None and offer.action == "block":
+            facts["pending_action"] = {"action_id": offer.id, "action": "block"}
     facts["outcome"] = "registered_verified"
     return facts
+
+
+def _confirm_block(
+    session: Session, deps: AgentDeps, case: Case, language: Language, row: CaseAction, said: Said
+) -> Facts:
+    """Blocks the card of a registered charge, the block offered after its registration.
+
+    The dispute is already registered and verified: a block that fails or does not read back
+    leaves it as it is, and the customer is told to block the card through the bank.
+    """
+    try:
+        with session.begin_nested():
+            block = T.block_card(
+                session, case.customer_id, case.id, row.transaction_id, case.intent
+            )
+    except T.OwnershipError:
+        return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
+    check = (
+        verify_block(
+            session,
+            case.id,
+            str(block.data.get("product_id", "")),
+            str(block.data.get("status_before", "")),
+        )
+        if block.ok
+        else None
+    )
+    if row.status == "pending":
+        row.status, row.resolved_at = "executed", utcnow()
+    facts: Facts = {"intent": case.intent, "action": "block", "actions_taken": []}
+    if check is not None and check.verified:
+        facts["actions_taken"] = ["block_card"]
+        facts["outcome"] = "card_blocked"
+        return facts
+    facts["card_not_blocked"] = block.message or "block_not_verified"
+    facts["redirect"] = "card_block"
+    facts["outcome"] = "card_not_blocked"
+    return facts
+
+
+def _decline(session: Session, case: Case, action_id: str, said: Said) -> Facts:
+    """Cancels the pending action the customer declines ("No, gracias"); nothing runs.
+
+    Declining the registration closes the case with nothing registered. Declining the offered
+    block leaves the registered dispute as it is and the card active.
+    """
+    row = session.execute(
+        select(CaseAction).where(CaseAction.id == action_id).with_for_update()
+    ).scalar_one_or_none()
+    mine = row is not None and row.case_id == case.id
+    pending = mine and row is not None and row.status == "pending"
+    write_audit(
+        session,
+        "agent",
+        "decline",
+        case.id,
+        said.audit(),
+        {
+            "action_id": action_id if mine else None,
+            "pending_action": row.action if pending and row else None,
+        },
+    )
+    if not pending or row is None:
+        return {
+            "intent": case.intent,
+            "action": None,
+            "outcome": "no_pending_action",
+            "actions_taken": [],
+        }
+    row.status, row.resolved_at = "canceled", utcnow()
+    if row.action == "block":
+        return {
+            "intent": case.intent,
+            "action": "block",
+            "outcome": "block_declined",
+            "actions_taken": [],
+        }
+    case.status, case.recommended_action = "closed", None
+    return {"intent": case.intent, "action": row.action, "outcome": "declined", "actions_taken": []}
+
+
+def _pending_row(session: Session, case: Case) -> CaseAction | None:
+    return session.execute(
+        select(CaseAction).where(CaseAction.case_id == case.id, CaseAction.status == "pending")
+    ).scalar_one_or_none()
+
+
+def _case_on_charge(
+    session: Session, customer_id: str, transaction_id: str, other_than: str | None = None
+) -> Case | None:
+    """The case that already holds a charge: one in progress, with a person or registered, or
+    the case of an opened dispute on it."""
+    held = session.execute(
+        select(Case)
+        .where(
+            Case.customer_id == customer_id,
+            Case.transaction_id == transaction_id,
+            Case.status.in_(HOLDS_CHARGE),
+            Case.id != (other_than or ""),
+        )
+        .order_by(Case.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if held is not None:
+        return held
+    dispute = session.execute(
+        select(Dispute).where(
+            Dispute.customer_id == customer_id,
+            Dispute.transaction_id == transaction_id,
+            Dispute.status == "opened",
+            Dispute.case_id != (other_than or ""),
+        )
+    ).scalar_one_or_none()
+    return session.get(Case, dispute.case_id) if dispute is not None else None
+
+
+def _resume(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    said: Said,
+) -> Facts:
+    """Where the customer is taken back to on a case that already holds the charge: its
+    recognition step, its pending question, or what became of it (registered, with a person)."""
+    tx = session.get(Transaction, case.transaction_id) if case.transaction_id else None
+    if case.status == "recognizing" and tx is not None:
+        return _identified(session, deps, customer, case, language, candidate_of(tx), None, said)
+    pending = _pending_row(session, case)
+    if case.status == "awaiting_confirmation" and pending is not None and tx is not None:
+        return {
+            "intent": case.intent,
+            "action": pending.action,
+            "outcome": "awaiting_confirmation",
+            "transaction": _charge_facts(
+                session, candidate_of(tx), local_currency(customer.country_code)
+            ),
+            "pending_action": {"action_id": pending.id, "action": pending.action},
+            "actions_taken": [],
+        }
+    dispute = session.execute(
+        select(Dispute).where(Dispute.case_id == case.id, Dispute.status == "opened").limit(1)
+    ).scalar_one_or_none()
+    return {
+        "intent": case.intent,
+        "outcome": "existing_case",
+        "existing_status": case.status,
+        "dispute": {"folio": dispute.folio} if dispute is not None else None,
+        "actions_taken": [],
+    }
+
+
+def pending_detail(session: Session, action_id: str) -> dict[str, Any]:
+    """What the customer's screen needs to ask for a pending action, read from the database.
+
+    It goes to the customer only, never to the LLM: it carries the card's last four digits.
+
+    Args:
+        session: Session bound to the customer of the JWT.
+        action_id: The pending action.
+
+    Returns:
+        Merchant, amount, currency and last four digits of the card of its charge; empty when
+        the action or its charge is not visible to the session.
+    """
+    row = session.get(CaseAction, action_id)
+    tx = session.get(Transaction, row.transaction_id) if row is not None else None
+    if tx is None:
+        return {}
+    product = session.get(Product, tx.product_id)
+    return {
+        "merchant": tx.merchant_name,
+        "amount": tx.amount,
+        "currency": tx.currency,
+        "last4": product.product_number_last4 if product else None,
+    }
 
 
 def _deadline(
@@ -1169,8 +1556,14 @@ def _reply(
     # The urgent card block redirect must say the same thing every time, a security stop must
     # not send the text of the turn to the LLM, and a failed read-back confirms nothing, so none
     # of them is written by it.
-    if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
+    if facts.get("redirect") == "card_block" or facts["outcome"] in FIXED_OUTCOMES:
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
+    if facts["outcome"] in CODE_WRITTEN_OUTCOMES:
+        return _joined(template_reply(facts, language), note), LLMCallStats()
+    # The screen asks for the confirmation with the amount, the merchant and its buttons: the
+    # turn needs no text of its own.
+    if facts["outcome"] == "awaiting_confirmation":
+        return "", LLMCallStats()
     # A case with a person is answered the same way every time, with no LLM call.
     if facts["outcome"] == WITH_PERSON:
         return _joined(template_reply(facts, language), note), LLMCallStats()
@@ -1188,7 +1581,9 @@ def _reply(
     text = _joined(body, note)
     if stats.fallback:
         return text, stats
-    verified = verified_facts(session, customer.customer_id, facts, dict(deps.passages))
+    verified = verified_facts(
+        session, customer.customer_id, facts, dict(deps.passages), deps.clock.today()
+    )
     if check_reply(session, case.id, text, verified, deps.fact_check):
         return text, stats
     stats.fallback = True

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRAZO</title>
+  <link rel="stylesheet" href="/assets/trazo.css">
+  <script type="module" src="/assets/customer.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <span class="brand">TRAZO</span>
+      <span class="tagline" data-t="tagline"></span>
+      <span class="badge">DEMO</span>
+      <span class="spacer"></span>
+      <span class="clock" id="clock" hidden></span>
+      <span class="lang" role="group" aria-label="Idioma / Idioma">
+        <button type="button" data-lang="es" aria-pressed="true">ES</button>
+        <button type="button" data-lang="pt" aria-pressed="false">PT</button>
+      </span>
+      <button type="button" class="linkish" id="logout" data-t="logout" hidden></button>
+    </div>
+    <div class="top-inner">
+      <nav class="tabs" id="tabs" hidden>
+        <a href="#/inicio" data-view="home" data-t="navHome"></a>
+        <a href="#/movimientos" data-view="movements" data-t="navMovements"></a>
+        <a href="#/aclarar" data-view="chat" data-t="navChat"></a>
+        <a href="#/aclaraciones" data-view="clarifications" data-t="navClarifications"></a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section id="view-login" hidden>
+        <div class="card narrow">
+          <h2 data-t="loginTitle"></h2>
+          <form id="login-form" class="stack" novalidate></form>
+        </div>
+      </section>
+
+      <section id="view-home" hidden></section>
+      <section id="view-movements" hidden></section>
+
+      <section id="view-chat" hidden>
+        <div class="card chat">
+          <div class="row">
+            <h2 class="flush" data-t="chatTitle"></h2>
+            <span class="spacer"></span>
+            <button type="button" class="btn small" id="new-case" data-t="newCase"></button>
+          </div>
+          <div class="log" id="log" aria-live="polite"></div>
+          <form class="composer" id="composer">
+            <input id="message" autocomplete="off" maxlength="4000">
+            <button class="btn primary" type="submit" id="send" data-t="send" disabled></button>
+          </form>
+        </div>
+        <div class="card" id="audit" hidden>
+          <h2 data-t="auditView"></h2>
+          <p class="muted small" data-t="auditNote"></p>
+          <p class="small"><span data-t="lastTrace"></span>: <span class="mono" id="last-trace">-</span></p>
+          <button type="button" class="btn small" id="cross-access" data-t="crossAccess"></button>
+        </div>
+      </section>
+
+      <section id="view-clarifications" hidden></section>
+    </div>
+  </main>
+
+  <div class="backdrop" id="expired" hidden>
+    <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="expired-title">
+      <h2 id="expired-title" data-t="expiredTitle"></h2>
+      <p class="muted" data-t="expiredIntro"></p>
+      <form id="expired-form" class="stack" novalidate></form>
+    </div>
+  </div>
+
+  <footer data-t="footer"></footer>
+</body>
+</html>

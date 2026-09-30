@@ -268,3 +268,35 @@ def test_a_best_candidate_below_the_threshold_empties_the_set() -> None:
     assert kept.conformal_set and not kept.rejected
     assert rejected.conformal_set == () and rejected.decision == "not_found" and rejected.rejected
     assert rejected.scored == kept.scored
+
+
+# ---- an empty set has two causes (design 6.2, option B of the QA of TRZ-34) ---------------
+
+
+def _many(n: int = 10) -> list[Candidate]:
+    # Charges that the clues cannot tell apart: every one scores the same.
+    return [_cand(f"T{i:02d}", merchant_name=f"Comercio {i}") for i in range(n)]
+
+
+def test_an_empty_set_from_spread_confidence_asks_for_a_detail() -> None:
+    # Only a date that fits them all: p = 1/10 each, 1 - p = 0.9 above q-hat, so the set is
+    # empty although nothing was rejected. Too few clues is not "no such charge".
+    params = Params("v", "rules", EVEN, 1.0, 0.5, reject_below=-5.0)
+    result = identify(_clues(date=_date(0, 30)), _many(), params, "MXN", RATES)
+
+    assert result.conformal_set == () and not result.rejected
+    assert result.decision == "ask_for_detail"
+
+
+def test_an_empty_set_from_the_rejection_threshold_is_still_not_found() -> None:
+    params = Params("v", "rules", EVEN, 1.0, 0.5, reject_below=5.0)
+    result = identify(_clues(date=_date(0, 30)), _many(), params, "MXN", RATES)
+
+    assert result.rejected and result.decision == "not_found"
+
+
+def test_no_candidates_or_one_are_decided_as_before() -> None:
+    params = Params("v", "rules", EVEN, 1.0, 0.5, reject_below=-5.0)
+    clues = _clues(date=_date(0, 30))
+    assert identify(clues, [], params, "MXN", RATES).decision == "not_found"
+    assert identify(clues, _many(1), params, "MXN", RATES).decision == "identified"

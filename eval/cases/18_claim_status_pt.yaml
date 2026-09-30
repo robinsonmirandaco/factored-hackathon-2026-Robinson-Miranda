@@ -28,4 +28,4 @@ turns:
     policy_action: report_claim_status
     policy_rule: routing.claim_status
     reply_contains:
-    - Não encontrei reclamações abertas
+    - Não encontramos contestações abertas

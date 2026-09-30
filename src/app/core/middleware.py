@@ -1,4 +1,5 @@
-"""Request middleware: binds a trace_id to every request and catches unhandled errors."""
+"""Request middleware: binds a trace_id to every request, catches unhandled errors and sets the
+security headers of the web pages."""
 
 import re
 from collections.abc import Awaitable, Callable
@@ -15,12 +16,23 @@ TRACE_HEADER = "x-trace-id"
 # first character is alphanumeric so a client cannot send "-", which the audit log refuses.
 _VALID_TRACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
+# The web is served from this origin and loads nothing from anywhere else. No inline script is
+# allowed, so a string that reached the page as HTML still could not run (the session token
+# lives in sessionStorage). The API docs pages load their own assets and keep the defaults.
+PAGE_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+)
+_DOCS_PATHS = ("/docs", "/redoc")
+_WEB_PATHS = ("/assets/", "/index.html")
+
 
 def install_trace_middleware(app: FastAPI) -> None:
     """Adds the middleware that assigns the trace_id and returns it in a response header.
 
     A client-supplied `x-trace-id` is reused only if it is short and safe; otherwise a new one
     is generated. Unhandled exceptions become a 500 error envelope carrying the same trace_id.
+    HTML pages get the content security policy of the web.
 
     Args:
         app: The FastAPI application.
@@ -42,4 +54,13 @@ def install_trace_middleware(app: FastAPI) -> None:
             log.exception("unhandled_error", path=request.url.path)
             response = error_response(500, "internal_error", "Internal server error.")
         response.headers[TRACE_HEADER] = tid
+        response.headers["x-content-type-options"] = "nosniff"
+        html = response.headers.get("content-type", "").startswith("text/html")
+        if html and not request.url.path.startswith(_DOCS_PATHS):
+            response.headers["content-security-policy"] = PAGE_POLICY
+            response.headers["referrer-policy"] = "no-referrer"
+        if request.url.path == "/" or request.url.path.startswith(_WEB_PATHS):
+            # Always revalidated (the ETag answers 304 when nothing changed), so a browser never
+            # runs an older module of the web after a deploy.
+            response.headers["cache-control"] = "no-cache"
         return response

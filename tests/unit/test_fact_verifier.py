@@ -203,6 +203,8 @@ def test_offering_an_action_is_not_claiming_it() -> None:
 @pytest.mark.parametrize("key", sorted(_REPLIES["es"]))
 def test_every_fixed_reply_passes_the_checker(language: str, key: str) -> None:
     done = {"register_dispute", "block_card"} if key.startswith("registered") else set()
+    if key == "card_blocked":
+        done = {"block_card"}
     facts = VerifiedFacts(folios=frozenset({FOLIO}), actions=frozenset(done))
     assert _kinds(_REPLIES[language][key].format(folio=FOLIO), facts) == []
 
@@ -344,8 +346,134 @@ def test_a_contact_promise_is_never_backed(text: str) -> None:
     [
         "Si quieres, te comunico con una persona.",
         "Se quiser, eu coloco você em contato com uma pessoa.",
+        "Si quieres, te comunicamos con una persona.",
+        "Se quiser, colocamos você em contato com uma pessoa.",
         "Una analista revisará tu aclaración antes de registrarla.",
     ],
 )
 def test_offering_a_person_is_not_a_contact_promise(text: str) -> None:
     assert _kinds(text, VerifiedFacts()) == []
+
+
+# ---- wider lexicon of contact promises and vague deadlines (QA of TRZ-34) ------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nos pondremos en contacto contigo.",
+        "Te contactaremos cuando haya novedades.",
+        "Nuestro equipo se pondrá en contacto contigo.",
+        "La analista te contactará.",
+        "Nos comunicaremos contigo.",
+        "Te escribiremos por correo.",
+        "Nossa equipe entrará em contato com você.",
+        "Eles entrarão em contato para ajudar.",
+        "Vamos entrar em contato com você.",
+        "Entraremos em contato.",
+        "A analista vai entrar em contato.",
+    ],
+)
+def test_more_contact_promises_are_never_backed(text: str) -> None:
+    assert [k for k, _ in _kinds(text)] == ["contact_promise"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Lo revisaremos en los próximos días.",
+        "Tendrás una respuesta en unos días.",
+        "Se resuelve en pocos días.",
+        "Lo verán en las próximas horas.",
+        "Te responderemos a la brevedad.",
+        "Próximamente tendrás una respuesta.",
+        "Vamos analisar nos próximos dias.",
+        "Você terá resposta em alguns dias.",
+        "Isso se resolve em poucos dias.",
+        "A analista vai revisar nas próximas horas.",
+    ],
+)
+def test_a_vague_deadline_is_never_backed(text: str) -> None:
+    assert [k for k, _ in _kinds(text)] == ["vague_deadline"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "¿Quieres hablar con una persona?",
+        "Si quieres, te comunicamos con una persona.",
+        "Você quer falar com uma pessoa?",
+        "Se quiser, colocamos você em contato com uma pessoa.",
+        "Plazo de respuesta: a más tardar el 8 de julio de 2026 (15 días hábiles).",
+    ],
+)
+def test_offering_a_person_or_a_backed_deadline_still_passes(text: str) -> None:
+    facts = VerifiedFacts(dates=frozenset({date(2026, 7, 8)}), deadlines=frozenset({15}))
+    assert _kinds(text, facts) == []
+
+
+# ---- relative dates must match the charge's real date (QA of TRZ-34) -----------------------
+
+TODAY = date(2026, 6, 17)  # a Wednesday
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Encontramos el cargo de Netflix de la semana pasada.",
+        "Veja a cobrança da semana passada.",
+        "El cargo de ayer ya aparece.",
+        "O cargo de ontem já aparece.",
+    ],
+)
+def test_a_relative_date_that_misses_the_charge_is_unsupported(text: str) -> None:
+    # The only charge is from 2026-06-05: neither yesterday nor last week.
+    facts = VerifiedFacts(dates=frozenset({date(2026, 6, 5)}), today=TODAY)
+    assert "relative_date" in [k for k, _ in _kinds(text, facts)]
+
+
+@pytest.mark.parametrize(
+    ("text", "charge"),
+    [
+        ("Encontramos el cargo de Netflix de la semana pasada.", date(2026, 6, 10)),
+        ("Veja a cobrança da semana passada.", date(2026, 6, 8)),
+        ("El cargo de ayer ya aparece.", date(2026, 6, 16)),
+        ("O cargo de ontem já aparece.", date(2026, 6, 16)),
+        ("Es un cargo de esta semana.", date(2026, 6, 16)),
+    ],
+)
+def test_a_relative_date_that_fits_the_charge_passes(text: str, charge: date) -> None:
+    facts = VerifiedFacts(dates=frozenset({charge}), today=TODAY)
+    assert [k for k, _ in _kinds(text, facts)] == []
+
+
+def test_last_week_for_a_charge_of_this_week_is_caught() -> None:
+    # The trace of the QA: a charge of 2026-06-16 called "de la semana pasada" on 2026-06-17.
+    facts = VerifiedFacts(dates=frozenset({date(2026, 6, 16)}), today=TODAY)
+    assert "relative_date" in [k for k, _ in _kinds("el cargo de la semana pasada", facts)]
+
+
+# ---- promises to keep the customer informed (QA of TRZ-34, trace abc3c7508d8e4e15) ----------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The exact sentence of the receipt the LLM wrote for CASE-3E48B7A323.
+        "Nos pondremos a revisar los detalles y te mantendremos informado del avance",
+        "Te mantendremos informada.",
+        "Te mantendremos al tanto.",
+        "Te informaremos cuando haya una decisión.",
+        "Te avisaremos del resultado.",
+        "Vamos mantê-lo informado.",
+        "Manteremos você informado sobre o andamento.",
+        "Vamos manter você informada.",
+    ],
+)
+def test_a_promise_to_keep_informed_is_never_backed(text: str) -> None:
+    assert "contact_promise" in [k for k, _ in _kinds(text)]
+
+
+def test_offering_a_person_still_passes_after_the_informed_lexicon() -> None:
+    for text in ("¿Quieres hablar con una persona?", "Você quer falar com uma pessoa?"):
+        assert _kinds(text, VerifiedFacts()) == []

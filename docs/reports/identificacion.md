@@ -83,12 +83,12 @@ Trade-off by threshold (cases; LLM: run 0). The fitted threshold is marked.
 
 | Comprehension | Where | Cases (bases) | Coverage | Coverage if accepted | Mean set size | Size 1 | Identified | Options | Ask detail | Not found | Rejected |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| rules | calibration, in-sample q-hat | 400 (100) | 97.8% | 97.8% | 1.50 | 61.3% | 61.3% | 32.8% | 4.0% | 2.0% | 0.0 |
-| rules | calibration, cross-fit (20 halves) | 200 (50) | 97.4% [86.0%, 100.0%] | 97.4% [86.0%, 100.0%] | 1.49 [1.20, 1.73] | 62.1% [50.5%, 72.0%] | 62.1% [50.5%, 72.0%] | 32.2% [22.0%, 43.5%] | 3.3% [0.0%, 6.0%] | 2.4% [0.0%, 14.0%] | 0.0 [0.0, 0.0] |
-| rules | development, calibration q-hat | 496 (124) | 97.4% | 97.4% | 1.33 | 68.8% | 68.8% | 27.2% | 1.6% | 2.4% | 0.0 |
-| llm | calibration, in-sample q-hat | 400 (100) | 97.5% [97.5%, 97.5%] | 97.7% [97.7%, 97.7%] | 1.48 [1.48, 1.48] | 61.3% [61.3%, 61.3%] | 61.3% [61.3%, 61.3%] | 33.2% [33.2%, 33.2%] | 3.2% [3.2%, 3.2%] | 2.2% [2.2%, 2.2%] | 1.0 [1.0, 1.0] |
-| llm | calibration, cross-fit (20 halves x 3 runs) | 200 (50) | 97.3% [86.5%, 100.0%] | 97.6% [86.9%, 100.0%] | 1.48 [1.22, 1.69] | 62.0% [51.0%, 72.0%] | 62.0% [51.0%, 72.0%] | 32.4% [22.0%, 44.5%] | 3.0% [0.0%, 6.0%] | 2.6% [0.0%, 13.0%] | 0.6 [0.0, 1.0] |
-| llm | development, calibration q-hat | 496 (124) | 97.4% | 97.4% | 1.34 | 67.9% | 67.9% | 28.0% | 1.6% | 2.4% | 0.0 |
+| rules | calibration, in-sample q-hat | 400 (100) | 97.8% | 97.8% | 1.50 | 61.3% | 61.3% | 32.8% | 6.0% | 0.0% | 0.0 |
+| rules | calibration, cross-fit (20 halves) | 200 (50) | 97.4% [86.0%, 100.0%] | 97.4% [86.0%, 100.0%] | 1.49 [1.20, 1.73] | 62.1% [50.5%, 72.0%] | 62.1% [50.5%, 72.0%] | 32.2% [22.0%, 43.5%] | 5.7% [0.0%, 14.0%] | 0.0% [0.0%, 0.0%] | 0.0 [0.0, 0.0] |
+| rules | development, calibration q-hat | 496 (124) | 97.4% | 97.4% | 1.33 | 68.8% | 68.8% | 27.2% | 4.0% | 0.0% | 0.0 |
+| llm | calibration, in-sample q-hat | 400 (100) | 97.5% [97.5%, 97.5%] | 97.7% [97.7%, 97.7%] | 1.48 [1.48, 1.48] | 61.3% [61.3%, 61.3%] | 61.3% [61.3%, 61.3%] | 33.2% [33.2%, 33.2%] | 5.2% [5.2%, 5.2%] | 0.2% [0.2%, 0.2%] | 1.0 [1.0, 1.0] |
+| llm | calibration, cross-fit (20 halves x 3 runs) | 200 (50) | 97.3% [86.5%, 100.0%] | 97.6% [86.9%, 100.0%] | 1.48 [1.22, 1.69] | 62.0% [51.0%, 72.0%] | 62.0% [51.0%, 72.0%] | 32.4% [22.0%, 44.5%] | 5.2% [0.0%, 12.5%] | 0.3% [0.0%, 0.5%] | 0.6 [0.0, 1.0] |
+| llm | development, calibration q-hat | 496 (124) | 97.4% | 97.4% | 1.34 | 67.9% | 67.9% | 28.0% | 4.0% | 0.0% | 0.0 |
 
 Cross-fit: q-hat on a seeded half of the calibration base cases, coverage on the other half. The development row reuses the cases the weights were fitted on, so its set sizes are optimistic. q-hat of each LLM run on its own: 0.8000 [0.8000, 0.8000].
 

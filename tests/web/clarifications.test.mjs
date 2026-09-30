@@ -1,0 +1,44 @@
+// How Mis aclaraciones names each item (QA finding 3).
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import { translator } from "../../web/assets/i18n.js";
+import { clarificationLines } from "../../web/assets/view.js";
+
+const es = translator("es");
+
+test("a case without a charge is named by its intent", () => {
+  const item = { id: "CASE-1", source: "cases", status: "escalated", case_id: "CASE-1", intent: "unrecognized_charge" };
+  assert.equal(clarificationLines(es, "es", item).title, "Cargo no reconocido");
+});
+
+test("a dispute is named by its charge and referenced by its folio and case", () => {
+  const item = {
+    id: "DSP-2026-00001", source: "disputes", status: "registered", case_id: "CASE-D86BD10EFD",
+    folio: "DSP-2026-00001", merchant: "Netflix", amount: 21.84, currency: "USD", charge_at: "2026-06-11T03:43:00",
+  };
+  const { title, ref } = clarificationLines(es, "es", item);
+  assert.match(title, /^Netflix · USD\s21\.84 · 11 jun 2026$/);
+  assert.equal(`${title} ${ref}`.split("DSP-2026-00001").length - 1, 1);
+});
+
+test("a case with a person shows the review time with its simulated label", async () => {
+  const { reviewLine } = await import("../../web/assets/view.js");
+  const item = { id: "CASE-1", source: "cases", status: "escalated", case_id: "CASE-1", review_hours: 24 };
+  assert.deepEqual(reviewLine(es, item), {
+    text: "Plazo de revisión: 24 horas",
+    label: "plazo de la política de demostración, no del banco",
+  });
+  assert.equal(reviewLine(es, { ...item, review_hours: null }), null);
+});
+
+test("registered, in review and rejected have different colors", async () => {
+  const { statusTone } = await import("../../web/assets/view.js");
+  assert.equal(statusTone("registered"), "ok");
+  assert.equal(statusTone("approved"), "ok");
+  for (const s of ["escalated", "pending_analyst_approval", "failed", "in_review", "received"]) {
+    assert.equal(statusTone(s), "warn", s);
+  }
+  assert.equal(statusTone("rejected"), "bad");
+  assert.notEqual(statusTone("registered"), statusTone("escalated"));
+});

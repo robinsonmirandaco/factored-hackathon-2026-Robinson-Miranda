@@ -23,35 +23,6 @@ _CHOICE_LABELS: dict[Language, dict[Choice, str]] = {
     "pt": {"not_recognized": "Continuo sem reconhecer", "recognized": "Já reconheço"},
 }
 
-_CHANNELS: dict[Language, dict[str, str]] = {
-    "es": {
-        "ATM": "cajero automático",
-        "App": "app",
-        "Branch": "sucursal",
-        "POS": "compra presencial",
-        "Transfer": "transferencia",
-        "Web": "compra en línea",
-    },
-    "pt": {
-        "ATM": "caixa eletrônico",
-        "App": "app",
-        "Branch": "agência",
-        "POS": "compra presencial",
-        "Transfer": "transferência",
-        "Web": "compra on-line",
-    },
-}
-
-_PRODUCTS: dict[Language, dict[str, str]] = {
-    "es": {"credit_card": "tarjeta de crédito", "debit_card": "tarjeta de débito"},
-    "pt": {"credit_card": "cartão de crédito", "debit_card": "cartão de débito"},
-}
-
-_TYPES: dict[Language, dict[str, str]] = {
-    "es": {"Purchase": "Compra", "Payment": "Pago", "Withdrawal": "Retiro"},
-    "pt": {"Purchase": "Compra", "Payment": "Pagamento", "Withdrawal": "Saque"},
-}
-
 _STATUSES: dict[Language, dict[str, str]] = {
     "es": {"Approved": "aprobado", "Pending": "pendiente"},
     "pt": {"Approved": "aprovada", "Pending": "pendente"},
@@ -91,17 +62,7 @@ MONTHS: dict[Language, tuple[str, ...]] = {
 
 _TEXT: dict[Language, dict[str, str]] = {
     "es": {
-        "intro": "Este es el cargo que encontré:",
-        "merchant": "Comercio",
-        "amount": "Monto",
-        "when": "Fecha y hora",
-        "at": "a las",
-        "channel": "Canal",
-        "city": "Ciudad",
-        "card": "Tarjeta",
-        "product": "Producto",
-        "ending": "terminada en",
-        "status": "Estado",
+        "intro": "Este es el cargo que encontramos; revisa el detalle.",
         "pending": (
             "Este cargo todavía está pendiente: aún no se ha liquidado, así que el comercio "
             "todavía puede confirmarlo, ajustarlo o cancelarlo."
@@ -117,20 +78,10 @@ _TEXT: dict[Language, dict[str, str]] = {
         "earlier": "Tienes cargos de este comercio en {months}.",
         "and": "y",
         "of": "de",
-        "question": "¿Lo reconoces?",
+        "question": "¿Reconoces este cargo?",
     },
     "pt": {
-        "intro": "Esta é a cobrança que encontrei:",
-        "merchant": "Estabelecimento",
-        "amount": "Valor",
-        "when": "Data e hora",
-        "at": "às",
-        "channel": "Canal",
-        "city": "Cidade",
-        "card": "Cartão",
-        "product": "Produto",
-        "ending": "com final",
-        "status": "Status",
+        "intro": "Esta é a cobrança que encontramos; confira o detalhe.",
         "pending": (
             "Esta cobrança ainda está pendente: ainda não foi liquidada, então o estabelecimento "
             "ainda pode confirmá-la, ajustá-la ou cancelá-la."
@@ -229,32 +180,18 @@ def choices(language: Language) -> list[dict[str, str]]:
 def recognition_text(detail: ChargeDetail, language: Language) -> str:
     """The text of the recognition step.
 
+    The detail of the charge (merchant, amount, date, channel, city, card, status) is shown
+    once, in the charge card the response carries (`ChatOut.charge`); the text only frames it
+    and adds what the card cannot say.
+
     Args:
         detail: The charge as read from the database.
         language: es or pt.
 
     Returns:
-        The detail of the charge and the notes that apply: pending, twin, earlier months.
+        The introduction, the notes that apply (pending, twin, earlier months) and the question.
     """
     t = _TEXT[language]
-    what = detail.merchant or _TYPES[language].get(detail.transaction_type, "")
-    lines = [
-        t["intro"],
-        f"- {t['merchant']}: {what}",
-        f"- {t['amount']}: {_amount(detail.amount)}",
-        f"- {t['when']}: {_when(detail.at, language)}",
-        f"- {t['channel']}: {_CHANNELS[language].get(detail.channel, detail.channel)}",
-    ]
-    if detail.city:
-        lines.append(f"- {t['city']}: {detail.city}")
-    card = _PRODUCTS[language].get(detail.product_type)
-    if detail.last4:
-        label = t["card"] if card else t["product"]
-        name = f"{card} " if card else ""
-        lines.append(f"- {label}: {name}{t['ending']} {detail.last4}")
-    status = _STATUSES[language].get(detail.status, detail.status)
-    lines.append(f"- {t['status']}: {status}")
-
     notes = []
     if detail.status == "Pending":
         notes.append(t["pending"])
@@ -267,18 +204,12 @@ def recognition_text(detail: ChargeDetail, language: Language) -> str:
             notes.append(t["twin_approved"].format(when=when))
     if detail.earlier_months:
         notes.append(t["earlier"].format(months=_months(detail.earlier_months, language)))
-    return "\n".join([*lines, "", *notes, t["question"]])
-
-
-def _amount(a: AmountDisplay) -> str:
-    shown = f"{a.amount:,.2f} {a.currency}"
-    if a.converted_amount is None:
-        return shown
-    return f"{shown} ({a.converted_amount:,.2f} {a.converted_currency}, {a.label})"
+    return "\n".join([t["intro"], *notes, t["question"]])
 
 
 def _when(at: datetime, language: Language) -> str:
-    return f"{at:%d/%m/%Y} {_TEXT[language]['at']} {at:%H:%M}"
+    # The same form as the charge card of the screen: "16 jun 2026, 22:40".
+    return f"{at.day} {MONTHS[language][at.month - 1][:3]} {at.year}, {at:%H:%M}"
 
 
 def _months(months: tuple[date, ...], language: Language) -> str:

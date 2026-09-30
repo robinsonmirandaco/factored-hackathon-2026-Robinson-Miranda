@@ -62,36 +62,19 @@ DISSUASION = {
 }
 
 
-def test_the_detail_shows_merchant_city_channel_time_card_and_status() -> None:
-    text = recognition_text(BASE, "es")
-    for shown in (
-        "Comercio: MercaYa Polanco",
-        "Ciudad: Ciudad de México",
-        "Canal: compra en línea",
-        "Fecha y hora: 16/06/2026 a las 22:41",
-        "Tarjeta: tarjeta de crédito terminada en 4821",
-        "Estado: aprobado",
-        "Monto: 90.00 USD (1,650.50 MXN, aprox., tasa del día)",
-    ):
-        assert shown in text
+# The charge card of the screen (ChatOut.charge, read from the database) is the only place the
+# detail is shown; the text only frames it and adds the notes (QA finding 8).
 
 
-def test_the_detail_in_portuguese() -> None:
-    text = recognition_text(BASE, "pt")
-    assert "Estabelecimento: MercaYa Polanco" in text
-    assert "Cartão: cartão de crédito com final 4821" in text
-    assert "Data e hora: 16/06/2026 às 22:41" in text
-    assert text.endswith("Você reconhece essa cobrança?")
-
-
-def test_a_missing_city_or_card_number_is_left_out_not_invented() -> None:
-    text = recognition_text(replace(BASE, city=None, last4=None), "es")
-    assert "Ciudad" not in text and "Tarjeta" not in text
-
-
-def test_a_product_that_is_not_a_card_is_named_as_a_product() -> None:
-    text = recognition_text(replace(BASE, product_type="checking_account"), "es")
-    assert "Producto: terminada en 4821" in text
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_the_text_leaves_the_detail_to_the_card(language: str) -> None:
+    text = recognition_text(BASE, language)
+    for detail in ("MercaYa Polanco", "4821", "Ciudad de México", "90.00", "1,650.50", "22:41"):
+        assert detail not in text, detail
+    assert text.startswith({"es": "Este es el cargo", "pt": "Esta é a cobrança"}[language])
+    assert text.endswith(
+        {"es": "¿Reconoces este cargo?", "pt": "Você reconhece essa cobrança?"}[language]
+    )
 
 
 def test_a_pending_charge_is_explained_as_not_settled() -> None:
@@ -102,13 +85,13 @@ def test_a_pending_charge_is_explained_as_not_settled() -> None:
 
 def test_twin_with_one_pending_is_explained_as_a_temporary_hold() -> None:
     text = recognition_text(TWIN_PENDING, "es")
-    assert "Hay otro cargo igual de este comercio el 16/06/2026 a las 22:40, pendiente" in text
+    assert "Hay otro cargo igual de este comercio el 16 jun 2026, 22:40, pendiente" in text
     assert "retención temporal" in text
 
 
 def test_twin_with_both_approved_is_shown_as_a_possible_duplicate() -> None:
     text = recognition_text(TWIN_APPROVED, "es")
-    assert "el 10/06/2026 a las 09:05, también aprobado: puede ser un cobro duplicado" in text
+    assert "el 10 jun 2026, 09:05, también aprobado: puede ser un cobro duplicado" in text
     assert "retención" not in text
 
 

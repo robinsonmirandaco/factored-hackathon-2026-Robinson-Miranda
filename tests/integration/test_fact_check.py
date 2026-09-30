@@ -29,7 +29,7 @@ MESSAGES = {
 }
 NOT_RECOGNIZED = {"es": "Sigo sin reconocerlo", "pt": "Continuo sem reconhecer"}
 YES = {"es": "sí", "pt": "sim"}
-PERSON = {"es": "te comunico con una persona", "pt": "contato com uma pessoa"}
+PERSON = {"es": "te comunicamos con una persona", "pt": "contato com uma pessoa"}
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def test_a_correct_receipt_is_sent_with_the_cited_deadline(
 
     assert (r.outcome, r.llm_fallback) == ("registered_verified", False)
     assert r.reply.startswith(_receipt(r.facts["dispute"]["folio"]))
-    assert "15 días hábiles según el §2.1 (política de demostración, no del banco)" in r.reply
+    assert "(15 días hábiles).\n[simulado] §2.1 · política de demostración, no del banco" in r.reply
     assert _last_check(schema, r.case_id) == ("enforce", True, True, [])
 
 
@@ -213,11 +213,11 @@ def test_without_a_backing_passage_no_deadline_is_stated_and_a_person_is_offered
     assert r.outcome == "registered_verified"
     assert r.facts["dispute"]["due_date"] is None
     assert r.reply == f"{template_reply(r.facts, language)} " + (
-        "No tengo un plazo de respuesta respaldado por la política para esta aclaración. "
-        "Si quieres, te comunico con una persona."
+        "No tenemos un plazo de respuesta respaldado por la política para esta aclaración. "
+        "Si quieres, te comunicamos con una persona."
         if language == "es"
-        else "Não tenho um prazo de resposta respaldado pela política para esta contestação. "
-        "Se quiser, eu coloco você em contato com uma pessoa."
+        else "Não temos um prazo de resposta respaldado pela política para esta contestação. "
+        "Se quiser, colocamos você em contato com uma pessoa."
     )
     assert PERSON[language] in r.reply
     assert "hábiles" not in r.reply and "úteis" not in r.reply

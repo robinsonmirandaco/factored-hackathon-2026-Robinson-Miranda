@@ -31,4 +31,4 @@ turns:
     policy_rule: routing.claim_status
     reply_contains:
     - CMP-EVC26CLAIM00000001
-    - 15 días hábiles según el §2.1
+    - (15 días hábiles)

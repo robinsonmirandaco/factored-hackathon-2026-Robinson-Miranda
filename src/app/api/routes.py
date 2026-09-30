@@ -1,5 +1,6 @@
 """HTTP routes. Thin: validate input, call one service, return a schema."""
 
+import dataclasses
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
@@ -20,19 +21,24 @@ from app.schemas.api import (
     ChargeOut,
     ChatIn,
     ChatOut,
+    ClarificationOut,
+    ClueOut,
     HealthOut,
     HistoryEntryOut,
     HumanDecisionIn,
+    MeOut,
     MetricsOut,
+    MovementsOut,
     OtpRequestIn,
     OtpRequestOut,
     OtpVerifyIn,
+    ProductOut,
     TokenOut,
     TraceEventOut,
 )
 from app.schemas.dossier import Dossier
-from app.services import auth, cases, dossier
-from app.services.agent import handle_message
+from app.services import auth, cases, dossier, me
+from app.services.agent import handle_message, pending_detail
 
 router = APIRouter()
 
@@ -144,7 +150,10 @@ def chat(
         security_event=foreign,
         recognition=body.recognition,
         option=body.option,
+        transaction_id=body.transaction_id,
+        decline_action_id=body.decline_action_id,
     )
+    pending = r.facts.get("pending_action")
     auth.remember_case(session, customer, r.case_id)
     return ChatOut(
         case_id=r.case_id,
@@ -161,8 +170,11 @@ def chat(
         choices=r.facts.get("choices", []),
         options=r.facts.get("options", []),
         claims=r.facts.get("claims", []),
-        pending_action=r.facts.get("pending_action"),
+        pending_action=(
+            {**pending, **pending_detail(session, pending["action_id"])} if pending else None
+        ),
         dispute_folio=(r.facts.get("dispute") or {}).get("folio"),
+        clues=[ClueOut(**dataclasses.asdict(c)) for c in r.clues],
     )
 
 
@@ -184,6 +196,61 @@ def _charge_out(d: ChargeDetail) -> ChargeOut:
         status=d.status,
         twin={"at": d.twin.at, "status": d.twin.status} if d.twin else None,
         earlier_months=[m.strftime("%Y-%m") for m in d.earlier_months],
+    )
+
+
+@router.get("/me", response_model=MeOut, responses={**_AUTH, 404: _ERRORS[404], 503: _ERRORS[503]})
+def get_me(customer: CustomerDep, session: CustomerSessionDep, runtime: RuntimeDep) -> MeOut:
+    """Returns the session customer and the simulated now the screens count dates from."""
+    return me.get_me(session, runtime.agent.clock, customer.subject, runtime.settings.demo_mode)
+
+
+@router.get("/me/products", response_model=list[ProductOut], responses={**_AUTH, 503: _ERRORS[503]})
+def get_products(customer: CustomerDep, session: CustomerSessionDep) -> list[ProductOut]:
+    """Returns the products of the session customer."""
+    return me.list_products(session, customer.subject)
+
+
+@router.get(
+    "/me/transactions",
+    response_model=MovementsOut,
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def get_transactions(
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    runtime: RuntimeDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    before: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+) -> MovementsOut:
+    """Returns one page of the session customer's transactions, newest first."""
+    return me.list_movements(
+        session,
+        runtime.agent.clock,
+        customer.subject,
+        runtime.agent.policy.config.dispute_window_days,
+        limit,
+        before,
+    )
+
+
+@router.get(
+    "/me/clarifications",
+    response_model=list[ClarificationOut],
+    responses={**_AUTH, 404: _ERRORS[404], 503: _ERRORS[503]},
+)
+def get_clarifications(
+    customer: CustomerDep, session: CustomerSessionDep, runtime: RuntimeDep
+) -> list[ClarificationOut]:
+    """Returns the session customer's clarifications with their status and deadline."""
+    a = runtime.agent
+    return me.list_clarifications(
+        session,
+        a.clock,
+        a.passages,
+        a.calendars,
+        customer.subject,
+        a.policy.config.queue.sla_hours,
     )
 
 
