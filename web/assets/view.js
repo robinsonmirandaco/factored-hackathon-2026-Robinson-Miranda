@@ -1,7 +1,7 @@
 // What the customer screens say, built from API data. Pure functions, no DOM: the chat and the
 // lists render their output, and tests/web checks it.
 
-import { day, dayMonth, money } from "./i18n.js";
+import { day, dayMonth, label, money } from "./i18n.js";
 
 const card = (p) => (p.last4 ? `•••• ${p.last4}` : "");
 
@@ -71,4 +71,11 @@ export function codeStep(requestedFor, current) {
     && requestedFor.type === current.type
     && requestedFor.number === current.number;
   return { showCode: same };
+}
+
+// What the customer "says" when pressing a movement's button: the charge it was pressed on.
+export function buttonMessage(t, lang, movement) {
+  const what = movement.merchant || label(t, "type", movement.transaction_type);
+  const key = movement.status === "Pending" ? "btnWhatIs" : "btnNotRecognized";
+  return t(key, { what, date: dayMonth(lang, movement.at) });
 }

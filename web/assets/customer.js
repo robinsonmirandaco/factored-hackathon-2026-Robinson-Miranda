@@ -5,7 +5,8 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  chipParts, clarificationLines, codeStep, errorText, pendingButtons, pendingQuestion,
+  buttonMessage, chipParts, clarificationLines, codeStep, errorText, pendingButtons,
+  pendingQuestion,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -234,7 +235,7 @@ async function renderHome() {
         p.credit_limit != null
           ? el("div", { class: "small muted", text: `${t("limit")}: ${money(state.lang, p.credit_limit, p.currency)}` })
           : null,
-        el("div", { class: "small muted", text: p.status }))))
+        el("div", { class: "small muted", text: label(t, "pstatus", p.status) }))))
       : el("p", { class: "muted", text: t("noProducts") });
     target.replaceChildren(
       el("div", { class: "card" },
@@ -280,14 +281,14 @@ async function renderMovements(reset) {
         ? el("button", {
           type: "button", class: `btn small${pending ? "" : " primary"}`,
           text: pending ? t("whatIsThis") : t("notRecognized"),
-          onclick: () => openByButton(m.transaction_id, pending ? t("whatIsThis") : t("notRecognized")),
+          onclick: () => openByButton(m.transaction_id, buttonMessage(t, state.lang, m)),
         })
         : null;
       body.append(el("tr", {},
         el("td", { text: dayTime(state.lang, m.at) }),
         el("td", {},
           el("div", { text: m.merchant || label(t, "type", m.transaction_type) }),
-          el("div", { class: "muted small", text: [label(t, "type", m.transaction_type), m.city, m.channel].filter(Boolean).join(" · ") })),
+          el("div", { class: "muted small", text: [label(t, "type", m.transaction_type), m.city, label(t, "channel", m.channel)].filter(Boolean).join(" · ") })),
         el("td", { class: "amount" }, amountCell(m)),
         el("td", { class: "hide-sm" }, el("span", {
           class: `pill${pending ? " warn" : ""}`, text: label(t, "tx", m.status),
@@ -355,7 +356,7 @@ function chargeCard(c) {
     ["field_amount", el("span", {}, amountCell(c))],
     ["field_at", dayTime(state.lang, c.at)],
     ["field_city", c.city],
-    ["field_channel", c.channel],
+    ["field_channel", label(t, "channel", c.channel)],
     ["field_product", `${label(t, "product", c.product_type)}${c.last4 ? ` •••• ${c.last4}` : ""}`],
     ["field_status", label(t, "tx", c.status)],
   ].filter(([, v]) => v);

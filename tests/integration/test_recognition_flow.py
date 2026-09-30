@@ -102,8 +102,8 @@ def test_the_charge_is_shown_from_the_database_before_any_decision(
     )
     assert charge["at"] == (NOW - timedelta(hours=20)).isoformat()
     assert [c["id"] for c in body["choices"]] == ["not_recognized", "recognized"]
-    assert "tarjeta de crédito terminada en 4821" in body["reply"]
-    assert "Ciudad: Bogotá" in body["reply"]
+    # The charge card is the only place the detail is shown; the text only frames it.
+    assert "4821" not in body["reply"] and "Bogotá" not in body["reply"]
 
     trail = _audit(schema, body["case_id"])
     assert "decide" not in [a for a, _, _ in trail]
