@@ -4,7 +4,9 @@
 
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
-import { chipParts, clarificationLines, pendingButtons, pendingQuestion } from "./view.js";
+import {
+  chipParts, clarificationLines, codeStep, errorText, pendingButtons, pendingQuestion,
+} from "./view.js";
 
 const api = createClient("customer");
 const DOCUMENT_TYPES = ["CURP", "INE", "CC", "CE", "DNI", "Pasaporte"];
@@ -87,6 +89,18 @@ function loginForm(form, onDone) {
   const askButton = el("button", { type: "button", class: "btn", text: t("requestCode") });
   const enterButton = el("button", { type: "submit", class: "btn primary", text: t("verify"), hidden: true });
   const doc = () => ({ document_type: type.value, document_number: number.value.trim() });
+  let requestedFor = null;
+  // A code belongs to the document it was asked for: changing the document hides the field.
+  const sync = () => {
+    const { showCode } = codeStep(requestedFor, { type: type.value, number: number.value.trim() });
+    codeRow.hidden = !showCode;
+    enterButton.hidden = !showCode;
+    code.disabled = !showCode;
+    if (!showCode) code.value = "";
+    info.textContent = showCode ? info.textContent : t("codeFirst");
+  };
+  type.addEventListener("change", () => { requestedFor = null; sync(); });
+  number.addEventListener("input", sync);
 
   askButton.addEventListener("click", async () => {
     error.textContent = "";
@@ -94,12 +108,12 @@ function loginForm(form, onDone) {
     askButton.disabled = true;
     try {
       const r = await api.call("/auth/otp/request", { method: "POST", body: doc() });
+      requestedFor = { type: type.value, number: number.value.trim() };
+      sync();
       info.textContent = t("codeSent", { min: Math.round(r.expires_in_seconds / 60) });
-      codeRow.hidden = false;
-      enterButton.hidden = false;
       code.focus();
     } catch (e) {
-      error.textContent = e.message || t("errorGeneric");
+      error.textContent = errorText(t, e);
     } finally {
       askButton.disabled = false;
     }
@@ -117,7 +131,7 @@ function loginForm(form, onDone) {
       api.setToken(r.access_token);
       await onDone();
     } catch (e) {
-      error.textContent = e.message || t("errorGeneric");
+      error.textContent = errorText(t, e);
     } finally {
       enterButton.disabled = false;
     }
@@ -133,6 +147,7 @@ function loginForm(form, onDone) {
     error,
     el("p", { class: "note", text: t("identityNote") }),
   );
+  sync();
 }
 
 async function loadMe() {
@@ -187,7 +202,7 @@ function show(view) {
 
 function failure(target, e) {
   target.replaceChildren(el("div", { class: "card" },
-    el("p", { class: "error", text: e?.message || t("errorGeneric") }),
+    el("p", { class: "error", text: errorText(t, e) }),
     e?.traceId ? el("p", { class: "muted small mono", text: `trace_id ${e.traceId}` }) : null));
 }
 
@@ -420,7 +435,7 @@ async function send(body, shown) {
     renderTurn(r);
   } catch (e) {
     if (e.code === "case_not_found") setCase(null);
-    bubble("bot", el("span", { class: "error", text: e.message || t("errorGeneric") }),
+    bubble("bot", el("span", { class: "error", text: errorText(t, e) }),
       e.traceId ? el("span", { class: "meta", text: `trace_id ${e.traceId}` }) : null);
   } finally {
     state.busy = false;

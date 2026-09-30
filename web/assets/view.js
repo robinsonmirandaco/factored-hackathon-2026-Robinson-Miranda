@@ -56,3 +56,19 @@ export function chipParts(t, lang, chip) {
   const same = chip.evidence.trim().toLowerCase() === String(value).trim().toLowerCase();
   return { label: t(`clue_${chip.field}`), value, evidence: same ? null : chip.evidence };
 }
+
+// An API error in the screen's language. The API's message is English, for developers: it is
+// never shown; an unknown code gets the generic message.
+export function errorText(t, error) {
+  const key = `error_${error?.code}`;
+  const text = t(key);
+  return text === key ? t("errorGeneric") : text;
+}
+
+// The code field appears only once a code was requested for the document typed now.
+export function codeStep(requestedFor, current) {
+  const same = requestedFor !== null
+    && requestedFor.type === current.type
+    && requestedFor.number === current.number;
+  return { showCode: same };
+}
