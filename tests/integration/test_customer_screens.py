@@ -870,3 +870,75 @@ def test_the_confirmation_turn_has_no_text_besides_the_question(llm_client: Test
 
     assert offered["outcome"] == "awaiting_confirmation" and offered["pending_action"]
     assert offered["reply"] == ""
+
+
+# ---- a case without an identified charge holds none; answers on a case with a person ---------
+
+
+def _read_starbucks(message: str) -> dict[str, Any]:
+    # Only a merchant no charge has: no charge is identified, and the two candidates are shown.
+    return reading(
+        "unrecognized_charge",
+        "es-CO",
+        merchant_hint={"value": "Starbucks", "evidence": "Starbucks"},
+    )
+
+
+@pytest.fixture
+def starbucks_client(schema_rows: SchemaUrls, database_url: str) -> Iterator[TestClient]:
+    settings = llm_settings(database_url, log_level="WARNING")
+    app = create_app(settings)
+    llm = fake_llm(settings, _read_starbucks, reply="Texto del LLM que no debe llegar.")
+    app.state.runtime = dataclasses.replace(app.state.runtime, agent=agent_deps(settings, llm))
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
+        yield c
+
+
+def test_a_case_that_is_left_without_a_charge_holds_none(
+    starbucks_client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    # The QA sequence: the button on a charge, then, in the same case, a message that does not
+    # name it. The case is left without an identified charge and must not keep the button's.
+    first = starbucks_client.post(
+        "/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}
+    ).json()
+    later = starbucks_client.post(
+        "/chat", json={"message": "No reconozco un cargo de Starbucks", "case_id": first["case_id"]}
+    ).json()
+    assert later["case_id"] == first["case_id"] and later["outcome"] == "identifying"
+
+    assert _case_row(schema_rows, first["case_id"])[1] is None
+    # The real charge is free to be claimed.
+    again = starbucks_client.post(
+        "/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}
+    ).json()
+    assert again["outcome"] == "recognizing" and again["case_id"] != first["case_id"]
+
+
+def test_an_escalation_without_a_charge_is_listed_without_one(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    first = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()
+    # The case moves on to options (as when a later message does not name the charge), and
+    # the customer says none of them is the one: an escalation with no charge.
+    engine = create_engine(schema_rows.admin)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE cases SET status = 'identifying', shown_options = ARRAY['TXP'] "
+                "WHERE id = :c"
+            ),
+            {"c": first["case_id"]},
+        )
+    engine.dispose()
+    escalated = client.post(
+        "/chat", json={"message": "Ninguno", "case_id": first["case_id"], "option": "none"}
+    ).json()
+    assert escalated["outcome"] == "escalated"
+
+    assert _case_row(schema_rows, first["case_id"]) == ("escalated", None)
+    item = next(
+        i for i in client.get("/me/clarifications").json() if i["case_id"] == first["case_id"]
+    )
+    assert (item["merchant"], item["amount"], item["charge_at"]) == (None, None, None)

@@ -703,8 +703,9 @@ def _decide_on_charge(
         session, deps.clock, customer.customer_id, policy.open_dispute_lookback_days, case.id
     ).data
     tx = _charge_facts(session, charge, local_currency(customer.country_code)) if charge else None
-    if charge is not None:
-        case.transaction_id = charge.transaction_id
+    # A decision without a charge leaves none on the case: one kept from an earlier step would
+    # show the case as that charge's and hold the charge against a real claim.
+    case.transaction_id = charge.transaction_id if charge is not None else None
     ctx = PolicyContext(
         intent=case.intent,
         language=language,
@@ -769,6 +770,7 @@ def _charge_facts(session: Session, charge: Candidate, local: str) -> Facts:
 def _identifying(case: Case, found: Identification) -> Facts:
     by_id = {s.candidate.transaction_id: s.candidate for s in found.scored}
     case.status = "identifying"
+    case.transaction_id = None
     case.autonomy_level = "L0"
     case.clarifications += 1
     shown = found.decision == "show_options"
