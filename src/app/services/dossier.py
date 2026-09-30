@@ -43,11 +43,12 @@ from app.schemas.dossier import (
     Source,
     Translation,
 )
-from app.services.cases import HANDOFF_STATUSES
+from app.services.cases import DISPUTE_INTENTS, HANDOFF_STATUSES
 from app.services.clues import CLUE_FIELDS, last_clues
 
-# Intents that are about one charge, which a dossier expects to find.
-DISPUTE_INTENTS = ("unrecognized_charge", "billing_error_amount", "billing_error_duplicate")
+# A dossier opens while the case is with a person, waits for the customer's answer, or was
+# decided by an analyst, who reads there what the decision did.
+DOSSIER_STATUSES = (*HANDOFF_STATUSES, "awaiting_customer", "approved", "rejected")
 
 # The closed list of what the system could not confirm, in the analyst's language.
 _QUESTIONS: dict[Lang, dict[str, str]] = {
@@ -117,12 +118,12 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         The dossier.
 
     Raises:
-        AppError: 404 case_not_found; 409 case_not_escalated when the case is not with a person.
+        AppError: 404 case_not_found; 409 case_not_escalated when no person has had the case.
     """
     case = session.get(Case, case_id)
     if case is None:
         raise AppError("case_not_found", f"Case {case_id} not found.", 404)
-    if case.status not in HANDOFF_STATUSES:
+    if case.status not in DOSSIER_STATUSES:
         raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
     rows = list(
         session.execute(
@@ -140,7 +141,8 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         if decide and decide.result
         else None
     )
-    if case.status == "security_blocked":
+    # Told by its rule, not its status: a security event an analyst closed is still one (CA8).
+    if case.status == "security_blocked" or (rule and rule.rule.startswith("security.")):
         return Dossier(
             case_id=case.id,
             trace_id=case.trace_id,
@@ -198,7 +200,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
                 source=Source(table="audit_log", id=str(r.id)),
             )
             for r in rows
-            if (r.actor, r.action) == ("agent", "customer_note")
+            if (r.actor, r.action) in (("agent", "customer_note"), ("customer", "info_reply"))
         ],
     )
 
@@ -373,6 +375,19 @@ def _actions(session: Session, case: Case, rows: list[AuditRecord]) -> list[Acti
         out.append(
             ActionTaken(action=a.action, state=state, source=Source(table="case_actions", id=a.id))
         )
+    # An analyst's approval registers without a case_actions row, and never blocks the card.
+    for r in rows:
+        done = r.result or {}
+        if (r.actor, r.action) != ("human", "decision") or "verified" not in done:
+            continue
+        src = Source(table="audit_log", id=str(r.id))
+        out.append(
+            ActionTaken(
+                action="register", state="verified" if done["verified"] else "failed", source=src
+            )
+        )
+        if done.get("block_not_executed"):
+            out.append(ActionTaken(action="block", state="not_executed", source=src))
     return out
 
 

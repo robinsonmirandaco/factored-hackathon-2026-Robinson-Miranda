@@ -2,7 +2,7 @@
 
 The schema itself lives in the SQL migrations of db/migrations; these classes only map it, and a
 test checks that every mapped column exists there with the same type. Tables the service does
-not query through the ORM (complaints, exchange rates, the queue, seed runs) are not mapped.
+not query through the ORM (complaints, exchange rates, seed runs) are not mapped.
 """
 
 from datetime import date, datetime
@@ -84,7 +84,7 @@ class Case(Base):
     intent: Mapped[str] = mapped_column(Text)
     # open | identifying | recognizing | recognized_closed | awaiting_confirmation |
     # registered_verified | failed | pending_analyst_approval | escalated | security_blocked |
-    # abstained | closed | approved | rejected | expired
+    # abstained | closed | approved | rejected | expired | awaiting_customer
     status: Mapped[str] = mapped_column(Text, default="open")
     # es or pt; with the intent, the autonomy cell of the case.
     language: Mapped[str | None] = mapped_column(Text)
@@ -157,8 +157,32 @@ class QueueItem(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(Text, default="normal")
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # The case came back to the queue with the customer's answer (TRZ-28).
+    updated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class InfoRequest(Base):
+    """A question of the analyst to the customer, and the answer (TRZ-28). Both are stored
+    PII-redacted; the deadline is in business days on the simulated clock."""
+
+    __tablename__ = "info_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    case_id: Mapped[str] = mapped_column(Text)
+    customer_id: Mapped[str] = mapped_column(Text)
+    question: Mapped[str] = mapped_column(Text)
+    asked_by: Mapped[str] = mapped_column(Text)
+    asked_on: Mapped[date] = mapped_column(Date)
+    due_on: Mapped[date] = mapped_column(Date)
+    # Status the case goes back to with the answer.
+    status_before: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str | None] = mapped_column(Text)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # open | answered | expired
+    status: Mapped[str] = mapped_column(Text, default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class CardBlock(Base):

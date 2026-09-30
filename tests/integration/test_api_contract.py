@@ -128,7 +128,11 @@ def test_operator_note_is_redacted_in_audit_log(client: TestClient, schema: Sche
 
     r = client.post(
         f"/cases/{case_id}/decision",
-        json={"decision": "approve", "note": "called client, card 4111 1111 1111 1111"},
+        json={
+            "decision": "reject",
+            "reason": "insufficient_data",
+            "note": "called client, card 4111 1111 1111 1111",
+        },
         headers=analyst_headers(client),
     )
     assert r.status_code == 200

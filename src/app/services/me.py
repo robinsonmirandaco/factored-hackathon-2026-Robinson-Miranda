@@ -27,11 +27,13 @@ from app.schemas.api import (
     MovementsOut,
     ProductOut,
 )
+from app.services.info_requests import latest_request
 from app.services.tools import read_open_claims
 
 # Cases the customer follows in Mis aclaraciones besides its disputes: with a person, or decided
 # by one. A case still in conversation lives in the chat; one that only informed or redirected is
-# over; a registered one is shown through its dispute. A case stopped for security is not a
+# over; a registered one is shown through its dispute. One waiting for the customer's answer to an
+# analyst carries the question (TRZ-28). A case stopped for security is not a
 # clarification of the customer: it is reviewed by the bank and never listed.
 # Statuses of a case a person is reviewing: they carry the review time of their queue priority.
 WITH_PERSON_STATUSES = ("failed", "pending_analyst_approval", "escalated")
@@ -39,6 +41,7 @@ FOLLOWED_STATUSES = (
     "failed",
     "pending_analyst_approval",
     "escalated",
+    "awaiting_customer",
     "approved",
     "rejected",
 )
@@ -270,6 +273,7 @@ def list_clarifications(
                 amount=tx.amount if tx else None,
                 currency=tx.currency if tx else None,
                 charge_at=tx.transaction_date if tx else None,
+                info_request=latest_request(session, clock, c.id),
             )
         )
     out += [

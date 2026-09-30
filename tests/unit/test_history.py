@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app.domain.history import LANGS, TEMPLATES, describe
+from app.domain.history import LANGS, REVERSAL_REASONS, TEMPLATES, describe
+from app.domain.policy import load_policy
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -161,3 +162,27 @@ def test_no_line_repeats_free_text_or_product_numbers(step: tuple[str, str], lan
         "customer_id": secret,
     }
     assert secret not in describe(*step, payload, result, "1", lang)  # type: ignore[arg-type]
+
+
+def test_a_decision_line_names_the_analyst_and_the_reason() -> None:
+    payload = {"decision": "reject", "reason": "wrong_charge"}
+    result = {"analyst": "analista.demo", "status": "rejected"}
+    es = describe("human", "decision", payload, result, None, "es")
+    pt = describe("human", "decision", payload, result, None, "pt")
+    assert es == "La analista analista.demo decidió rechazar: cargo equivocado."
+    assert pt == "A analista analista.demo decidiu rejeitar: cobrança errada."
+
+
+def test_an_approval_line_tells_the_folio_and_the_block_left_out() -> None:
+    result = {"analyst": "a", "folio": "DSP-2026-00001", "block_not_executed": True}
+    line = describe("human", "decision", {"decision": "approve"}, result, None, "es")
+    assert line == (
+        "La analista a decidió aprobar. Se registró DSP-2026-00001 y se verificó. El bloqueo de "
+        "tarjeta no se ejecutó: requiere la confirmación del cliente."
+    )
+
+
+def test_every_reversal_reason_of_the_policy_has_words() -> None:
+    reasons = set(load_policy(SRC.parent / "config" / "policy.yaml").autonomy.reversal_reasons)
+    for lang in LANGS:
+        assert set(REVERSAL_REASONS[lang]) == reasons

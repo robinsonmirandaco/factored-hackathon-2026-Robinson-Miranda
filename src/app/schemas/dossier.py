@@ -90,11 +90,12 @@ class ActionTaken(_Strict):
     """An action of the case and what became of it.
 
     Attributes:
-        action: register, register_and_offer_block or register_and_block.
+        action: register, register_and_offer_block, register_and_block or block.
         state: verified (read back and matched), not_executed (never confirmed, replaced or
-            canceled), failed (read back and did not match), or not_verified (executed with no
-            read-back row, only possible for rows older than TRZ-19).
-        source: The case_actions row.
+            canceled, or a block an analyst's approval leaves out), failed (read back and did
+            not match), or not_verified (executed with no read-back row, only possible for rows
+            older than TRZ-19).
+        source: The case_actions row, or the audit row of the analyst's approval.
     """
 
     action: str
@@ -110,7 +111,8 @@ class OpenQuestion(_Strict):
 
 
 class LaterMessage(_Strict):
-    """A message the customer wrote once the case was with a person, redacted (TRZ-25).
+    """A message the customer wrote once the case was with a person, or an answer to the
+    analyst's question, redacted (TRZ-25, TRZ-28).
 
     Attributes:
         text: The message with PII replaced.

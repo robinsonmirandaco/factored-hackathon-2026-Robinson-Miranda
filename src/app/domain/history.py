@@ -1,8 +1,9 @@
 """Plain-language lines for the analyst's case history, written by code from audit rows.
 
 Each (actor, action) pair has one template per language. A template reads only non-personal
-fields (intent, rule, level, counts, outcome): never the redacted customer text, the reply, a
-product number or an operator note. The LLM takes no part in this text.
+fields (intent, rule, level, counts, outcome, the analyst's user name and closed-list reason):
+never the redacted customer text, the reply, a product number, an operator note or question.
+The LLM takes no part in this text.
 """
 
 from collections.abc import Callable
@@ -99,6 +100,26 @@ _ACTIONS: dict[Lang, dict[str, str]] = {
 _DECISIONS: dict[Lang, dict[str, str]] = {
     "es": {"approve": "aprobar", "reject": "rechazar", "need_info": "pedir información"},
     "pt": {"approve": "aprovar", "reject": "rejeitar", "need_info": "pedir informações"},
+}
+
+# Words of the closed list of reasons an analyst rejects with (policy autonomy.reversal_reasons).
+REVERSAL_REASONS: dict[Lang, dict[str, str]] = {
+    "es": {
+        "wrong_charge": "cargo equivocado",
+        "should_not_act": "no debía actuar",
+        "should_have_escalated": "debía escalar",
+        "misunderstanding_unresolved": "malentendido sin resolver",
+        "insufficient_data": "datos insuficientes",
+        "other": "otro",
+    },
+    "pt": {
+        "wrong_charge": "cobrança errada",
+        "should_not_act": "não devia agir",
+        "should_have_escalated": "devia escalar",
+        "misunderstanding_unresolved": "mal-entendido não resolvido",
+        "insufficient_data": "dados insuficientes",
+        "other": "outro",
+    },
 }
 
 _IDENTIFICATION: dict[Lang, dict[str, str]] = {
@@ -219,9 +240,43 @@ def _decline(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     decision = _label(_DECISIONS, lang, p.get("decision"))
+    who = r.get("analyst") or "?"
+    es = lang == "es"
+    line = f"La analista {who} decidió {decision}" if es else f"A analista {who} decidiu {decision}"
+    # Only a reason of the closed list is told: any other text is left out.
+    if reason := REVERSAL_REASONS[lang].get(str(p.get("reason"))):
+        line += ": " + reason
+    if r.get("folio"):
+        line += (
+            f". Se registró {r['folio']} y se verificó"
+            if es
+            else f". {r['folio']} foi registrada e verificada"
+        )
+    elif r.get("verified") is False:
+        line += (
+            ". La relectura no coincidió: el caso volvió a la cola"
+            if es
+            else ". A releitura não coincidiu: o caso voltou para a fila"
+        )
+    if r.get("block_not_executed"):
+        line += (
+            ". El bloqueo de tarjeta no se ejecutó: requiere la confirmación del cliente"
+            if es
+            else ". O bloqueio do cartão não foi executado: requer a confirmação do cliente"
+        )
+    if r.get("due_on"):
+        line += (
+            f". El cliente puede responder hasta el {r['due_on']}"
+            if es
+            else f". O cliente pode responder até {r['due_on']}"
+        )
+    return line + "."
+
+
+def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
-        return f"Una analista decidió {decision}."
-    return f"Uma analista decidiu {decision}."
+        return "El cliente respondió a la pregunta de la analista: el caso volvió a la cola."
+    return "O cliente respondeu à pergunta da analista: o caso voltou para a fila."
 
 
 def _identify(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -535,6 +590,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,
     ("human", "decision"): _human_decision,
+    ("customer", "info_reply"): _info_reply,
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,
     ("tool", "list_recent_transactions"): _recent,

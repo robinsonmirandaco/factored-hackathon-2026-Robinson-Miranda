@@ -24,6 +24,7 @@ SEEDED_TABLES = (
     *COHORT_TABLES,
     "cases",
     "case_queue",
+    "info_requests",
     "disputes",
     "card_blocks",
     "audit_log",

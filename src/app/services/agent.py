@@ -62,7 +62,7 @@ from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, pol
 from app.domain.recognition import Choice, choices, recognition_text
 from app.schemas.comprehension import Comprehension, ComprehensionContext, evidence_is_faithful
 from app.services import tools as T
-from app.services.cases import HANDOFF_STATUSES
+from app.services.cases import HANDOFF_STATUSES, VERIFICATION_FAILED_REASON
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
 from app.services.identification import (
     candidate_of,
@@ -100,6 +100,9 @@ FINAL_STATUSES = (
     "approved",
     "rejected",
     "expired",
+    # Waiting for the customer's answer to an analyst: it is answered from Mis aclaraciones,
+    # never from the chat (TRZ-28).
+    "awaiting_customer",
 )
 # A case in one of these statuses holds its charge: another case on the same charge would be a
 # second clarification of one charge, so the customer is taken back to it instead.
@@ -110,6 +113,7 @@ HOLDS_CHARGE = (
     "pending_analyst_approval",
     "failed",
     "registered_verified",
+    "awaiting_customer",
 )
 # Outcomes answered with a fixed reply instead of the LLM's: a security stop must not send the
 # text of the turn to the LLM, and a failed read-back confirms nothing.
@@ -128,8 +132,6 @@ CODE_WRITTEN_OUTCOMES = (
     "escalated",
     "pending_analyst_approval",
 )
-# Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
-VERIFICATION_FAILED_REASON = "verification.registration_failed"
 
 # The actions that wait for the customer's confirmation, and whether confirming blocks the card
 # of the charge. The "sí" to register_and_offer_block registers only: the block is then offered

@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response
 
 from app.api.deps import (
+    AnalystDep,
     AnalystSessionDep,
     CustomerDep,
     CustomerSessionDep,
@@ -23,9 +24,12 @@ from app.schemas.api import (
     ChatOut,
     ClarificationOut,
     ClueOut,
+    DecisionOut,
     HealthOut,
     HistoryEntryOut,
     HumanDecisionIn,
+    InfoReplyIn,
+    InfoReplyOut,
     MeOut,
     MetricsOut,
     MovementsOut,
@@ -33,16 +37,19 @@ from app.schemas.api import (
     OtpRequestOut,
     OtpVerifyIn,
     ProductOut,
+    QueueFilter,
+    QueueOut,
     TokenOut,
     TraceEventOut,
 )
 from app.schemas.dossier import Dossier
-from app.services import auth, cases, dossier, me
+from app.services import auth, cases, decisions, dossier, info_requests, me
 from app.services.agent import handle_message, pending_detail
 
 router = APIRouter()
 
 _ERRORS = {
+    400: {"description": "A field the decision needs is missing or not allowed"},
     401: {"description": "Missing, invalid, expired or revoked session"},
     403: {"description": "The session has another role"},
     404: {"description": "Not found"},
@@ -293,20 +300,59 @@ def get_dossier(
     return dossier.get_dossier(session, runtime.agent.llm, case_id, lang)
 
 
-@router.get("/queue", response_model=list[CaseOut], responses=_AUTH)
-def queue(session: AnalystSessionDep) -> list[CaseOut]:
-    """Returns the escalated cases waiting for a human, oldest first."""
-    return cases.list_queue(session)
+@router.get(
+    "/queue",
+    response_model=QueueOut,
+    responses={**_AUTH, 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def queue(
+    session: AnalystSessionDep,
+    runtime: RuntimeDep,
+    filter: Annotated[QueueFilter | None, Query()] = None,
+) -> QueueOut:
+    """Returns the open rows of case_queue, most urgent first, with a counter per filter."""
+    bands = runtime.agent.policy.config.amount_usd
+    return cases.list_queue(session, bands.human_review_above, filter)
 
 
 @router.post(
     "/cases/{case_id}/decision",
-    response_model=CaseOut,
-    responses={**_AUTH, 404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422]},
+    response_model=DecisionOut,
+    responses={
+        **_AUTH,
+        400: _ERRORS[400],
+        404: _ERRORS[404],
+        409: _ERRORS[409],
+        422: _ERRORS[422],
+        503: _ERRORS[503],
+    },
 )
-def human_decision(case_id: str, body: HumanDecisionIn, session: AnalystSessionDep) -> CaseOut:
-    """Records an operator decision on an escalated case."""
-    return cases.record_decision(session, case_id, body)
+def human_decision(
+    case_id: str,
+    body: HumanDecisionIn,
+    analyst: AnalystDep,
+    session: AnalystSessionDep,
+    runtime: RuntimeDep,
+) -> DecisionOut:
+    """Records an analyst decision: approve, reject with a reason, or ask the customer."""
+    return decisions.record_decision(session, runtime.agent, analyst.subject, case_id, body)
+
+
+@router.post(
+    "/me/clarifications/{case_id}/reply",
+    response_model=InfoReplyOut,
+    responses={**_AUTH, 404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def reply_to_analyst(
+    case_id: str,
+    body: InfoReplyIn,
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    runtime: RuntimeDep,
+) -> InfoReplyOut:
+    """Stores the customer's answer to the analyst's question and puts the case back in queue."""
+    sla = runtime.agent.policy.config.queue.sla_hours
+    return info_requests.reply(session, customer.subject, case_id, body.text, dict(sla))
 
 
 @router.get("/metrics", response_model=MetricsOut, responses=_AUTH)
