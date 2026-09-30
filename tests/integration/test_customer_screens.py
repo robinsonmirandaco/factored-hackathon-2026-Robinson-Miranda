@@ -960,3 +960,27 @@ def test_an_answer_on_a_case_with_a_person_gets_the_fixed_reply(
     assert r["outcome"] == "with_person" and r["case_id"] == escalated["case_id"]
     assert "Texto del LLM" not in r["reply"]
     assert r["reply"].startswith("Tu caso ya está con una persona.")
+
+
+def test_a_message_without_a_case_always_opens_a_new_one(
+    starbucks_client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    # A case with a person exists (QA: CASE-135AC0763D, escalated). A message sent without its
+    # case_id opens a new case; only one that names that case is added to its dossier.
+    escalated = starbucks_client.post(
+        "/chat", json={"message": BUTTON_ES, "transaction_id": "TXOLD"}
+    ).json()
+    assert escalated["outcome"] == "escalated"
+
+    fresh = starbucks_client.post("/chat", json={"message": "No reconozco un cargo de Starbucks"})
+    noted = starbucks_client.post(
+        "/chat",
+        json={"message": "No reconozco un cargo de Starbucks", "case_id": escalated["case_id"]},
+    )
+
+    assert fresh.json()["case_id"] != escalated["case_id"]
+    assert fresh.json()["outcome"] != "with_person"
+    assert (noted.json()["case_id"], noted.json()["outcome"]) == (
+        escalated["case_id"],
+        "with_person",
+    )
