@@ -27,7 +27,7 @@ from app.schemas.api import (
     MovementsOut,
     ProductOut,
 )
-from app.services.info_requests import latest_request
+from app.services.info_requests import all_requests, latest_request
 from app.services.tools import read_open_claims
 
 # Cases the customer follows in Mis aclaraciones besides its disputes: with a person, or decided
@@ -274,6 +274,7 @@ def list_clarifications(
                 currency=tx.currency if tx else None,
                 charge_at=tx.transaction_date if tx else None,
                 info_request=latest_request(session, clock, c.id),
+                info_requests=all_requests(session, clock, c.id),
             )
         )
     out += [

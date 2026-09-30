@@ -168,3 +168,4 @@ input, select, textarea {
 .info-request { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
 .info-request .question { margin: 2px 0 8px; }
 .info-request .answer { margin: 2px 0 8px; white-space: pre-wrap; }
+.info-entry + .info-entry { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }

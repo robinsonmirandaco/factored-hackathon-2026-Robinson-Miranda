@@ -185,12 +185,26 @@ export function createConversation() {
 // already answered. The deadline is a date of the simulated clock; the time of the answer is
 // not shown, since it runs on the real clock (design 10.2, rule 7).
 export function infoRequestView(t, lang, item) {
-  const r = item.info_request;
-  if (!r) return null;
+  return item.info_request ? requestView(t, lang, item, item.info_request, true) : null;
+}
+
+// Every question of the analyst on a clarification, oldest first, each with its answer or its
+// form, as the analyst sees them in the dossier.
+export function infoRequestViews(t, lang, item) {
+  const list = item.info_requests?.length ? item.info_requests : item.info_request ? [item.info_request] : [];
+  return list.map((r, i) => requestView(t, lang, item, r, i === list.length - 1));
+}
+
+function requestView(t, lang, item, r, last) {
   if (r.status !== "open") {
-    // Once the case is decided, nobody is reviewing the answer any more.
+    // Only the latest answer is under review, and only while the case is not decided.
     const closed = item.status === "rejected" || item.status === "approved";
-    return { question: r.question, answer: r.answer, answered: closed ? null : t("answered"), canAnswer: false };
+    return {
+      question: r.question,
+      answer: r.answer,
+      answered: last && !closed ? t("answered") : null,
+      canAnswer: false,
+    };
   }
   return {
     question: r.question,

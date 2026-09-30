@@ -98,3 +98,20 @@ test("a closed clarification does not say an analyst is reviewing the answer", a
   assert.equal(view.answer, "No");
   assert.equal(view.answered, null);
 });
+
+test("the customer sees every question of the analyst with its answer, in order (regression 1)", async () => {
+  const { infoRequestViews } = await import("../../web/assets/view.js");
+  const q = (id, question, status, answer) => ({ id, question, asked_on: "2026-06-17", due_on: "2026-06-24", overdue: false, status, answered_at: null, answer });
+  const item = {
+    id: "CASE-1", source: "cases", status: "awaiting_customer", case_id: "CASE-1",
+    info_request: q(2, "¿Segunda?", "open", null),
+    info_requests: [q(1, "¿Primera?", "answered", "Sí"), q(2, "¿Segunda?", "open", null)],
+  };
+  const views = infoRequestViews(es, "es", item);
+  assert.deepEqual(views.map((v) => [v.question, v.answer ?? null, v.canAnswer]), [
+    ["¿Primera?", "Sí", false],
+    ["¿Segunda?", null, true],
+  ]);
+  // Only the open question carries the note that an analyst reviews answers once it is sent.
+  assert.equal(views[0].answered, null);
+});

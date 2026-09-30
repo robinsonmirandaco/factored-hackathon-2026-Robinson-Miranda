@@ -583,6 +583,8 @@ class ClarificationOut(BaseModel):
         review_hours: For a case with a person, the review time of its queue priority, the
             one the chat gave (demo policy).
         info_request: The analyst's latest question on the case, if any (TRZ-28).
+        info_requests: Every question of the analyst on the case with its answer, oldest
+            first.
     """
 
     id: str
@@ -601,3 +603,4 @@ class ClarificationOut(BaseModel):
     passage_id: str | None = None
     review_hours: float | None = None
     info_request: InfoRequestOut | None = None
+    info_requests: list[InfoRequestOut] = Field(default_factory=list)

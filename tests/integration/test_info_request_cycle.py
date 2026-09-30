@@ -213,3 +213,9 @@ def test_two_questions_are_shown_each_with_its_answer_in_order(
     told = [h for h in history if "pedir información" in h or "respondió" in h]
     assert [("«" + QUESTION + "»") in told[0], "«No la hice»" in told[1]] == [True, True]
     assert [("«" + second + "»") in told[2], "«Sí, la tengo»" in told[3]] == [True, True]
+    # Regression 1: the customer sees both, in order, each with its answer.
+    mine = next(c for c in client.get("/me/clarifications").json() if c["case_id"] == asked)
+    assert [(r["question"], r["answer"]) for r in mine["info_requests"]] == [
+        (QUESTION, "No la hice"),
+        (second, "Sí, la tengo"),
+    ]

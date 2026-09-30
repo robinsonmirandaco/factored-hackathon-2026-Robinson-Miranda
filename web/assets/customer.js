@@ -7,7 +7,7 @@ import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
   buttonMessage, canSend, clarificationLines, closedNote, codeStep, createConversation, deadlineKind,
   errorText,
-  infoRequestView, movementDetail, openQuestions, reviewLine, statusTone, turnModel,
+  infoRequestViews, movementDetail, openQuestions, reviewLine, statusTone, turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -370,14 +370,18 @@ async function renderClarifications() {
 
 // The analyst's question and the form to answer it, on the clarification it belongs to.
 function infoBlock(item) {
-  const info = infoRequestView(t, state.lang, item);
-  if (!info) return null;
+  const views = infoRequestViews(t, state.lang, item);
+  if (!views.length) return null;
+  return el("div", { class: "info-request" }, views.map((info) => infoEntry(item, info)));
+}
+
+function infoEntry(item, info) {
   const head = [
     el("div", { class: "small muted", text: t("infoTitle") }),
     el("p", { class: "question", text: info.question }),
   ];
   if (!info.canAnswer) {
-    return el("div", { class: "info-request" }, head,
+    return el("div", { class: "info-entry" }, head,
       info.answer
         ? [el("div", { class: "small muted", text: t("yourAnswer") }), el("p", { class: "answer", text: info.answer })]
         : null,
@@ -403,7 +407,7 @@ function infoBlock(item) {
       button.disabled = false;
     }
   });
-  return el("div", { class: "info-request" }, head,
+  return el("div", { class: "info-entry" }, head,
     el("span", { class: `pill${info.overdue ? " bad" : " warn"}`, text: info.due }), form);
 }
 

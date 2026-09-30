@@ -118,6 +118,23 @@ def _replay(session: Session, case_id: str) -> InfoReplyOut | None:
     return InfoReplyOut.model_validate(last.result) if last and last.result else None
 
 
+def all_requests(session: Session, clock: SimulatedClock, case_id: str) -> list[InfoRequestOut]:
+    """Every question of an analyst on a case with its answer, in the order they were asked.
+
+    Args:
+        session: Open session.
+        clock: Simulated clock: an open deadline is overdue when it is before its today.
+        case_id: The case.
+
+    Returns:
+        The questions, oldest first; empty when the case has none.
+    """
+    rows = session.execute(
+        select(InfoRequest).where(InfoRequest.case_id == case_id).order_by(InfoRequest.id)
+    ).scalars()
+    return [_out(r, clock) for r in rows]
+
+
 def latest_request(session: Session, clock: SimulatedClock, case_id: str) -> InfoRequestOut | None:
     """The latest question of an analyst on a case, as the customer sees it.
 
@@ -135,8 +152,10 @@ def latest_request(session: Session, clock: SimulatedClock, case_id: str) -> Inf
         .order_by(InfoRequest.id.desc())
         .limit(1)
     ).scalar_one_or_none()
-    if r is None:
-        return None
+    return None if r is None else _out(r, clock)
+
+
+def _out(r: InfoRequest, clock: SimulatedClock) -> InfoRequestOut:
     return InfoRequestOut(
         id=r.id,
         question=r.question,
