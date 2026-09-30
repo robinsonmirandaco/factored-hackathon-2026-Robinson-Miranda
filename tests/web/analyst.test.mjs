@@ -21,7 +21,7 @@ test("a queue row shows case, customer, language, reason, amount, priority and S
   assert.equal(r.href, "#/caso/CASE-1");
   assert.equal(r.title, "Cargo no reconocido · Monto entre 500 y 1000 USD");
   assert.equal(r.sub, "CASE-1 · Cliente C1 · ES · Escalado");
-  assert.equal(r.amount, "US$800.00");
+  assert.match(r.amount, /^USD\s800\.00$/);
   assert.deepEqual(r.pills.map((p) => p.text), ["Prioridad Normal", "SLA en 3 h 30 min"]);
 });
 
@@ -87,6 +87,56 @@ test("what a decision did, in one sentence", () => {
     decisionDone({ decision: "approve", status: "approved", dispute_folio: "DSP-2026-00001", block_not_executed: true }),
     "Aprobado: se registró DSP-2026-00001 y se verificó. El bloqueo de tarjeta no se ejecutó.",
   );
+});
+
+// QA of the queue (2026-09-30), findings 1, 3 and 4.
+import { clueChips, factRows, infoExchanges } from "../../web/assets/analyst-view.js";
+
+const src = (table, id) => ({ table, id });
+
+test("facts use the words and formats of the customer web, in Spanish", () => {
+  const rows = factRows([
+    { name: "customer_segment", value: "Student", source: src("customers", "C1") },
+    { name: "customer_country", value: "CO", source: src("customers", "C1") },
+    { name: "amount", value: 257.21, source: src("transactions", "T1") },
+    { name: "currency", value: "COP", source: src("transactions", "T1") },
+    { name: "date", value: "2026-06-15", source: src("transactions", "T1") },
+    { name: "channel", value: "POS", source: src("transactions", "T1") },
+    { name: "status", value: "Approved", source: src("transactions", "T1") },
+    { name: "amount_usd", value: 800, source: src("transactions", "T1") },
+    { name: "dispute_status", value: "opened", source: src("disputes", "DSP-2026-00001") },
+    { name: "dispute_due_date", value: "2026-07-08", source: src("disputes", "DSP-2026-00001") },
+    { name: "product_status", value: "Active", source: src("products", "P1") },
+  ]);
+  const shown = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+  assert.equal(shown["Segmento"], "Estudiante");
+  assert.equal(shown["País"], "Colombia");
+  assert.match(shown["Monto registrado"], /^COP\s257\.21$/);
+  assert.equal(shown["Moneda"], undefined);
+  assert.equal(shown["Fecha"], "15 jun 2026");
+  assert.equal(shown["Canal"], "Terminal en comercio");
+  assert.equal(shown["Estado de la transacción"], "Aprobada");
+  assert.match(shown["Monto en USD"], /^USD\s800\.00$/);
+  assert.equal(shown["Estado de la aclaración"], "Abierta");
+  assert.equal(shown["Plazo de respuesta"], "8 jul 2026");
+  assert.equal(shown["Estado de la tarjeta"], "Activa");
+});
+
+test("an amount clue is shown like the customer web", () => {
+  const [chip] = clueChips([{ field: "amount", value: { value: 800, currency: "USD", approximate: false }, evidence: "800 dólares", read_in: 1 }]);
+  assert.match(chip.value, /^USD\s800\.00$/);
+});
+
+test("the deadline of a request for information is a day, not an ISO date", () => {
   assert.equal(decisionDone({ decision: "need_info", status: "awaiting_customer", due_on: "2026-06-24" }),
-    "Pregunta enviada. El cliente puede responder hasta el 2026-06-24.");
+    "Pregunta enviada. El cliente puede responder hasta el 24 jun 2026.");
+});
+
+test("each question of the analyst is shown with its answer, in order", () => {
+  const rows = infoExchanges([
+    { question: "¿Primera?", asked_by: "analista.demo", asked_on: "2026-06-17", due_on: "2026-06-24", status: "answered", answer: "Sí", source: src("info_requests", "1") },
+    { question: "¿Segunda?", asked_by: "analista.demo", asked_on: "2026-06-17", due_on: "2026-06-24", status: "open", answer: null, source: src("info_requests", "2") },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.question, r.answer]), [["¿Primera?", "Sí"], ["¿Segunda?", "Sin respuesta todavía"]]);
+  assert.equal(rows[0].meta, "analista.demo · 17 jun 2026 · plazo 24 jun 2026");
 });

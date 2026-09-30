@@ -110,6 +110,8 @@ const TEXT = {
     answered: "Respondiste. Una analista lo revisa.",
     pendingQuestions: "Tienes {n} pregunta(s) de la analista por responder",
     error_no_open_request: "Esta aclaración ya no espera tu respuesta.",
+    rejectedNote: "Revisamos tu aclaración y no procedió. Si sigues sin reconocer el cargo, escríbenos de nuevo con más detalles, como el monto, la fecha o el comercio.",
+    yourAnswer: "Tu respuesta",
     error_nothing_to_approve: "No hay acción que ejecutar.",
     error_charge_already_disputed: "El cargo ya tiene una aclaración abierta.",
     error_reason_required: "Falta el motivo.",
@@ -272,6 +274,8 @@ const TEXT = {
     answered: "Você respondeu. Uma analista está analisando.",
     pendingQuestions: "Você tem {n} pergunta(s) da analista para responder",
     error_no_open_request: "Este esclarecimento não aguarda mais sua resposta.",
+    rejectedNote: "Revisamos seu esclarecimento e ele não foi aceito. Se você ainda não reconhece a cobrança, escreva de novo com mais detalhes, como o valor, a data ou o estabelecimento.",
+    yourAnswer: "Sua resposta",
     error_nothing_to_approve: "Não há ação para executar.",
     error_charge_already_disputed: "A cobrança já tem um esclarecimento aberto.",
     error_reason_required: "Falta o motivo.",
@@ -348,7 +352,10 @@ export function label(t, prefix, code) {
 
 export function money(lang, amount, currency) {
   try {
-    return new Intl.NumberFormat(LOCALES[lang], { style: "currency", currency }).format(amount);
+    // Always the cents of the record: Intl drops them for COP, which would show 257.21 as 257.
+    return new Intl.NumberFormat(LOCALES[lang], {
+      style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(amount);
   } catch {
     return `${amount} ${currency}`;
   }

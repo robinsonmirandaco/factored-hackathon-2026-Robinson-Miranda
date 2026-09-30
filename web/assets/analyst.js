@@ -5,7 +5,8 @@
 import { createClient } from "./api.js";
 import {
   REVERSAL_REASONS, actionLabel, actionStateLabel, candidateCards, clueChips, decisionDone,
-  decisionPanel, decisionProblem, factRows, filterChips, identificationLabel, kindLabel, queueRow,
+  decisionPanel, decisionProblem, factRows, filterChips, identificationLabel, infoExchanges,
+  kindLabel, queueRow,
   reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
@@ -227,6 +228,16 @@ function dossierCards(d, history) {
       d.later_messages.map((m) => el("div", { class: "stack" },
         el("p", { class: "quote", text: m.text }),
         el("p", { class: "small muted mono", text: `${m.source.table} · ${m.source.id}` })))));
+  }
+  const exchanges = infoExchanges(d.info_exchanges);
+  if (exchanges.length) {
+    cards.push(el("div", { class: "card" },
+      el("h2", { text: "Preguntas al cliente y respuestas" }),
+      el("ol", { class: "exchanges" }, exchanges.map((x) => el("li", { class: "stack" },
+        el("div", { class: "small muted", text: x.meta }),
+        el("p", { class: "question", text: x.question }),
+        el("p", { class: x.answered ? "quote" : "quote muted", text: x.answer }),
+        el("p", { class: "small muted mono", text: x.source }))))));
   }
   if (d.open_questions.length) {
     cards.push(el("div", { class: "card" },

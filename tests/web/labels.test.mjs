@@ -62,3 +62,10 @@ test("Portuguese dates have one form: no abbreviation point anywhere", async () 
   }
   assert.equal(day("pt", "2026-06-17"), "17 de jun de 2026");
 });
+
+test("an amount keeps the cents of the record in every currency (QA of TRZ-27/28)", async () => {
+  const { money } = await import("../../web/assets/i18n.js");
+  assert.match(money("es", 257.21, "COP"), /^COP\s257\.21$/);
+  assert.match(money("pt", 257.21, "COP"), /257,21/);
+  assert.match(money("es", 800, "USD"), /^USD\s800\.00$/);
+});

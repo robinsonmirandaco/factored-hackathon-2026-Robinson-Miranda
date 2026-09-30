@@ -187,7 +187,11 @@ export function createConversation() {
 export function infoRequestView(t, lang, item) {
   const r = item.info_request;
   if (!r) return null;
-  if (r.status !== "open") return { question: r.question, answered: t("answered"), canAnswer: false };
+  if (r.status !== "open") {
+    // Once the case is decided, nobody is reviewing the answer any more.
+    const closed = item.status === "rejected" || item.status === "approved";
+    return { question: r.question, answer: r.answer, answered: closed ? null : t("answered"), canAnswer: false };
+  }
   return {
     question: r.question,
     due: t(r.overdue ? "answerOverdue" : "answerBy", { date: day(lang, r.due_on) }),
@@ -204,10 +208,17 @@ export function openQuestions(items) {
 
 // Which deadline a clarification shows: the review time of a case with a person, the response
 // deadline of a dispute or claim, or none. A case waiting for the customer's answer shows only
-// the deadline to answer, in its question (TRZ-28).
+// the deadline to answer, in its question (TRZ-28); a rejected one is closed and shows none.
 export function deadlineKind(item) {
   if (item.info_request?.status === "open") return "answer";
+  if (item.status === "rejected") return "closed";
   if (item.review_hours != null) return "review";
   if (item.due_date) return "due";
   return "none";
+}
+
+// What a closed clarification tells the customer: a rejection says it did not proceed and what
+// to do next, never the analyst's internal reason (QA of TRZ-27/28).
+export function closedNote(t, item) {
+  return item.status === "rejected" ? t("rejectedNote") : null;
 }

@@ -5,7 +5,8 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, canSend, clarificationLines, codeStep, createConversation, deadlineKind, errorText,
+  buttonMessage, canSend, clarificationLines, closedNote, codeStep, createConversation, deadlineKind,
+  errorText,
   infoRequestView, movementDetail, openQuestions, reviewLine, statusTone, turnModel,
 } from "./view.js";
 
@@ -331,7 +332,7 @@ async function renderClarifications() {
         const { title, ref } = clarificationLines(t, state.lang, c);
         const review = reviewLine(t, c);
         const kind = deadlineKind(c);
-        const due = kind === "answer"
+        const due = kind === "answer" || kind === "closed"
           ? null
           : kind === "review"
           ? el("span", { class: "sim-label" }, el("span", { class: "pill warn", text: review.text }), " ",
@@ -350,7 +351,12 @@ async function renderClarifications() {
             c.opened_on ? el("span", { class: "muted", text: t("openedOn", { date: day(state.lang, c.opened_on) }) }) : null,
             due),
           el("div", { class: "muted small mono", text: ref }),
-          infoBlock(c));
+          infoBlock(c),
+          closedNote(t, c)
+            ? el("div", { class: "info-request" },
+              el("p", { class: "small", text: closedNote(t, c) }),
+              el("a", { class: "btn", href: "#/aclarar", text: t("navChat") }))
+            : null);
       })
       : [el("div", { class: "card" }, el("p", { class: "muted", text: t("noClarifications") }))];
     target.replaceChildren(
@@ -370,7 +376,13 @@ function infoBlock(item) {
     el("div", { class: "small muted", text: t("infoTitle") }),
     el("p", { class: "question", text: info.question }),
   ];
-  if (!info.canAnswer) return el("div", { class: "info-request" }, head, el("p", { class: "small muted", text: info.answered }));
+  if (!info.canAnswer) {
+    return el("div", { class: "info-request" }, head,
+      info.answer
+        ? [el("div", { class: "small muted", text: t("yourAnswer") }), el("p", { class: "answer", text: info.answer })]
+        : null,
+      info.answered ? el("p", { class: "small muted", text: info.answered }) : null);
+  }
   const answer = el("textarea", { maxlength: "2000", placeholder: t("answerPlaceholder"), "aria-label": t("answerPlaceholder") });
   const button = el("button", { type: "submit", class: "btn primary", text: t("sendAnswer"), disabled: true });
   const error = el("p", { class: "error", hidden: true });

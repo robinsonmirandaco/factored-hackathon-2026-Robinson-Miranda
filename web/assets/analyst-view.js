@@ -1,6 +1,11 @@
 // What the analyst console says, built from API data (TRZ-27). Pure functions, no DOM: the
 // console renders their output, and tests/web checks it. The console is in Spanish; a
-// Portuguese message is shown with its automatic translation.
+// Portuguese message is shown with its automatic translation. Values of the records use the
+// words and formats of the customer web (i18n.js), in Spanish.
+
+import { day, label, money, translator } from "./i18n.js";
+
+const es = translator("es");
 
 export const FILTERS = [
   ["all", "Todos"],
@@ -121,9 +126,12 @@ export const clueLabel = (code) => words(CLUE, code);
 export const identificationLabel = (code) => words(IDENTIFICATION, code);
 
 export function usd(amount) {
-  if (amount == null) return "";
-  return `US$${Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return amount == null ? "" : money("es", Number(amount), "USD");
 }
+
+const SEGMENT = { Basic: "Básico", Plus: "Plus", Premium: "Premium", Student: "Estudiante" };
+const COUNTRY = { MX: "México", CO: "Colombia", AR: "Argentina" };
+const DISPUTE = { opened: "Abierta", open: "Abierta", verification_failed: "Verificación fallida" };
 
 export function percent(p) {
   return `${Math.round(Number(p) * 100)} %`;
@@ -222,14 +230,42 @@ export function decisionDone(out) {
   if (out.decision === "approve" && out.status === "failed") return "La relectura no coincidió: el caso volvió a la cola.";
   if (out.decision === "approve") return "Evento cerrado.";
   if (out.decision === "reject") return "Rechazado.";
-  return `Pregunta enviada. El cliente puede responder hasta el ${out.due_on}.`;
+  return `Pregunta enviada. El cliente puede responder hasta el ${day("es", out.due_on)}.`;
 }
 
+function factValue(f, currency) {
+  const v = f.value;
+  if (f.name === "amount") return currency ? money("es", Number(v), currency) : String(v);
+  if (f.name === "amount_usd") return usd(v);
+  if (f.name === "date" || f.name === "dispute_due_date") return day("es", v);
+  if (f.name === "channel") return label(es, "channel", v);
+  if (f.name === "status" || f.name === "identical_charge") return label(es, "tx", v);
+  if (f.name === "product_status") return label(es, "pstatus", v);
+  if (f.name === "customer_segment") return words(SEGMENT, v);
+  if (f.name === "customer_country") return words(COUNTRY, v);
+  if (f.name === "dispute_status" || f.name === "open_dispute") return words(DISPUTE, v);
+  return String(v);
+}
+
+// The currency is shown with its amount, not as a row of its own.
 export function factRows(facts) {
-  return (facts || []).map((f) => ({
+  const list = facts || [];
+  const currency = list.find((f) => f.name === "currency")?.value;
+  return list.filter((f) => f.name !== "currency").map((f) => ({
     label: factLabel(f.name),
-    value: f.value == null ? "Sin dato" : String(f.value),
+    value: f.value == null ? "Sin dato" : factValue(f, currency),
     source: `${f.source.table} · ${f.source.id}`,
+  }));
+}
+
+// Each question of the analyst with the customer's answer, in the order they were asked.
+export function infoExchanges(exchanges) {
+  return (exchanges || []).map((e) => ({
+    question: e.question,
+    answer: e.answer ?? (e.status === "expired" ? "Sin respuesta: venció el plazo" : "Sin respuesta todavía"),
+    answered: e.answer != null,
+    meta: `${e.asked_by} · ${day("es", e.asked_on)} · plazo ${day("es", e.due_on)}`,
+    source: `${e.source.table} · ${e.source.id}`,
   }));
 }
 
@@ -237,7 +273,7 @@ export function clueChips(extraction) {
   return (extraction || []).map((c) => {
     const v = c.value && typeof c.value === "object" ? c.value : { value: c.value };
     let value = v.value;
-    if (c.field === "amount") value = [v.value, v.currency].filter((x) => x != null).join(" ");
+    if (c.field === "amount") value = v.currency ? money("es", Number(v.value), v.currency) : String(v.value);
     if (c.field === "card_in_possession") value = v.value ? "La tiene" : "No la tiene";
     if (c.field === "date") value = v.expression || v.kind || c.evidence;
     return { label: clueLabel(c.field), value: String(value ?? ""), evidence: c.evidence };

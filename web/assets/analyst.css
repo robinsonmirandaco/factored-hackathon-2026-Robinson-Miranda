@@ -18,3 +18,6 @@
   .case-grid { grid-template-columns: 1fr; }
   .case-side { position: static; }
 }
+.exchanges { margin: 0; padding-left: 20px; }
+.exchanges > li + li { margin-top: 16px; }
+.exchanges .question { font-weight: 600; margin: 0; }

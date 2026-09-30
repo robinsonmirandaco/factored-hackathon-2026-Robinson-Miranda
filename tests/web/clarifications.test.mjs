@@ -67,3 +67,34 @@ test("a case waiting for the customer's answer shows only the deadline to answer
   assert.equal(deadlineKind({ source: "disputes", due_date: "2026-07-08" }), "due");
   assert.equal(deadlineKind({ source: "cases", status: "escalated", info_request: { status: "answered" } }), "none");
 });
+
+test("a rejected clarification explains what the customer can do, without a deadline (QA 2)", async () => {
+  const { closedNote, deadlineKind } = await import("../../web/assets/view.js");
+  const item = { id: "CASE-1", source: "cases", status: "rejected", case_id: "CASE-1" };
+  assert.equal(deadlineKind(item), "closed");
+  assert.match(closedNote(es, item), /no procedió/);
+  assert.match(closedNote(translator("pt"), item), /não foi aceito/);
+  assert.equal(closedNote(es, { ...item, status: "escalated" }), null);
+});
+
+test("after answering, the customer sees the answer as the system stored it (QA 5)", async () => {
+  const { infoRequestView } = await import("../../web/assets/view.js");
+  const item = {
+    id: "CASE-1", source: "cases", status: "escalated", case_id: "CASE-1",
+    info_request: { id: 1, question: "¿Hiciste la compra?", asked_on: "2026-06-17", due_on: "2026-06-24", overdue: false, status: "answered", answered_at: "2026-09-30T20:00:00", answer: "No, mi correo es [EMAIL]" },
+  };
+  const view = infoRequestView(es, "es", item);
+  assert.equal(view.answer, "No, mi correo es [EMAIL]");
+  assert.equal(view.canAnswer, false);
+});
+
+test("a closed clarification does not say an analyst is reviewing the answer", async () => {
+  const { infoRequestView } = await import("../../web/assets/view.js");
+  const item = {
+    id: "CASE-1", source: "cases", status: "rejected", case_id: "CASE-1",
+    info_request: { id: 1, question: "¿Hiciste la compra?", asked_on: "2026-06-17", due_on: "2026-06-24", overdue: false, status: "answered", answered_at: null, answer: "No" },
+  };
+  const view = infoRequestView(es, "es", item);
+  assert.equal(view.answer, "No");
+  assert.equal(view.answered, null);
+});
