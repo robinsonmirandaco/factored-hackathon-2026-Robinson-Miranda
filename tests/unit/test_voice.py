@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from app.adapters.llm import _REPLIES
+from app.adapters.llm import _REPLIES, reply_key
 from app.domain.policy_passages import Passage
 from app.services.replies import _NOTES, deadline_note
 
@@ -86,3 +86,12 @@ def test_the_portuguese_web_is_gender_neutral() -> None:
     pt = Path("web/assets/i18n.js").read_text(encoding="utf-8").split("\n  pt: {", 1)[1]
     gendered = re.compile(r"\bobrigad[oa]\b|\bbem-vind[oa]\b|\bajud[aá]-l[oa]\b", re.IGNORECASE)
     assert not gendered.findall(pt)
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_no_reply_asks_to_type_yes_now_that_the_screen_asks_with_buttons(language: str) -> None:
+    typed_yes = re.compile(r"\b(responde\s+s[ií]|responda\s+sim)\b", re.IGNORECASE)
+    assert not [k for k, v in _REPLIES[language].items() if typed_yes.search(v)]
+    assert "confirm_register" not in _REPLIES[language]
+    assert "confirm_block" not in _REPLIES[language]
+    assert reply_key({"outcome": "awaiting_confirmation"}) in _REPLIES[language]

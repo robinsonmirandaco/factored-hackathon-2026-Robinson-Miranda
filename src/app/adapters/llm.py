@@ -639,10 +639,8 @@ _REPLIES: dict[str, dict[str, str]] = {
             "con la opción de bloqueo de la app de tu banco o llamando a la línea de bloqueo que "
             "aparece en el sitio oficial del banco."
         ),
-        "confirm_register": "Responde sí para registrar la aclaración de este cargo.",
-        "confirm_block": (
-            "Responde sí para registrar la aclaración de este cargo y bloquear tu tarjeta."
-        ),
+        # The screen asks the question with its buttons; the reply only gives context.
+        "confirm_context": "Este es el cargo de tu aclaración.",
         "approval": (
             "Una analista revisará tu aclaración antes de registrarla. Verás su decisión en "
             "Mis aclaraciones."
@@ -751,10 +749,7 @@ _REPLIES: dict[str, dict[str, str]] = {
             "seu cartão agora mesmo pela opção de bloqueio do app do seu banco ou ligando para a "
             "central de bloqueio indicada no site oficial do banco."
         ),
-        "confirm_register": "Responda sim para registrar a contestação desta cobrança.",
-        "confirm_block": (
-            "Responda sim para registrar a contestação desta cobrança e bloquear o seu cartão."
-        ),
+        "confirm_context": "Esta é a cobrança da sua contestação.",
         "approval": (
             "Uma analista vai revisar a sua contestação antes de registrá-la. Você verá a "
             "decisão em Minhas contestações."
@@ -911,8 +906,7 @@ def reply_key(facts: dict[str, Any]) -> str:
             return "registered_card_block"
         return "registered_not_blocked" if facts.get("card_not_blocked") else outcome
     if outcome == "awaiting_confirmation":
-        block = facts.get("action") == "register_and_block"
-        return "confirm_block" if block else "confirm_register"
+        return "confirm_context"
     if outcome == "abstained":
         if facts.get("redirect") == "card_block":
             return "card_block"
