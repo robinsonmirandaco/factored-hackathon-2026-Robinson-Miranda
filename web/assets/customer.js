@@ -5,8 +5,7 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, chipParts, clarificationLines, codeStep, errorText, pendingButtons,
-  pendingQuestion, replyLines,
+  buttonMessage, clarificationLines, codeStep, errorText, turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -20,6 +19,7 @@ const state = {
   caseId: api.store.read(CASE_KEY),
   nextBefore: null,
   busy: false,
+  lastTurn: null,
 };
 let t = translator(state.lang);
 
@@ -63,6 +63,7 @@ function setLang(lang) {
   api.store.write(LANG_KEY, lang);
   t = translator(lang);
   applyTexts();
+  redrawLastTurn();
   route();
 }
 
@@ -350,82 +351,54 @@ function greet() {
   bubble("bot", t("chatIntro"));
 }
 
-function chargeCard(c) {
-  const rows = [
-    ["field_merchant", c.merchant || label(t, "type", c.transaction_type)],
-    ["field_amount", el("span", {}, amountCell(c))],
-    ["field_at", dayTime(state.lang, c.at)],
-    ["field_city", c.city],
-    ["field_channel", label(t, "channel", c.channel)],
-    ["field_product", `${label(t, "product", c.product_type)}${c.last4 ? ` •••• ${c.last4}` : ""}`],
-    ["field_status", label(t, "tx", c.status)],
-  ].filter(([, v]) => v);
-  return el("div", { class: "charge" },
-    el("dl", {}, rows.flatMap(([k, v]) => [el("dt", { text: t(k) }), el("dd", {}, v)])));
-}
-
-// What the system read, each value with the literal fragment of the message it came from.
-function chipRow(clues) {
-  if (!clues.length) return null;
-  return el("div", { class: "chips" },
-    el("span", { class: "muted small", text: `${t("understood")}:` }),
-    clues.map((c) => {
-      const chip = chipParts(t, state.lang, c);
-      return el("span", { class: "chip", title: c.evidence },
+// The last turn stays live: switching the language redraws its chips, card and buttons.
+function drawTurn(r) {
+  const m = turnModel(t, state.lang, r);
+  const parts = [];
+  if (m.chips.length) {
+    parts.push(el("div", { class: "chips" },
+      el("span", { class: "muted small", text: `${t("understood")}:` }),
+      m.chips.map((chip) => el("span", { class: "chip", title: chip.title },
         el("strong", { text: `${chip.label}: ` }), chip.value,
-        chip.evidence ? el("span", { class: "evidence", text: ` «${chip.evidence}»` }) : null);
-    }));
+        chip.evidence ? el("span", { class: "evidence", text: ` «${chip.evidence}»` }) : null))));
+  }
+  for (const line of m.lines) {
+    parts.push(line.simulated
+      ? el("span", { class: "sim-label" }, el("span", { class: "badge sim", text: "simulado" }), ` ${line.text}`)
+      : el("span", { class: "line", text: line.text }));
+  }
+  if (m.card.length) {
+    parts.push(el("div", { class: "charge" }, el("dl", {}, m.card.flatMap((row) => [
+      el("dt", { text: row.label }),
+      el("dd", {}, row.value, row.approx ? el("span", { class: "approx", text: row.approx }) : null),
+    ]))));
+  }
+  if (m.question) parts.push(el("p", { class: "question", text: m.question }));
+  if (m.buttons.length) {
+    parts.push(el("div", { class: "choices" }, m.buttons.map((b) => el("button", {
+      type: "button", class: `btn${b.primary ? " primary" : ""}`, text: b.label,
+      onclick: () => send({ message: b.label, case_id: r.case_id, ...b.answer }, b.label),
+    }))));
+  }
+  if (m.folio) {
+    parts.push(el("div", { class: "folio" }, el("span", { class: "pill" },
+      `${t("folio")} `, el("span", { class: "mono", text: m.folio }), ` · ${t("verified")}`)));
+  }
+  parts.push(el("span", { class: "meta", text: `${t("caseLabel")} ${r.case_id} · trace_id ${r.trace_id}` }));
+  return parts;
 }
 
 function renderTurn(r) {
   $("last-trace").textContent = r.trace_id;
-  const lines = replyLines(r.reply).map((line) => (line.simulated
-    ? el("span", { class: "sim-label" }, el("span", { class: "badge sim", text: "simulado" }), ` ${line.text}`)
-    : el("span", { class: "line", text: line.text })));
-  const parts = [chipRow(r.clues), ...lines];
-  if (r.charge) parts.push(chargeCard(r.charge));
-  const buttons = [];
-  // The API sends the primary choice first ("Sigo sin reconocerlo", design 10.2 rule 4).
-  r.choices.forEach((c, i) => buttons.push(el("button", {
-    type: "button", class: `btn${i === 0 ? " primary" : ""}`, text: c.label,
-    onclick: () => send({ message: c.label, case_id: r.case_id, recognition: c.id }, c.label),
-  })));
-  for (const o of r.options) {
-    const text = `${o.merchant || ""} · ${money(state.lang, o.amount, o.currency)} · ${day(state.lang, o.date)}`;
-    buttons.push(el("button", {
-      type: "button", class: "btn", text,
-      onclick: () => send({ message: text, case_id: r.case_id, option: o.transaction_id }, text),
-    }));
-  }
-  if (r.options.length) {
-    buttons.push(el("button", {
-      type: "button", class: "btn", text: t("noneOfThese"),
-      onclick: () => send({ message: t("noneOfThese"), case_id: r.case_id, option: "none" }, t("noneOfThese")),
-    }));
-  }
-  for (const c of r.claims) {
-    const text = `${c.claim_id} · ${day(state.lang, c.opened_on)}`;
-    buttons.push(el("button", {
-      type: "button", class: "btn", text,
-      onclick: () => send({ message: text, case_id: r.case_id, option: c.claim_id }, text),
-    }));
-  }
-  if (buttons.length) parts.push(el("div", { class: "choices" }, buttons));
-  if (r.pending_action) {
-    const p = r.pending_action;
-    const answer = { confirm: "confirm_action_id", decline: "decline_action_id" };
-    parts.push(el("p", { class: "question", text: pendingQuestion(t, state.lang, p) }));
-    parts.push(el("div", { class: "choices" }, pendingButtons(t, p).map((b) => el("button", {
-      type: "button", class: `btn${b.primary ? " primary" : ""}`, text: b.label,
-      onclick: () => send({ message: b.label, case_id: r.case_id, [answer[b.kind]]: p.action_id }, b.label),
-    }))));
-  }
-  if (r.dispute_folio) {
-    parts.push(el("div", { class: "folio" }, el("span", { class: "pill" },
-      `${t("folio")} `, el("span", { class: "mono", text: r.dispute_folio }), ` · ${t("verified")}`)));
-  }
-  parts.push(el("span", { class: "meta", text: `${t("caseLabel")} ${r.case_id} · trace_id ${r.trace_id}` }));
-  bubble("bot", ...parts);
+  state.lastTurn = { r, node: bubble("bot", ...drawTurn(r)) };
+}
+
+function redrawLastTurn() {
+  const last = state.lastTurn;
+  if (!last || !last.node.isConnected) return;
+  const disabled = [...last.node.querySelectorAll("button")].some((b) => b.disabled);
+  last.node.replaceChildren(...drawTurn(last.r));
+  if (disabled) for (const b of last.node.querySelectorAll("button")) b.disabled = true;
 }
 
 async function send(body, shown) {

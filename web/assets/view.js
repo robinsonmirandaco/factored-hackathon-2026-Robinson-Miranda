@@ -1,7 +1,7 @@
 // What the customer screens say, built from API data. Pure functions, no DOM: the chat and the
 // lists render their output, and tests/web checks it.
 
-import { day, dayMonth, label, money } from "./i18n.js";
+import { day, dayMonth, dayTime, label, money } from "./i18n.js";
 
 const card = (p) => (p.last4 ? `•••• ${p.last4}` : "");
 
@@ -87,4 +87,58 @@ export function replyLines(reply) {
     const simulated = line.startsWith("[simulado]");
     return { text: simulated ? line.slice("[simulado]".length).trim() : line, simulated };
   });
+}
+
+// Everything a chat turn shows, in the screen's language: the reply stays as the API wrote it,
+// while the chips, the charge card, the buttons and the question are built here, so switching
+// the language redraws them. Each button carries the answer it sends.
+export function turnModel(t, lang, r) {
+  const buttons = [];
+  r.choices.forEach((c, i) => {
+    const text = t(`choice_${c.id}`) === `choice_${c.id}` ? c.label : t(`choice_${c.id}`);
+    // The primary choice comes first: "Sigo sin reconocerlo" (design 10.2, rule 4).
+    buttons.push({ label: text, primary: i === 0, answer: { recognition: c.id } });
+  });
+  for (const o of r.options) {
+    const text = `${o.merchant || ""} · ${money(lang, o.amount, o.currency)} · ${day(lang, o.date)}`;
+    buttons.push({ label: text, primary: false, answer: { option: o.transaction_id } });
+  }
+  if (r.options.length) buttons.push({ label: t("noneOfThese"), primary: false, answer: { option: "none" } });
+  for (const c of r.claims) {
+    buttons.push({ label: `${c.claim_id} · ${day(lang, c.opened_on)}`, primary: false, answer: { option: c.claim_id } });
+  }
+  let question = null;
+  if (r.pending_action) {
+    const p = r.pending_action;
+    const field = { confirm: "confirm_action_id", decline: "decline_action_id" };
+    question = pendingQuestion(t, lang, p);
+    for (const b of pendingButtons(t, p)) {
+      buttons.push({ label: b.label, primary: b.primary, answer: { [field[b.kind]]: p.action_id } });
+    }
+  }
+  return {
+    reply: r.reply,
+    lines: replyLines(r.reply),
+    chips: (r.clues || []).map((c) => ({ ...chipParts(t, lang, c), title: c.evidence })),
+    card: r.charge ? chargeRows(t, lang, r.charge) : [],
+    question,
+    buttons,
+    folio: r.dispute_folio,
+  };
+}
+
+function chargeRows(t, lang, c) {
+  const amount = money(lang, c.amount, c.currency);
+  const approx = c.converted_amount != null
+    ? `≈ ${money(lang, c.converted_amount, c.converted_currency)} (${t("approx")})`
+    : null;
+  return [
+    { label: t("field_merchant"), value: c.merchant || label(t, "type", c.transaction_type) },
+    { label: t("field_amount"), value: amount, approx },
+    { label: t("field_at"), value: dayTime(lang, c.at) },
+    { label: t("field_city"), value: c.city },
+    { label: t("field_channel"), value: label(t, "channel", c.channel) },
+    { label: t("field_product"), value: `${label(t, "product", c.product_type)}${c.last4 ? ` •••• ${c.last4}` : ""}` },
+    { label: t("field_status"), value: label(t, "tx", c.status) },
+  ].filter((row) => row.value);
 }
