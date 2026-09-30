@@ -859,7 +859,9 @@ HANDOFF_REASONS: dict[str, dict[str, str]] = {
         "escalate.comprehension_unavailable": "No pudimos procesar tu mensaje en este momento.",
         "escalate.clarifications_exhausted": "No logramos identificar el cargo con certeza.",
         "escalate.amount_above_human_review": "Por el monto de este cargo, lo revisa una persona.",
-        "escalate.amount_unknown": "No pudimos confirmar el monto de este cargo.",
+        "escalate.amount_unknown": (
+            "Una persona tiene que revisar el monto de este cargo en la moneda en que se hizo."
+        ),
         "escalate.open_dispute_last_90d": (
             "Ya tienes una aclaración en curso, así que revisamos este cargo junto con ella."
         ),
@@ -883,7 +885,9 @@ HANDOFF_REASONS: dict[str, dict[str, str]] = {
         "escalate.amount_above_human_review": (
             "Pelo valor desta cobrança, uma pessoa faz a revisão."
         ),
-        "escalate.amount_unknown": "Não conseguimos confirmar o valor desta cobrança.",
+        "escalate.amount_unknown": (
+            "Uma pessoa precisa revisar o valor desta cobrança na moeda em que foi feita."
+        ),
         "escalate.open_dispute_last_90d": (
             "Você já tem uma contestação em andamento, então revisamos esta cobrança junto com ela."
         ),

@@ -30,3 +30,13 @@ def test_every_handoff_rule_has_a_reason_in_plain_words(language: str, rule: str
 def test_the_portuguese_reasons_are_gender_neutral(language: str) -> None:
     gendered = re.compile(r"\b\w+-(lo|la)\b|\bobrigad[oa]\b|\bbem-vind[oa]\b", re.IGNORECASE)
     assert not [r for r in HANDOFF_REASONS[language].values() if gendered.search(r)]
+
+
+@pytest.mark.parametrize(("language", "currency"), [("es", "moneda"), ("pt", "moeda")])
+def test_an_unknown_amount_is_explained_without_denying_the_amount_on_screen(
+    language: str, currency: str
+) -> None:
+    # The charge card shows the amount: the reason is that it must be reviewed in its currency.
+    reason = HANDOFF_REASONS[language]["escalate.amount_unknown"]
+    assert currency in reason
+    assert "confirmar el monto" not in reason and "confirmar o valor" not in reason
