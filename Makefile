@@ -16,7 +16,7 @@ test:
 	LLM_ENABLED=false uv run --frozen pytest -m "not integration" --cov=app --cov-report=term-missing
 
 test-web:
-	node --test tests/web/
+	node --test tests/web/*.test.mjs
 
 lint:
 	uv run --frozen ruff check src pipeline tests && uv run --frozen ruff format --check src pipeline tests

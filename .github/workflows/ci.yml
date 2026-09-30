@@ -38,7 +38,9 @@ jobs:
       - run: uv run --frozen python -m app.cli.migrate
       - run: uv run --frozen pytest --cov=app --cov-report=xml
       # The customer web's presentation logic, with Node's own test runner and no packages.
-      - run: node --test tests/web/
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: node --test tests/web/*.test.mjs
       # The synthetic generator is the CI fixture: it exercises validation and quarantine.
       - run: uv run --frozen python -m app.cli.seed synthetic --seed 42
       # Each golden case runs on its own throwaway schema.
