@@ -328,7 +328,13 @@ def identify(
 
     The softmax only compares candidates with each other, so it gives a confident answer even
     when none of them fits the description (a charge that does not exist). The absolute
-    threshold on the best total catches that case first: the set is empty (design 6.2, size 0).
+    threshold on the best total catches that case first: the set is empty (design 6.2, size 0)
+    and the charge is not found.
+
+    A set can also come out empty with nothing rejected: with too few clues, the probability
+    spreads over many charges and none reaches 1 - q-hat. That is not "no such charge": it is
+    decided as asking for a detail, as a set larger than the options shown. Weights,
+    temperature, q-hat, the threshold and the set itself are unchanged.
 
     Args:
         clues: Faithful clues of the customer message.
@@ -359,11 +365,12 @@ def identify(
             s.candidate.transaction_id for s in scored if 1 - s.probability <= params.qhat + 1e-12
         )
     )
+    spread = not kept and not rejected and len(candidates) > 1
     return Identification(
         door="conversation",
         scored=tuple(scored),
         conformal_set=kept,
-        decision=decide(len(kept)),
+        decision="ask_for_detail" if spread else decide(len(kept)),
         amount_not_convertible=any(nc for _, nc in parts),
         rejected=rejected,
     )
