@@ -48,3 +48,13 @@ def test_every_api_error_has_a_message_in_both_languages() -> None:
     assert len(codes) >= 10
     missing = sorted(c for c in codes if f"error_{c}:" not in es or f"error_{c}:" not in pt)
     assert not missing, missing
+
+
+def test_the_message_field_leaves_no_room_for_the_browsers_own_warning() -> None:
+    # A required field makes the browser show its own message in its own language ("Please
+    # fill out this field."); an empty message is prevented by a disabled Send instead.
+    html = Path("web/index.html").read_text(encoding="utf-8")
+    field = re.search(r'<input id="message"[^>]*>', html)
+    send = re.search(r'<button[^>]*id="send"[^>]*>', html)
+    assert field and "required" not in field.group(0)
+    assert send and "disabled" in send.group(0)

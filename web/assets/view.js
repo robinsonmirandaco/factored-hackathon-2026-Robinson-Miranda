@@ -142,3 +142,8 @@ function chargeRows(t, lang, c) {
     { label: t("field_status"), value: label(t, "tx", c.status) },
   ].filter((row) => row.value);
 }
+
+// Send is enabled only with something to send; an empty field never reaches the API.
+export function canSend(text) {
+  return String(text).trim().length > 0;
+}

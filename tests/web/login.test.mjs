@@ -29,3 +29,10 @@ test("the code field waits for a requested code, for that same document", () => 
   assert.deepEqual(codeStep(doc, { ...doc, number: "SYN0000002" }), { showCode: false });
   assert.deepEqual(codeStep(doc, { ...doc, type: "CE" }), { showCode: false });
 });
+
+test("Send is enabled only with something to send", async () => {
+  const { canSend } = await import("../../web/assets/view.js");
+  assert.equal(canSend(""), false);
+  assert.equal(canSend("   "), false);
+  assert.equal(canSend("hola"), true);
+});

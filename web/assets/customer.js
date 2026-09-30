@@ -5,7 +5,7 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, clarificationLines, codeStep, errorText, turnModel,
+  buttonMessage, canSend, clarificationLines, codeStep, errorText, turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -428,11 +428,16 @@ function openByButton(transactionId, text) {
 
 // ---- wiring -------------------------------------------------------------------------------
 
+$("message").addEventListener("input", () => {
+  $("send").disabled = !canSend($("message").value);
+});
+
 $("composer").addEventListener("submit", (event) => {
   event.preventDefault();
   const text = $("message").value.trim();
-  if (!text) return;
+  if (!canSend(text)) return;
   $("message").value = "";
+  $("send").disabled = true;
   const body = { message: text };
   if (state.caseId) body.case_id = state.caseId;
   send(body, text);
