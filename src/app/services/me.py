@@ -29,10 +29,10 @@ from app.schemas.api import (
 )
 from app.services.tools import read_open_claims
 
-# Cases the customer follows in Mis aclaraciones: registered, with a person, or decided by one.
-# A case still in conversation lives in the chat; one that only informed or redirected is over.
+# Cases the customer follows in Mis aclaraciones besides its disputes: with a person, or decided
+# by one. A case still in conversation lives in the chat; one that only informed or redirected is
+# over; a registered one is shown through its dispute.
 FOLLOWED_STATUSES = (
-    "registered_verified",
     "failed",
     "pending_analyst_approval",
     "escalated",
@@ -181,10 +181,12 @@ def list_clarifications(
     calendars: Mapping[str, HolidayCalendar],
     customer_id: str,
 ) -> list[ClarificationOut]:
-    """The customer's clarifications: TRAZO cases they follow, then the bank's open claims.
+    """The customer's clarifications: disputes registered by TRAZO, cases with a person, then
+    the bank's open claims.
 
-    A registered dispute carries the deadline of its claim. A case with a person has no
-    deadline yet: none is made up for it.
+    Each dispute is read from its own row: its charge, amount and folio are the ones it was
+    registered with, whatever later happens to the case. A case with a person has no deadline
+    yet: none is made up for it.
 
     Args:
         session: Session bound to the customer of the JWT.
@@ -194,7 +196,8 @@ def list_clarifications(
         customer_id: Customer of the session.
 
     Returns:
-        Cases newest first, then the open complaints of the bank's records.
+        Disputes newest first, then cases with a person or decided by one, then the open
+        complaints of the bank's records.
 
     Raises:
         AppError: 404 if the session's customer is not in the database.
@@ -208,29 +211,55 @@ def list_clarifications(
 
     claims = read_open_claims(session, clock, deadline, customer_id)
     by_folio = {c["claim_id"]: c for c in claims if c["source"] == "disputes"}
+    disputes = session.execute(
+        select(Dispute)
+        .where(
+            Dispute.customer_id == customer_id,
+            Dispute.status == "opened",
+            Dispute.folio.is_not(None),
+        )
+        .order_by(Dispute.business_at.desc(), Dispute.id.desc())
+    ).scalars()
+    out = []
+    with_dispute = set()
+    for d in disputes:
+        with_dispute.add(d.case_id)
+        tx = session.get(Transaction, d.transaction_id)
+        out.append(
+            ClarificationOut(
+                id=str(d.folio),
+                source="disputes",
+                status="registered",
+                case_id=d.case_id,
+                intent=d.dispute_type,
+                folio=d.folio,
+                merchant=tx.merchant_name if tx else None,
+                amount=d.amount,
+                currency=d.currency,
+                charge_at=tx.transaction_date if tx else None,
+                **_deadline_fields(by_folio.get(str(d.folio))),
+            )
+        )
     cases = session.execute(
         select(Case)
         .where(Case.customer_id == customer_id, Case.status.in_(FOLLOWED_STATUSES))
         .order_by(Case.created_at.desc(), Case.id)
     ).scalars()
-    out = []
     for c in cases:
-        dispute = session.execute(
-            select(Dispute).where(Dispute.case_id == c.id).order_by(Dispute.id.desc()).limit(1)
-        ).scalar_one_or_none()
+        if c.id in with_dispute:
+            continue
         tx = session.get(Transaction, c.transaction_id) if c.transaction_id else None
-        claim = by_folio.get(dispute.folio) if dispute and dispute.folio else None
         out.append(
             ClarificationOut(
                 id=c.id,
                 source="cases",
                 status=c.status,
-                folio=dispute.folio if dispute else None,
+                case_id=c.id,
+                intent=c.intent,
                 merchant=tx.merchant_name if tx else None,
                 amount=tx.amount if tx else None,
                 currency=tx.currency if tx else None,
                 charge_at=tx.transaction_date if tx else None,
-                **_deadline_fields(claim),
             )
         )
     out += [

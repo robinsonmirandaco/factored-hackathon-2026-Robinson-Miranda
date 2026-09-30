@@ -351,9 +351,10 @@ def test_a_registered_dispute_shows_its_folio_and_deadline(client: TestClient) -
 
     items = client.get("/me/clarifications").json()
 
-    mine = next(i for i in items if i["id"] == case_id)
-    assert (mine["status"], mine["folio"], mine["merchant"]) == (
-        "registered_verified",
+    mine = next(i for i in items if i["case_id"] == case_id)
+    assert (mine["source"], mine["status"], mine["id"], mine["merchant"]) == (
+        "disputes",
+        "registered",
         done["dispute_folio"],
         "Netflix",
     )
@@ -440,3 +441,70 @@ def test_a_button_reads_nothing(llm_client: TestClient) -> None:
     after = still_not_recognized(llm_client, first["case_id"])
 
     assert first["clues"] == [] and after["clues"] == []
+
+
+# ---- a registered dispute is final (QA finding 1) --------------------------------------------
+
+
+def _register_tx1(client: TestClient) -> tuple[str, str]:
+    case_id = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()[
+        "case_id"
+    ]
+    offered = still_not_recognized(client, case_id)
+    done = client.post(
+        "/chat",
+        json={
+            "message": "Sí",
+            "case_id": case_id,
+            "confirm_action_id": offered["pending_action"]["action_id"],
+        },
+    ).json()
+    assert done["outcome"] == "registered_verified", done
+    return case_id, done["dispute_folio"]
+
+
+def _case_row(schema: SchemaUrls, case_id: str) -> tuple[str, str | None]:
+    engine = create_engine(schema.admin)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT status, transaction_id FROM cases WHERE id = :c"), {"c": case_id}
+        ).one()
+    engine.dispose()
+    return row[0], row[1]
+
+
+def test_a_new_charge_after_a_registration_opens_a_new_case(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    case_id, folio = _register_tx1(client)
+
+    later = client.post(
+        "/chat", json={"message": "Tampoco reconozco un cargo en Rappi", "case_id": case_id}
+    ).json()
+
+    assert later["case_id"] != case_id
+    assert _case_row(schema_rows, case_id) == ("registered_verified", "TX1")
+    items = client.get("/me/clarifications").json()
+    dispute = next(i for i in items if i["folio"] == folio)
+    assert (dispute["merchant"], dispute["amount"], dispute["currency"]) == (
+        "Netflix",
+        120.0,
+        "USD",
+    )
+    assert dispute["case_id"] == case_id
+
+
+def test_a_dispute_shows_the_charge_it_was_registered_on(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    case_id, folio = _register_tx1(client)
+    # Even if a case row were changed afterwards, the dispute keeps its own charge.
+    engine = create_engine(schema_rows.admin)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE cases SET transaction_id = 'TXP' WHERE id = :c"), {"c": case_id})
+    engine.dispose()
+
+    items = client.get("/me/clarifications").json()
+
+    mine = [i for i in items if i["folio"] == folio]
+    assert len(mine) == 1 and mine[0]["merchant"] == "Netflix" and mine[0]["source"] == "disputes"

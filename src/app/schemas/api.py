@@ -406,15 +406,20 @@ class MovementsOut(BaseModel):
 
 
 class ClarificationOut(BaseModel):
-    """One of the customer's clarifications: a case of TRAZO or an open claim of the bank.
+    """One of the customer's clarifications: a dispute registered by TRAZO, a case with a
+    person, or an open claim of the bank.
 
     Attributes:
-        id: Case id of TRAZO, or complaint id of the bank's records.
-        source: cases or complaints.
-        status: Case status for a case of TRAZO; received, in_review or answered for a claim.
-        folio: Folio of the registered dispute, when there is one.
-        merchant: Merchant of the disputed charge, when known.
-        amount: Registered amount of that charge.
+        id: Folio of a dispute, case id of a case, or complaint id of the bank's records.
+        source: disputes, cases or complaints.
+        status: registered for a dispute; the case status for a case; received, in_review or
+            answered for a claim.
+        case_id: The TRAZO case of a dispute or case.
+        intent: What it is about: the dispute type, or the case's intent (unread for a request
+            stopped for security before it was read).
+        folio: Folio of the registered dispute.
+        merchant: Merchant of the charge, when known.
+        amount: Amount of the charge; for a dispute, the amount it was registered with.
         currency: Its currency.
         charge_at: Local date and time of that charge.
         opened_on: Business day it was registered; only disputes and claims have one.
@@ -424,8 +429,10 @@ class ClarificationOut(BaseModel):
     """
 
     id: str
-    source: Literal["cases", "complaints"]
+    source: Literal["disputes", "cases", "complaints"]
     status: str
+    case_id: str | None = None
+    intent: str | None = None
     folio: str | None = None
     merchant: str | None = None
     amount: float | None = None

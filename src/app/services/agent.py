@@ -90,6 +90,17 @@ WITH_PERSON = "with_person"
 AnswerRead = Literal["llm", "rules", "none"]
 # The option a customer picks when none of the charges shown is the one.
 NONE_OF_THESE = "none"
+# A case that ended is never reopened: a registered dispute, a recognized charge, an answer, a
+# redirect or a decision of a person stays as it ended. A new message names a new case.
+FINAL_STATUSES = (
+    "registered_verified",
+    "recognized_closed",
+    "closed",
+    "abstained",
+    "approved",
+    "rejected",
+    "expired",
+)
 # Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
 VERIFICATION_FAILED_REASON = "verification.registration_failed"
 
@@ -355,6 +366,9 @@ def _understand_and_decide(
     # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
     existing = _own_case(session, customer.customer_id, case_id) if case_id else None
     previous = _case_language(existing) if existing else None
+    if existing is not None and existing.status in FINAL_STATUSES:
+        # Its language still guides a short message; everything else starts over.
+        existing, case_id = None, None
     local = local_currency(customer.country_code)
     context = ComprehensionContext(
         now=deps.clock.now, country_code=customer.country_code, local_currency=local
