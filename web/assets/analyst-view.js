@@ -291,3 +291,13 @@ export function candidateCards(identification) {
     parts: Object.entries(c.components).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" · "),
   }));
 }
+
+// The heading of a dossier: the kind of case while it is with a person, its status once an
+// analyst decided it or asked the customer (regression of the queue QA).
+export function caseHeading(kind, status, caseId) {
+  const decided = ["approved", "rejected", "awaiting_customer"].includes(status);
+  const parts = kind === "security_event"
+    ? [kindLabel(kind), decided ? statusLabel(status) : null]
+    : [decided ? statusLabel(status) : kindLabel(kind)];
+  return [...parts.filter(Boolean), caseId].join(" · ");
+}

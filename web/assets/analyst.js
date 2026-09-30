@@ -4,10 +4,9 @@
 
 import { createClient } from "./api.js";
 import {
-  REVERSAL_REASONS, actionLabel, actionStateLabel, candidateCards, clueChips, decisionDone,
-  decisionPanel, decisionProblem, factRows, filterChips, identificationLabel, infoExchanges,
-  kindLabel, queueRow,
-  reasonLabel, statusLabel,
+  REVERSAL_REASONS, actionLabel, actionStateLabel, candidateCards, caseHeading, clueChips,
+  decisionDone, decisionPanel, decisionProblem, factRows, filterChips, identificationLabel,
+  infoExchanges, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
 const api = createClient("analyst");
@@ -174,7 +173,7 @@ async function renderCase(caseId) {
     const item = queue.items.find((i) => i.case_id === caseId) || null;
     target.replaceChildren(
       el("a", { class: "back", href: "#/cola", text: "← Cola de casos" }),
-      el("p", { class: "eyebrow", text: `${kindLabel(dossier.case_kind)} · ${dossier.case_id}` }),
+      el("p", { class: "eyebrow", text: caseHeading(dossier.case_kind, one.status, dossier.case_id) }),
       el("h1", { text: dossier.request_summary }),
       el("div", { class: "case-grid" },
         el("div", { class: "case-main" }, dossierCards(dossier, history)),

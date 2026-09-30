@@ -140,3 +140,14 @@ test("each question of the analyst is shown with its answer, in order", () => {
   assert.deepEqual(rows.map((r) => [r.question, r.answer]), [["¿Primera?", "Sí"], ["¿Segunda?", "Sin respuesta todavía"]]);
   assert.equal(rows[0].meta, "analista.demo · 17 jun 2026 · plazo 24 jun 2026");
 });
+
+// Regression of the queue QA (2026-09-30), finding 2.
+import { caseHeading } from "../../web/assets/analyst-view.js";
+
+test("the heading of a decided case shows its final status, not the kind", () => {
+  assert.equal(caseHeading("escalation", "rejected", "CASE-1"), "Rechazado · CASE-1");
+  assert.equal(caseHeading("escalation", "approved", "CASE-1"), "Aprobado · CASE-1");
+  assert.equal(caseHeading("escalation", "awaiting_customer", "CASE-1"), "Esperando al cliente · CASE-1");
+  assert.equal(caseHeading("escalation", "escalated", "CASE-1"), "Escalado · CASE-1");
+  assert.equal(caseHeading("security_event", "approved", "CASE-1"), "Evento de seguridad · Aprobado · CASE-1");
+});
