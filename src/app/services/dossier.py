@@ -23,6 +23,7 @@ from app.adapters.db.models import (
     CaseAction,
     Customer,
     Dispute,
+    InfoRequest,
     Product,
     Transaction,
 )
@@ -36,6 +37,7 @@ from app.schemas.dossier import (
     Dossier,
     Fact,
     Identification,
+    InfoExchange,
     LaterMessage,
     OpenQuestion,
     RuleTriggered,
@@ -160,6 +162,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             policy_rule_triggered=rule,
             recommended_action=None,
             later_messages=[],
+            info_exchanges=[],
         )
     read = [r for r in rows if (r.actor, r.action) == ("agent", "comprehend")]
     original = (read[0].payload or {}).get("redacted_text") if read else None
@@ -200,9 +203,28 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
                 source=Source(table="audit_log", id=str(r.id)),
             )
             for r in rows
-            if (r.actor, r.action) in (("agent", "customer_note"), ("customer", "info_reply"))
+            if (r.actor, r.action) == ("agent", "customer_note")
         ],
+        info_exchanges=_info_exchanges(session, case),
     )
+
+
+def _info_exchanges(session: Session, case: Case) -> list[InfoExchange]:
+    """Each question of an analyst with the customer's answer, in the order they were asked."""
+    return [
+        InfoExchange(
+            question=r.question,
+            asked_by=r.asked_by,
+            asked_on=r.asked_on,
+            due_on=r.due_on,
+            status=r.status,
+            answer=r.answer,
+            source=Source(table="info_requests", id=str(r.id)),
+        )
+        for r in session.execute(
+            select(InfoRequest).where(InfoRequest.case_id == case.id).order_by(InfoRequest.id)
+        ).scalars()
+    ]
 
 
 def _last(rows: list[AuditRecord], actor: str, action: str) -> AuditRecord | None:

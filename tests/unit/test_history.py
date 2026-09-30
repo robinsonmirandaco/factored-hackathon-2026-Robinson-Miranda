@@ -128,7 +128,11 @@ def test_registration_and_block_lines() -> None:
     dispute = {"folio": "DSP-2026-00001", "due_date": "2026-07-09"}
     assert describe("tool", "register_dispute", None, dispute, "1", "es") == (
         "El sistema registró la aclaración con el folio DSP-2026-00001, con plazo de respuesta "
-        "al 2026-07-09."
+        "al 9 jul 2026."
+    )
+    assert describe("tool", "register_dispute", None, dispute, "1", "pt") == (
+        "O sistema registrou a contestação com o protocolo DSP-2026-00001, com prazo de resposta "
+        "até 9 de jul de 2026."
     )
     assert describe("tool", "block_card", None, {"status_after": "Blocked"}, "1", "pt") == (
         "O sistema bloqueou o cartão da cobrança contestada."
@@ -143,7 +147,12 @@ def test_a_step_with_no_template_still_gets_a_line() -> None:
     assert describe("system", "new_step", None, None, None, "pt") == "Etapa «new_step» de system."
 
 
-@pytest.mark.parametrize("step", sorted(TEMPLATES))
+# The answer to an analyst's question is the one free text a line tells (QA of TRZ-27/28): it is
+# stored redacted, and the analyst needs it next to the question. Every other step keeps none.
+TELLS_THE_ANSWER = {("customer", "info_reply")}
+
+
+@pytest.mark.parametrize("step", sorted(set(TEMPLATES) - TELLS_THE_ANSWER))
 @pytest.mark.parametrize("lang", LANGS)
 def test_no_line_repeats_free_text_or_product_numbers(step: tuple[str, str], lang: str) -> None:
     secret = "SECRET-TEXT"
@@ -186,3 +195,23 @@ def test_every_reversal_reason_of_the_policy_has_words() -> None:
     reasons = set(load_policy(SRC.parent / "config" / "policy.yaml").autonomy.reversal_reasons)
     for lang in LANGS:
         assert set(REVERSAL_REASONS[lang]) == reasons
+
+
+def test_a_request_for_information_line_tells_the_question_and_the_deadline() -> None:
+    payload = {"decision": "need_info", "question": "¿Hiciste la compra? Escribe a [EMAIL]"}
+    result = {"analyst": "analista.demo", "status": "awaiting_customer", "due_on": "2026-06-24"}
+    assert describe("human", "decision", payload, result, None, "es") == (
+        "La analista analista.demo decidió pedir información: «¿Hiciste la compra? Escribe a "
+        "[EMAIL]». El cliente puede responder hasta el 24 jun 2026."
+    )
+    assert describe("human", "decision", payload, result, None, "pt").endswith(
+        "O cliente pode responder até 24 de jun de 2026."
+    )
+
+
+def test_an_answer_line_tells_the_redacted_answer() -> None:
+    payload = {"info_request_id": 1, "redacted_text": "No, mi correo es [EMAIL]"}
+    assert describe("customer", "info_reply", payload, {}, None, "es") == (
+        "El cliente respondió a la pregunta de la analista: «No, mi correo es [EMAIL]»; el caso "
+        "volvió a la cola."
+    )

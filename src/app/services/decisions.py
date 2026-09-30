@@ -80,12 +80,14 @@ def _record(
         raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
     _validate(deps, case, body)
     result: dict[str, Any] = {"analyst": analyst, "system_recommended": case.recommended_action}
+    question: str | None = None
     if body.decision == "approve":
         result |= _approve(session, deps, case)
     elif body.decision == "reject":
         case.status = "rejected"
     else:
-        result["due_on"] = _ask(session, deps, analyst, case, str(body.question)).isoformat()
+        question = redact(str(body.question).strip())[0]
+        result["due_on"] = _ask(session, deps, analyst, case, question).isoformat()
     row.resolved_at = utcnow()
     case.human_decision = body.decision
     result["status"] = case.status
@@ -101,6 +103,8 @@ def _record(
             "decision": body.decision,
             "reason": body.reason,
             "note": redact(body.note)[0] if body.note else None,
+            # Redacted like the note; the history tells it next to the customer's answer.
+            "question": question if body.decision == "need_info" else None,
             "queue_id": row.id,
         },
         result,
@@ -190,7 +194,8 @@ def _approve(session: Session, deps: AgentDeps, case: Case) -> dict[str, Any]:
 
 
 def _ask(session: Session, deps: AgentDeps, analyst: str, case: Case, question: str) -> Any:
-    """Stores the question with its deadline in business days; the case waits for the customer."""
+    """Stores the redacted question with its deadline in business days; the case waits for the
+    customer."""
     customer = _customer(session, case)
     asked_on = deps.clock.today()
     due_on = deps.calendars[customer.country_code].add_business_days(
@@ -200,7 +205,7 @@ def _ask(session: Session, deps: AgentDeps, analyst: str, case: Case, question: 
         InfoRequest(
             case_id=case.id,
             customer_id=case.customer_id,
-            question=redact(question.strip())[0],
+            question=question,
             asked_by=analyst,
             asked_on=asked_on,
             due_on=due_on,

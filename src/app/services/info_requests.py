@@ -145,4 +145,5 @@ def latest_request(session: Session, clock: SimulatedClock, case_id: str) -> Inf
         overdue=r.status == "open" and r.due_on < clock.today(),
         status=r.status,
         answered_at=r.answered_at,
+        answer=r.answer,
     )

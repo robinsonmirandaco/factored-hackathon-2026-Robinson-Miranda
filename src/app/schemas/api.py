@@ -441,6 +441,7 @@ class InfoRequestOut(BaseModel):
         overdue: The deadline is before the simulated today.
         status: open, answered or expired.
         answered_at: When the customer answered.
+        answer: The customer's answer as the system stored it, PII-redacted.
     """
 
     id: int
@@ -450,6 +451,7 @@ class InfoRequestOut(BaseModel):
     overdue: bool
     status: str
     answered_at: datetime | None
+    answer: str | None = None
 
 
 class InfoReplyIn(BaseModel):

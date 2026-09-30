@@ -1,5 +1,5 @@
 meta {
-  name: TRZ-28 CA2 the answer is in the dossier
+  name: TRZ-28 CA2 the answer is in the dossier with its question
   type: http
   seq: 32
 }
@@ -15,10 +15,12 @@ auth:bearer {
 }
 
 tests {
-  test("the answer is a later message with its audit row", function() {
+  test("the question with its answer, from info_requests", function() {
     expect(res.getStatus()).to.equal(200);
-    const later = res.getBody().later_messages;
-    expect(later.map((m) => m.text)).to.include("No, esa compra no la hice.");
-    expect(later[later.length - 1].source.table).to.equal("audit_log");
+    const [x] = res.getBody().info_exchanges;
+    expect(x.question).to.equal("¿Hiciste alguna compra en Mercado Libre ese día?");
+    expect(x.answer).to.equal("No, esa compra no la hice.");
+    expect(x.source.table).to.equal("info_requests");
+    expect(res.getBody().later_messages).to.eql([]);
   });
 }

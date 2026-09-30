@@ -108,13 +108,22 @@ def test_ask_answer_and_back_to_the_queue(
         "escalate.amount_above_human_review",
     )
     dossier = client.get(f"/cases/{asked}/dossier", headers=analyst).json()
-    assert [m["text"] for m in dossier["later_messages"]] == [answer]
+    [exchange] = dossier["info_exchanges"]
+    assert (exchange["question"], exchange["answer"], exchange["status"]) == (
+        QUESTION,
+        answer,
+        "answered",
+    )
+    # The answer is told with its question, not again among the later messages.
+    assert dossier["later_messages"] == []
     history = [h["text"] for h in client.get(f"/cases/{asked}/history", headers=analyst).json()]
     assert history[-1] == (
-        "El cliente respondió a la pregunta de la analista: el caso volvió a la cola."
+        f"El cliente respondió a la pregunta de la analista: «{answer}»; el caso volvió a la cola."
     )
     after = next(c for c in client.get("/me/clarifications").json() if c["case_id"] == asked)
     assert after["info_request"]["status"] == "answered"
+    # QA 5: the customer sees the answer as it was stored, redacted.
+    assert after["info_request"]["answer"] == answer
 
     # The analyst can decide again on the case that came back.
     r = client.post(
@@ -178,3 +187,29 @@ def test_a_chat_message_on_a_waiting_case_is_not_the_answer(
     assert query(schema, "SELECT status FROM info_requests WHERE case_id = :c", c=asked) == [
         ("open",)
     ]
+
+
+def test_two_questions_are_shown_each_with_its_answer_in_order(
+    client: TestClient, asked: str
+) -> None:
+    analyst = analyst_headers(client)
+    assert _reply(client, asked, "No la hice").status_code == 200
+    second = "¿Tienes todavía la tarjeta?"
+    r = client.post(
+        f"/cases/{asked}/decision",
+        json={"decision": "need_info", "question": second},
+        headers=analyst,
+    )
+    assert r.status_code == 200
+    assert _reply(client, asked, "Sí, la tengo").status_code == 200
+
+    dossier = client.get(f"/cases/{asked}/dossier", headers=analyst).json()
+    assert [(e["question"], e["answer"]) for e in dossier["info_exchanges"]] == [
+        (QUESTION, "No la hice"),
+        (second, "Sí, la tengo"),
+    ]
+    assert [e["source"]["table"] for e in dossier["info_exchanges"]] == ["info_requests"] * 2
+    history = [h["text"] for h in client.get(f"/cases/{asked}/history", headers=analyst).json()]
+    told = [h for h in history if "pedir información" in h or "respondió" in h]
+    assert [("«" + QUESTION + "»") in told[0], "«No la hice»" in told[1]] == [True, True]
+    assert [("«" + second + "»") in told[2], "«Sí, la tengo»" in told[3]] == [True, True]

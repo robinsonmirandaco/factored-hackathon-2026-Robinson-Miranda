@@ -2,11 +2,14 @@
 
 Each (actor, action) pair has one template per language. A template reads only non-personal
 fields (intent, rule, level, counts, outcome, the analyst's user name and closed-list reason):
-never the redacted customer text, the reply, a product number, an operator note or question.
+never the redacted customer text, the reply, a product number or an operator note. The one
+exception is a request for information: its question and the customer's answer, both redacted
+before they are stored, are told so the answer can be read against its question (TRZ-28).
 The LLM takes no part in this text.
 """
 
 from collections.abc import Callable
+from datetime import date
 from typing import Any, Literal
 
 Lang = Literal["es", "pt"]
@@ -138,6 +141,22 @@ _IDENTIFICATION: dict[Lang, dict[str, str]] = {
 }
 
 
+_MONTHS: dict[Lang, tuple[str, ...]] = {
+    "es": ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"),
+    "pt": ("jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"),
+}
+
+
+def _day(lang: Lang, iso: Any) -> str:
+    """A date of the records as the screens write it: "24 jun 2026", "24 de jun de 2026"."""
+    try:
+        d = date.fromisoformat(str(iso)[:10])
+    except ValueError:
+        return str(iso)
+    month = _MONTHS[lang][d.month - 1]
+    return f"{d.day} {month} {d.year}" if lang == "es" else f"{d.day} de {month} de {d.year}"
+
+
 def _label(table: dict[Lang, dict[str, str]], lang: Lang, code: Any) -> str:
     return table[lang].get(str(code), str(code))
 
@@ -246,6 +265,10 @@ def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
     # Only a reason of the closed list is told: any other text is left out.
     if reason := REVERSAL_REASONS[lang].get(str(p.get("reason"))):
         line += ": " + reason
+    # The question is told so the answer that follows it can be read against it; it was
+    # redacted before it was stored.
+    if p.get("decision") == "need_info" and p.get("question"):
+        line += f": «{p['question']}»"
     if r.get("folio"):
         line += (
             f". Se registró {r['folio']} y se verificó"
@@ -266,17 +289,21 @@ def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
         )
     if r.get("due_on"):
         line += (
-            f". El cliente puede responder hasta el {r['due_on']}"
+            f". El cliente puede responder hasta el {_day(lang, r['due_on'])}"
             if es
-            else f". O cliente pode responder até {r['due_on']}"
+            else f". O cliente pode responder até {_day(lang, r['due_on'])}"
         )
     return line + "."
 
 
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    # The one line that tells free text: the answer, stored redacted, next to its question.
+    answer = p.get("redacted_text")
     if lang == "es":
-        return "El cliente respondió a la pregunta de la analista: el caso volvió a la cola."
-    return "O cliente respondeu à pergunta da analista: o caso voltou para a fila."
+        said = f": «{answer}»; el caso" if answer else ": el caso"
+        return f"El cliente respondió a la pregunta de la analista{said} volvió a la cola."
+    said = f": «{answer}»; o caso" if answer else ": o caso"
+    return f"O cliente respondeu à pergunta da analista{said} voltou para a fila."
 
 
 def _identify(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -339,9 +366,11 @@ def _dispute(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 def _register(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     folio, due = r.get("folio", "?"), r.get("due_date")
     if lang == "es":
-        deadline = f", con plazo de respuesta al {due}" if due else ", sin plazo respaldado"
+        deadline = (
+            f", con plazo de respuesta al {_day(lang, due)}" if due else ", sin plazo respaldado"
+        )
         return f"El sistema registró la aclaración con el folio {folio}{deadline}."
-    deadline = f", com prazo de resposta até {due}" if due else ", sem prazo respaldado"
+    deadline = f", com prazo de resposta até {_day(lang, due)}" if due else ", sem prazo respaldado"
     return f"O sistema registrou a contestação com o protocolo {folio}{deadline}."
 
 

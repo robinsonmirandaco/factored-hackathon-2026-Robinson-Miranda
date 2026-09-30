@@ -466,7 +466,9 @@ def test_asking_for_information_leaves_the_case_waiting_for_the_customer(
     assert (due.isoformat(), before, status) == ("2026-06-24", "escalated", "open")
     assert case_id not in {i["case_id"] for i in client.get("/queue").json()["items"]}
     line = client.get(f"/cases/{case_id}/history").json()[-1]["text"]
-    assert line.endswith("El cliente puede responder hasta el 2026-06-24.")
+    assert line.endswith("El cliente puede responder hasta el 24 jun 2026.")
+    # The history tells the question as it was stored, redacted.
+    assert "[EMAIL]" in line and "ana.perez" not in line
 
 
 def test_asking_for_information_without_a_question_is_400(

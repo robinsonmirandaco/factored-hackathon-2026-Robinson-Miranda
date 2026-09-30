@@ -6,6 +6,7 @@ comprehension row of the message they were read in. Nothing in it is written by 
 the translation of a Portuguese message, which is labeled automatic.
 """
 
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -123,6 +124,28 @@ class LaterMessage(_Strict):
     source: Source
 
 
+class InfoExchange(_Strict):
+    """A question of the analyst to the customer and its answer, both PII-redacted (TRZ-28).
+
+    Attributes:
+        question: The question as the analyst wrote it.
+        asked_by: User name of the analyst.
+        asked_on: Simulated day it was asked.
+        due_on: Last business day to answer.
+        status: open, answered or expired.
+        answer: The customer's answer; None while there is none.
+        source: The info_requests row.
+    """
+
+    question: str
+    asked_by: str
+    asked_on: date
+    due_on: date
+    status: str
+    answer: str | None
+    source: Source
+
+
 class RuleTriggered(_Strict):
     """The policy rule that handed the case over.
 
@@ -158,3 +181,4 @@ class Dossier(_Strict):
     policy_rule_triggered: RuleTriggered | None
     recommended_action: str | None
     later_messages: list[LaterMessage]
+    info_exchanges: list[InfoExchange]
