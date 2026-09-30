@@ -180,3 +180,24 @@ export function createConversation() {
     isCurrent: (t) => t === turn,
   };
 }
+
+// The analyst's question on a clarification (TRZ-28): open with its deadline and a form, or
+// already answered. The deadline is a date of the simulated clock; the time of the answer is
+// not shown, since it runs on the real clock (design 10.2, rule 7).
+export function infoRequestView(t, lang, item) {
+  const r = item.info_request;
+  if (!r) return null;
+  if (r.status !== "open") return { question: r.question, answered: t("answered"), canAnswer: false };
+  return {
+    question: r.question,
+    due: t(r.overdue ? "answerOverdue" : "answerBy", { date: day(lang, r.due_on) }),
+    overdue: r.overdue,
+    canAnswer: true,
+  };
+}
+
+// How many clarifications wait for the customer's answer: the dot of the menu, until the
+// notifications of TRZ-32.
+export function openQuestions(items) {
+  return items.filter((i) => i.info_request?.status === "open").length;
+}

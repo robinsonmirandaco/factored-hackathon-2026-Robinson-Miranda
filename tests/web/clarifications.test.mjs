@@ -42,3 +42,19 @@ test("registered, in review and rejected have different colors", async () => {
   assert.equal(statusTone("rejected"), "bad");
   assert.notEqual(statusTone("registered"), statusTone("escalated"));
 });
+
+test("an open question of the analyst shows its deadline and a form (TRZ-28)", async () => {
+  const { infoRequestView, openQuestions } = await import("../../web/assets/view.js");
+  const item = {
+    id: "CASE-1", source: "cases", status: "awaiting_customer", case_id: "CASE-1",
+    info_request: { id: 1, question: "¿Hiciste la compra?", asked_on: "2026-06-17", due_on: "2026-06-24", overdue: false, status: "open", answered_at: null },
+  };
+  assert.deepEqual(infoRequestView(es, "es", item), {
+    question: "¿Hiciste la compra?", due: "Responde antes del 24 jun 2026", overdue: false, canAnswer: true,
+  });
+  const answered = { ...item, info_request: { ...item.info_request, status: "answered" } };
+  assert.equal(infoRequestView(es, "es", answered).canAnswer, false);
+  assert.equal(openQuestions([item, answered, { id: "X", source: "complaints" }]), 1);
+  const pt = translator("pt");
+  assert.equal(infoRequestView(pt, "pt", item).due, "Responda até 24 de jun de 2026");
+});
