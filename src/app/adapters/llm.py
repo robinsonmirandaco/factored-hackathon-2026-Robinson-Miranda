@@ -631,7 +631,7 @@ _REPLIES: dict[str, dict[str, str]] = {
         ),
         "failed": (
             "No pudimos confirmar el registro de tu aclaración, así que pasamos tu caso a una "
-            "analista con toda la información. Ella te contactará."
+            "analista con toda la información. Verás su decisión en Mis aclaraciones."
         ),
         "failed_card_block": (
             "No pudimos confirmar el registro de tu aclaración ni el bloqueo de tu tarjeta, así "
@@ -644,11 +644,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Responde sí para registrar la aclaración de este cargo y bloquear tu tarjeta."
         ),
         "approval": (
-            "Una analista revisará tu aclaración antes de registrarla. Te avisaremos cuando "
-            "tenga una respuesta."
+            "Una analista revisará tu aclaración antes de registrarla. Verás su decisión en "
+            "Mis aclaraciones."
         ),
         "escalated": (
-            "Pasamos tu caso a una analista con toda la información. Ella te contactará."
+            "Una analista revisará tu caso con toda la información. Verás su decisión en "
+            "Mis aclaraciones."
         ),
         "security": (
             "Por seguridad no podemos continuar este caso por aquí. Una analista lo revisará."
@@ -741,7 +742,8 @@ _REPLIES: dict[str, dict[str, str]] = {
         ),
         "failed": (
             "Não conseguimos confirmar o registro da sua contestação, então encaminhamos o seu "
-            "caso a uma analista com todas as informações. Ela vai entrar em contato."
+            "caso a uma analista com todas as informações. Você verá a decisão em Minhas "
+            "contestações."
         ),
         "failed_card_block": (
             "Não conseguimos confirmar o registro da sua contestação nem o bloqueio do seu "
@@ -754,12 +756,12 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Responda sim para registrar a contestação desta cobrança e bloquear o seu cartão."
         ),
         "approval": (
-            "Uma analista vai revisar a sua contestação antes de registrá-la. Avisaremos quando "
-            "houver uma resposta."
+            "Uma analista vai revisar a sua contestação antes de registrá-la. Você verá a "
+            "decisão em Minhas contestações."
         ),
         "escalated": (
-            "Encaminhamos o seu caso a uma analista com todas as informações. Ela vai entrar "
-            "em contato."
+            "Uma analista vai revisar o seu caso com todas as informações. Você verá a decisão "
+            "em Minhas contestações."
         ),
         "security": (
             "Por segurança não podemos continuar este caso por aqui. Uma analista vai revisá-lo."
@@ -840,6 +842,56 @@ _REPLIES: dict[str, dict[str, str]] = {
 }
 
 
+# Why a case goes to a person, by the rule that decided it, in the customer's words: no rule,
+# threshold or system name. Prefixed to the handoff reply by code.
+HANDOFF_REASONS: dict[str, dict[str, str]] = {
+    "es": {
+        "escalate.comprehension_unavailable": "No pudimos procesar tu mensaje en este momento.",
+        "escalate.clarifications_exhausted": "No logramos identificar el cargo con certeza.",
+        "escalate.amount_above_human_review": "Por el monto de este cargo, lo revisa una persona.",
+        "escalate.amount_unknown": "No pudimos confirmar el monto de este cargo.",
+        "escalate.open_dispute_last_90d": (
+            "Ya tienes una aclaración en curso, así que revisamos este cargo junto con ella."
+        ),
+        "escalate.conformal_set_empty": (
+            "No encontramos un cargo que coincida con lo que nos describes."
+        ),
+        "escalate.verification_failed": "No pudimos confirmar el registro.",
+        "escalate.autonomy_a2": "Por ahora, cada caso de este tipo lo revisa una persona.",
+        "approval.autonomy_a1": (
+            "Por ahora, cada aclaración de este tipo la revisa una persona antes de registrarse."
+        ),
+        "approval.amount_above_auto_register": (
+            "Por el monto de este cargo, una persona revisa la aclaración antes de registrarla."
+        ),
+    },
+    "pt": {
+        "escalate.comprehension_unavailable": "Não conseguimos processar a sua mensagem agora.",
+        "escalate.clarifications_exhausted": (
+            "Não conseguimos identificar a cobrança com certeza."
+        ),
+        "escalate.amount_above_human_review": (
+            "Pelo valor desta cobrança, uma pessoa faz a revisão."
+        ),
+        "escalate.amount_unknown": "Não conseguimos confirmar o valor desta cobrança.",
+        "escalate.open_dispute_last_90d": (
+            "Você já tem uma contestação em andamento, então revisamos esta cobrança junto com ela."
+        ),
+        "escalate.conformal_set_empty": (
+            "Não encontramos uma cobrança que corresponda ao que você descreveu."
+        ),
+        "escalate.verification_failed": "Não conseguimos confirmar o registro.",
+        "escalate.autonomy_a2": "Por enquanto, cada caso deste tipo é revisado por uma pessoa.",
+        "approval.autonomy_a1": (
+            "Por enquanto, cada contestação deste tipo é revisada por uma pessoa antes do registro."
+        ),
+        "approval.amount_above_auto_register": (
+            "Pelo valor desta cobrança, uma pessoa revisa a contestação antes do registro."
+        ),
+    },
+}
+
+
 def reply_key(facts: dict[str, Any]) -> str:
     """Which fixed reply fits the facts of a turn.
 
@@ -891,7 +943,8 @@ def reply_key(facts: dict[str, Any]) -> str:
 
 def template_reply(facts: dict[str, Any], language: str) -> str:
     """Fixed reply used when the LLM is unavailable, the fact checker blocks its reply, or the
-    reply must not vary (the urgent card block redirect, a security stop, a failed read-back).
+    reply must not vary (the urgent card block redirect, a security stop, a failed read-back, a
+    handoff, which starts with its reason).
 
     Args:
         facts: What the system did.
@@ -900,9 +953,11 @@ def template_reply(facts: dict[str, Any], language: str) -> str:
     Returns:
         The reply text.
     """
-    table = _REPLIES["pt" if language == "pt" else "es"]
+    lang = "pt" if language == "pt" else "es"
     folio = (facts.get("dispute") or {}).get("folio", "")
-    return table[reply_key(facts)].format(folio=folio)
+    text = _REPLIES[lang][reply_key(facts)].format(folio=folio)
+    reason = HANDOFF_REASONS[lang].get(str(facts.get("handoff_reason")))
+    return f"{reason} {text}" if reason else text
 
 
 def _strip_fence(s: str) -> str:

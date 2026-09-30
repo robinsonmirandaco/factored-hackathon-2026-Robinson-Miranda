@@ -101,16 +101,18 @@ FINAL_STATUSES = (
     "rejected",
     "expired",
 )
-# Outcomes answered with a fixed reply: a security stop must not send the text of the turn to
-# the LLM, a failed read-back confirms nothing, and what happened to the card or to a declined
-# offer is said the same way every time.
-FIXED_OUTCOMES = (
-    "security_blocked",
-    "failed",
+# Outcomes answered with a fixed reply instead of the LLM's: a security stop must not send the
+# text of the turn to the LLM, and a failed read-back confirms nothing.
+FIXED_OUTCOMES = ("security_blocked", "failed")
+# Outcomes code writes by design, not as a fallback: what happened to the card or to a declined
+# offer, and a handoff, whose reason and review time come from the decision (the LLM once wrote
+# a doubt the customer never voiced and a contact promise instead).
+CODE_WRITTEN_OUTCOMES = (
     "card_blocked",
-    "card_not_blocked",
     "declined",
     "block_declined",
+    "escalated",
+    "pending_analyst_approval",
 )
 # Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
 VERIFICATION_FAILED_REASON = "verification.registration_failed"
@@ -788,6 +790,7 @@ def _apply(
             session, case.id, d.rule, _sla(deps, d.priority), d.recommended, priority=d.priority
         )
         facts["outcome"] = "escalated"
+        facts["handoff_reason"], facts["review_hours"] = d.rule, _sla(deps, d.priority)
     elif d.action == "analyst_approval":
         T.escalate_to_human(
             session,
@@ -799,6 +802,7 @@ def _apply(
             d.priority,
         )
         facts["outcome"] = "pending_analyst_approval"
+        facts["handoff_reason"], facts["review_hours"] = d.rule, _sla(deps, d.priority)
     elif d.action in BLOCKS_CARD:
         case.status = "awaiting_confirmation"
         case.recommended_action = d.action
@@ -1437,6 +1441,8 @@ def _reply(
     # of them is written by it.
     if facts.get("redirect") == "card_block" or facts["outcome"] in FIXED_OUTCOMES:
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
+    if facts["outcome"] in CODE_WRITTEN_OUTCOMES:
+        return _joined(template_reply(facts, language), note), LLMCallStats()
     # A case with a person is answered the same way every time, with no LLM call.
     if facts["outcome"] == WITH_PERSON:
         return _joined(template_reply(facts, language), note), LLMCallStats()

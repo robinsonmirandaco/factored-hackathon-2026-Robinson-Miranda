@@ -4,7 +4,7 @@ or of the customer record reaches a prompt or the audit log."""
 import json
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.adapters.db.models import AuditRecord
 from app.adapters.db.session import Database, SchemaUrls
@@ -45,6 +45,18 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
             )
         ],
     )
+    # A rate for the day, so the charge has a USD amount and goes to confirmation, a reply the
+    # LLM writes, rather than to a person, whose reply code writes.
+    owner_db = Database(schema.admin)
+    with owner_db.session() as s:
+        s.execute(
+            text(
+                "INSERT INTO exchange_rates (date, source_currency, target_currency, "
+                "exchange_rate) VALUES (:d, 'COP', 'USD', 0.00025)"
+            ),
+            {"d": settings.trazo_now.date()},
+        )
+    owner_db.dispose()
     sent: list[str] = []
     answer = reading(
         "unrecognized_charge",

@@ -260,7 +260,8 @@ def test_a_third_question_hands_the_case_to_a_person(schema: SchemaUrls, deps: A
         c=third.case_id,
     )
     assert tuple(case) == (2, "escalated", "escalate.clarifications_exhausted")
-    assert third.reply.endswith(f"Tu número de caso es {third.case_id}.")
+    assert f"Tu número de caso es {third.case_id}." in third.reply
+    assert third.reply.startswith("No logramos identificar el cargo con certeza.")
 
 
 # ---- one queue item with priority and SLA -------------------------------------------------

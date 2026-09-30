@@ -169,24 +169,24 @@ def test_a_slow_llm_is_retried_once_then_the_rules_and_the_fixed_reply_answer(
 def test_after_the_comprehension_spent_the_retry_the_reply_gets_no_second_attempt(
     make_client: Callable[[Llm], TestClient], settings: Settings, schema: Any
 ) -> None:
-    coppel = reading(
-        "unrecognized_charge",
-        amount={"value": 900, "currency": "USD", "approximate": False, "evidence": "900 dólares"},
-        merchant_hint={"value": "Coppel", "evidence": "Coppel"},
+    billing = reading(
+        "billing_error_amount",
+        amount={"value": 120, "currency": "USD", "approximate": False, "evidence": "120 dólares"},
+        merchant_hint={"value": "Netflix", "evidence": "Netflix"},
     )
-    attempts = iter([api_error(503), message(json.dumps(coppel))])
+    attempts = iter([api_error(503), message(json.dumps(billing))])
     llm = Llm(settings, lambda _s, _u: next(attempts), _down)
     client = make_client(llm)
 
-    # No charge fits: the case is escalated, and that reply is written by the LLM.
-    body = client.post("/chat", json={"message": "No reconozco 900 dólares en Coppel"}).json()
+    # The charge is found and offered for confirmation: that reply is written by the LLM. (A
+    # handoff is written by code, so it would call no LLM at all.)
+    body = client.post("/chat", json={"message": "Me cobraron mal 120 dólares en Netflix"}).json()
 
-    assert body["outcome"] == "escalated"
+    assert body["outcome"] == "awaiting_confirmation"
     # comprehension: one failure and its retry; reply: one attempt, no retry left.
     assert llm.requests == ["comprehend", "comprehend", "compose"]
     wrote = _audit(schema, body["case_id"], "compose")
     assert (wrote["fallback"], wrote["attempts"]) == (True, 1)
-    assert body["reply"].startswith("Pasamos tu caso a una analista")
 
 
 # ---- row 1: LLM down; a case that needs comprehension escalates ----------------------------
@@ -201,7 +201,7 @@ def test_with_the_llm_down_a_message_the_rules_cannot_read_goes_to_a_person(
     body = client.post("/chat", json={"message": VAGUE}).json()
 
     assert (body["outcome"], body["autonomy_level"]) == ("escalated", "L3")
-    assert body["reply"].startswith("Pasamos tu caso a una analista")
+    assert body["reply"].startswith("No pudimos procesar tu mensaje en este momento.")
     assert f"Tu número de caso es {body['case_id']}." in body["reply"]
     # Two attempts of the comprehension, and no reply call once the LLM is down in the turn.
     assert llm.requests == ["comprehend", "comprehend"]
@@ -209,8 +209,11 @@ def test_with_the_llm_down_a_message_the_rules_cannot_read_goes_to_a_person(
     assert (read["fallback"], read["comprehension_unavailable"]) == (True, True)
     decide = _audit(schema, body["case_id"], "decide")
     assert decide["rule"] == "escalate.comprehension_unavailable"
+    # The handoff reply is written by code by design: no LLM attempt; the turn still reports
+    # the fallback of its comprehension.
     wrote = _audit(schema, body["case_id"], "compose")
-    assert wrote["fallback"] is True
+    assert (wrote["fallback"], wrote["attempts"]) == (False, 0)
+    assert body["llm_fallback"] is True
 
 
 def test_with_the_llm_down_a_message_the_rules_read_is_decided_on_the_rules(

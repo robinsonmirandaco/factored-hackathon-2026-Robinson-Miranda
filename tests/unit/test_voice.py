@@ -80,3 +80,9 @@ def test_the_web_speaks_as_we_with_one_term() -> None:
         others = [v for v in values if OTHER_TERMS[language].search(v)]
         assert not singular and not others, (language, singular, others)
     assert "Cuéntame" not in es and 'Entendí"' not in es
+
+
+def test_the_portuguese_web_is_gender_neutral() -> None:
+    pt = Path("web/assets/i18n.js").read_text(encoding="utf-8").split("\n  pt: {", 1)[1]
+    gendered = re.compile(r"\bobrigad[oa]\b|\bbem-vind[oa]\b|\bajud[aá]-l[oa]\b", re.IGNORECASE)
+    assert not gendered.findall(pt)

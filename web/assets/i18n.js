@@ -248,7 +248,7 @@ const TEXT = {
     confirmRegister: "Sim, registrar a contestação",
     confirmRegisterAndBlock: "Sim, registrar e bloquear o cartão",
     confirmBlock: "Bloquear o cartão",
-    noThanks: "Não, obrigado",
+    noThanks: "Não, prefiro não",
     channel_ATM: "Caixa eletrônico",
     channel_App: "App",
     channel_Branch: "Agência",

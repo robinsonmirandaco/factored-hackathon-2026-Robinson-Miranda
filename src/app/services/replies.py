@@ -39,6 +39,7 @@ _NOTES: dict[str, dict[str, str]] = {
         ),
         "person": "Si quieres, te comunicamos con una persona.",
         "case_number": "Tu número de caso es {case_number}.",
+        "review": "Plazo de revisión: {hours} horas.",
     },
     "pt": {
         "deadline": "Prazo de resposta: até {due} ({days} {unit}).",
@@ -60,9 +61,16 @@ _NOTES: dict[str, dict[str, str]] = {
         ),
         "person": "Se quiser, colocamos você em contato com uma pessoa.",
         "case_number": "O número do seu caso é {case_number}.",
+        "review": "Prazo de revisão: {hours} horas.",
     },
 }
 
+
+# Label of the review time, which comes from the demo policy's queue (config/policy.yaml).
+REVIEW_LABEL = {
+    "es": "plazo de la política de demostración, no del banco",
+    "pt": "prazo da política de demonstração, não do banco",
+}
 
 # Outcomes that hand the case to a person; the customer is told its number (TRZ-25 CA5).
 HANDOFF_OUTCOMES = (
@@ -122,10 +130,12 @@ def deadline_note(facts: dict[str, Any], passages: dict[str, Passage], language:
 
 
 def handoff_note(facts: dict[str, Any], language: str) -> str:
-    """The number of a case handed to a person, for the customer to follow it (TRZ-25 CA5).
+    """The number of a case handed to a person, for the customer to follow it (TRZ-25 CA5), and
+    for an escalation or an approval, the review time of the queue with its [simulado] label.
 
     Args:
-        facts: Facts of the turn; `case_number` is set for a handoff.
+        facts: Facts of the turn; `case_number` is set for a handoff, `review_hours` for one
+            that has a review time.
         language: Reply language.
 
     Returns:
@@ -134,7 +144,14 @@ def handoff_note(facts: dict[str, Any], language: str) -> str:
     number = facts.get("case_number")
     if not number:
         return ""
-    return _NOTES["pt" if language == "pt" else "es"]["case_number"].format(case_number=number)
+    lang = "pt" if language == "pt" else "es"
+    note = _NOTES[lang]["case_number"].format(case_number=number)
+    hours = facts.get("review_hours")
+    if hours is None:
+        return note
+    # The review time is the queue's SLA of config/policy.yaml: demo policy, not the bank's.
+    review = _NOTES[lang]["review"].format(hours=f"{hours:g}")
+    return f"{note} {review}\n[simulado] {REVIEW_LABEL[lang]}"
 
 
 def _claim_note(
