@@ -508,3 +508,151 @@ def test_a_dispute_shows_the_charge_it_was_registered_on(
 
     mine = [i for i in items if i["folio"] == folio]
     assert len(mine) == 1 and mine[0]["merchant"] == "Netflix" and mine[0]["source"] == "disputes"
+
+
+# ---- the offered block is its own action, and every offer can be declined (QA finding 2) -----
+
+
+def _offer(client: TestClient) -> dict[str, Any]:
+    case_id = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()[
+        "case_id"
+    ]
+    offered = still_not_recognized(client, case_id)
+    assert offered["pending_action"]["action"] == "register_and_offer_block", offered
+    return offered
+
+
+def _confirm(client: TestClient, turn: dict[str, Any]) -> dict[str, Any]:
+    return client.post(
+        "/chat",
+        json={
+            "message": "Sí",
+            "case_id": turn["case_id"],
+            "confirm_action_id": turn["pending_action"]["action_id"],
+        },
+    ).json()
+
+
+def _decline(client: TestClient, turn: dict[str, Any]) -> dict[str, Any]:
+    r = client.post(
+        "/chat",
+        json={
+            "message": "No, gracias",
+            "case_id": turn["case_id"],
+            "decline_action_id": turn["pending_action"]["action_id"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _counts(schema: SchemaUrls) -> tuple[int, int, str]:
+    engine = create_engine(schema.admin)
+    with engine.connect() as conn:
+        disputes = conn.execute(text("SELECT count(*) FROM disputes")).scalar()
+        blocks = conn.execute(text("SELECT count(*) FROM card_blocks")).scalar()
+        status = conn.execute(
+            text("SELECT product_status FROM products WHERE product_id = 'P1'")
+        ).scalar()
+    engine.dispose()
+    return int(disputes or 0), int(blocks or 0), str(status)
+
+
+def test_the_question_names_the_charge_it_registers(client: TestClient) -> None:
+    offered = _offer(client)
+
+    pending = offered["pending_action"]
+    assert (pending["merchant"], pending["amount"], pending["currency"]) == (
+        "Netflix",
+        120.0,
+        "USD",
+    )
+
+
+def test_registering_offers_the_block_as_its_own_action(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    offered = _offer(client)
+
+    done = _confirm(client, offered)
+
+    assert done["outcome"] == "registered_verified" and done["dispute_folio"]
+    block = done["pending_action"]
+    assert block["action"] == "block" and block["last4"] == "4821"
+    assert block["action_id"] != offered["pending_action"]["action_id"]
+    # Registering did not block the card: that needs its own confirmation.
+    assert _counts(schema_rows) == (1, 0, "Active")
+
+
+def test_confirming_the_offered_block_blocks_the_card_only(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    done = _confirm(client, _offer(client))
+
+    blocked = _confirm(client, done)
+
+    assert blocked["outcome"] == "card_blocked" and "block_card" in blocked["actions_taken"]
+    assert blocked["pending_action"] is None
+    assert _counts(schema_rows) == (1, 1, "Blocked")
+    assert _case_row(schema_rows, done["case_id"])[0] == "registered_verified"
+
+
+def test_declining_the_block_leaves_the_card_and_the_dispute(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    done = _confirm(client, _offer(client))
+
+    declined = _decline(client, done)
+
+    assert (declined["outcome"], declined["pending_action"]) == ("block_declined", None)
+    assert _counts(schema_rows) == (1, 0, "Active")
+    assert _case_row(schema_rows, done["case_id"])[0] == "registered_verified"
+    # The declined offer cannot be confirmed afterwards.
+    assert _confirm(client, done)["outcome"] == "no_pending_action"
+
+
+def test_declining_the_registration_registers_nothing(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    offered = _offer(client)
+
+    declined = _decline(client, offered)
+
+    assert declined["outcome"] == "declined" and declined["dispute_folio"] is None
+    assert _counts(schema_rows) == (0, 0, "Active")
+    assert _case_row(schema_rows, offered["case_id"])[0] == "closed"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"message": "No", "decline_action_id": "ACT-0123456789"},
+        {
+            "message": "No",
+            "case_id": "C",
+            "decline_action_id": "ACT-0123456789",
+            "confirm_action_id": "ACT-0123456789",
+        },
+    ],
+)
+def test_a_decline_needs_its_case_and_goes_alone(client: TestClient, body: dict) -> None:
+    r = client.post("/chat", json=body)
+    assert r.status_code == 422 and r.json()["error_code"] == "validation_error"
+
+
+def test_the_card_digits_of_the_question_never_reach_the_llm(
+    schema_rows: SchemaUrls, database_url: str
+) -> None:
+    settings = llm_settings(database_url, log_level="WARNING")
+    sent: list[str] = []
+    app = create_app(settings)
+    deps = agent_deps(settings, fake_llm(settings, _read, sent))
+    app.state.runtime = dataclasses.replace(app.state.runtime, agent=deps)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
+        first = c.post("/chat", json={"message": READ_NETFLIX}).json()
+        offered = still_not_recognized(c, first["case_id"])
+        done = _confirm(c, offered)
+
+    assert done["pending_action"]["last4"] == "4821"
+    assert sent and all("4821" not in prompt for prompt in sent)

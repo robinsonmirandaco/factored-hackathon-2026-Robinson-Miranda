@@ -1,4 +1,4 @@
-.PHONY: init install dev test lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -14,6 +14,9 @@ dev:
 
 test:
 	LLM_ENABLED=false uv run --frozen pytest -m "not integration" --cov=app --cov-report=term-missing
+
+test-web:
+	node --test tests/web/
 
 lint:
 	uv run --frozen ruff check src pipeline tests && uv run --frozen ruff format --check src pipeline tests

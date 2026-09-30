@@ -705,6 +705,17 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Tu caso ya está con una persona. Agregamos tu mensaje a su expediente para que lo "
             "tenga en cuenta."
         ),
+        "card_blocked": "Bloqueamos la tarjeta de ese cargo. Tu aclaración sigue registrada.",
+        "card_not_blocked": (
+            "No pudimos confirmar el bloqueo de tu tarjeta. Bloquéala de inmediato con la opción "
+            "de bloqueo de la app de tu banco o llamando a la línea de bloqueo que aparece en el "
+            "sitio oficial del banco. Tu aclaración sigue registrada."
+        ),
+        "declined": (
+            "De acuerdo, no hicimos ningún registro. Si cambias de opinión, puedes aclarar el "
+            "cargo cuando quieras."
+        ),
+        "block_declined": "De acuerdo, tu tarjeta sigue activa. Tu aclaración sigue registrada.",
     },
     "pt": {
         "registered_verified": (
@@ -806,6 +817,21 @@ _REPLIES: dict[str, dict[str, str]] = {
             "O seu caso já está com uma pessoa. Incluímos a sua mensagem no dossiê para que ela "
             "a considere."
         ),
+        "card_blocked": (
+            "Bloqueamos o cartão dessa cobrança. A sua contestação continua registrada."
+        ),
+        "card_not_blocked": (
+            "Não conseguimos confirmar o bloqueio do seu cartão. Bloqueie-o agora mesmo pela "
+            "opção de bloqueio do app do seu banco ou ligando para a central de bloqueio indicada "
+            "no site oficial do banco. A sua contestação continua registrada."
+        ),
+        "declined": (
+            "Tudo bem, não fizemos nenhum registro. Se mudar de ideia, você pode contestar a "
+            "cobrança quando quiser."
+        ),
+        "block_declined": (
+            "Tudo bem, o seu cartão continua ativo. A sua contestação continua registrada."
+        ),
     },
 }
 
@@ -852,6 +878,10 @@ def reply_key(facts: dict[str, Any]) -> str:
         "no_pending_recognition": "no_pending_recognition",
         "no_pending_choice": "no_pending_choice",
         "with_person": "with_person",
+        "card_blocked": "card_blocked",
+        "card_not_blocked": "card_not_blocked",
+        "declined": "declined",
+        "block_declined": "block_declined",
     }.get(str(outcome), "escalated")
 
 

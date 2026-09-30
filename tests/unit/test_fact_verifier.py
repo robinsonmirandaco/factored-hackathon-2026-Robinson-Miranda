@@ -203,6 +203,8 @@ def test_offering_an_action_is_not_claiming_it() -> None:
 @pytest.mark.parametrize("key", sorted(_REPLIES["es"]))
 def test_every_fixed_reply_passes_the_checker(language: str, key: str) -> None:
     done = {"register_dispute", "block_card"} if key.startswith("registered") else set()
+    if key == "card_blocked":
+        done = {"block_card"}
     facts = VerifiedFacts(folios=frozenset({FOLIO}), actions=frozenset(done))
     assert _kinds(_REPLIES[language][key].format(folio=FOLIO), facts) == []
 

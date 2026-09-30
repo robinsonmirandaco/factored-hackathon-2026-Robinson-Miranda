@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
-from app.adapters.db.models import Case, CaseAction, Customer, Transaction
+from app.adapters.db.models import Case, CaseAction, Customer, Product, Transaction
 from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMCallStats, LLMClient, TurnBudget, template_reply
 from app.core.errors import AppError
@@ -101,15 +101,28 @@ FINAL_STATUSES = (
     "rejected",
     "expired",
 )
+# Outcomes answered with a fixed reply: a security stop must not send the text of the turn to
+# the LLM, a failed read-back confirms nothing, and what happened to the card or to a declined
+# offer is said the same way every time.
+FIXED_OUTCOMES = (
+    "security_blocked",
+    "failed",
+    "card_blocked",
+    "card_not_blocked",
+    "declined",
+    "block_declined",
+)
 # Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
 VERIFICATION_FAILED_REASON = "verification.registration_failed"
 
 # The actions that wait for the customer's confirmation, and whether confirming blocks the card
-# of the charge. The offered block is not run by the "sí": the customer asks for it apart.
+# of the charge. The "sí" to register_and_offer_block registers only: the block is then offered
+# as its own action, "block", with its own confirmation (design 3.2: explicit for L2).
 BLOCKS_CARD: dict[str, bool] = {
     "register": False,
     "register_and_offer_block": False,
     "register_and_block": True,
+    "block": True,
 }
 
 
@@ -180,6 +193,7 @@ def handle_message(
     recognition: Choice | None = None,
     option: str | None = None,
     transaction_id: str | None = None,
+    decline_action_id: str | None = None,
 ) -> AgentResponse:
     """Handles one customer turn end to end.
 
@@ -199,6 +213,8 @@ def handle_message(
         transaction_id: The charge a "No lo reconozco" or "¿Qué es esto?" button was pressed
             on. It opens a new case through the button door (TRZ-15 CA9): the charge arrives
             chosen, is only checked, and no LLM is called; `text` is the button's label.
+        decline_action_id: The pending action of `case_id` the customer declines ("No,
+            gracias"): it is cancelled and nothing runs.
 
     Returns:
         What the system did and replied.
@@ -231,7 +247,9 @@ def handle_message(
                 transaction_id,
             )
             stats = LLMCallStats()
-        elif case_id is not None and (confirm_action_id or recognition or option):
+        elif case_id is not None and (
+            confirm_action_id or recognition or option or decline_action_id
+        ):
             case = _own_case(session, customer_id, case_id)
             # No LLM call on a confirmation or a button: a short "sí" or "sim" keeps the case's
             # language.
@@ -241,6 +259,8 @@ def handle_message(
             said = Said(redacted, pii_counts, spoken)
             if confirm_action_id:
                 facts = _confirm(session, deps, customer, case, language, confirm_action_id, said)
+            elif decline_action_id:
+                facts = _decline(session, case, decline_action_id, said)
             elif recognition:
                 facts = _recognize(session, deps, customer, case, language, recognition, said)
             else:
@@ -1129,6 +1149,8 @@ def _confirm(
             "outcome": "no_pending_action",
             "actions_taken": [],
         }
+    if row.action == "block":
+        return _confirm_block(session, deps, case, language, row, said)
     facts: Facts = {"intent": case.intent, "action": row.action, "actions_taken": []}
     try:
         # A foreign id found by a tool must leave nothing behind, not even the dispute.
@@ -1219,8 +1241,123 @@ def _confirm(
         )
     if first_run:
         case.status = "registered_verified"
+    if row.action == "register_and_offer_block":
+        offer = T.offer_action(session, case, "block") if first_run else _pending_row(session, case)
+        if offer is not None and offer.action == "block":
+            facts["pending_action"] = {"action_id": offer.id, "action": "block"}
     facts["outcome"] = "registered_verified"
     return facts
+
+
+def _confirm_block(
+    session: Session, deps: AgentDeps, case: Case, language: Language, row: CaseAction, said: Said
+) -> Facts:
+    """Blocks the card of a registered charge, the block offered after its registration.
+
+    The dispute is already registered and verified: a block that fails or does not read back
+    leaves it as it is, and the customer is told to block the card through the bank.
+    """
+    try:
+        with session.begin_nested():
+            block = T.block_card(
+                session, case.customer_id, case.id, row.transaction_id, case.intent
+            )
+    except T.OwnershipError:
+        return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
+    check = (
+        verify_block(
+            session,
+            case.id,
+            str(block.data.get("product_id", "")),
+            str(block.data.get("status_before", "")),
+        )
+        if block.ok
+        else None
+    )
+    if row.status == "pending":
+        row.status, row.resolved_at = "executed", utcnow()
+    facts: Facts = {"intent": case.intent, "action": "block", "actions_taken": []}
+    if check is not None and check.verified:
+        facts["actions_taken"] = ["block_card"]
+        facts["outcome"] = "card_blocked"
+        return facts
+    facts["card_not_blocked"] = block.message or "block_not_verified"
+    facts["redirect"] = "card_block"
+    facts["outcome"] = "card_not_blocked"
+    return facts
+
+
+def _decline(session: Session, case: Case, action_id: str, said: Said) -> Facts:
+    """Cancels the pending action the customer declines ("No, gracias"); nothing runs.
+
+    Declining the registration closes the case with nothing registered. Declining the offered
+    block leaves the registered dispute as it is and the card active.
+    """
+    row = session.execute(
+        select(CaseAction).where(CaseAction.id == action_id).with_for_update()
+    ).scalar_one_or_none()
+    mine = row is not None and row.case_id == case.id
+    pending = mine and row is not None and row.status == "pending"
+    write_audit(
+        session,
+        "agent",
+        "decline",
+        case.id,
+        said.audit(),
+        {
+            "action_id": action_id if mine else None,
+            "pending_action": row.action if pending and row else None,
+        },
+    )
+    if not pending or row is None:
+        return {
+            "intent": case.intent,
+            "action": None,
+            "outcome": "no_pending_action",
+            "actions_taken": [],
+        }
+    row.status, row.resolved_at = "canceled", utcnow()
+    if row.action == "block":
+        return {
+            "intent": case.intent,
+            "action": "block",
+            "outcome": "block_declined",
+            "actions_taken": [],
+        }
+    case.status, case.recommended_action = "closed", None
+    return {"intent": case.intent, "action": row.action, "outcome": "declined", "actions_taken": []}
+
+
+def _pending_row(session: Session, case: Case) -> CaseAction | None:
+    return session.execute(
+        select(CaseAction).where(CaseAction.case_id == case.id, CaseAction.status == "pending")
+    ).scalar_one_or_none()
+
+
+def pending_detail(session: Session, action_id: str) -> dict[str, Any]:
+    """What the customer's screen needs to ask for a pending action, read from the database.
+
+    It goes to the customer only, never to the LLM: it carries the card's last four digits.
+
+    Args:
+        session: Session bound to the customer of the JWT.
+        action_id: The pending action.
+
+    Returns:
+        Merchant, amount, currency and last four digits of the card of its charge; empty when
+        the action or its charge is not visible to the session.
+    """
+    row = session.get(CaseAction, action_id)
+    tx = session.get(Transaction, row.transaction_id) if row is not None else None
+    if tx is None:
+        return {}
+    product = session.get(Product, tx.product_id)
+    return {
+        "merchant": tx.merchant_name,
+        "amount": tx.amount,
+        "currency": tx.currency,
+        "last4": product.product_number_last4 if product else None,
+    }
 
 
 def _deadline(
@@ -1294,7 +1431,7 @@ def _reply(
     # The urgent card block redirect must say the same thing every time, a security stop must
     # not send the text of the turn to the LLM, and a failed read-back confirms nothing, so none
     # of them is written by it.
-    if facts.get("redirect") == "card_block" or facts["outcome"] in ("security_blocked", "failed"):
+    if facts.get("redirect") == "card_block" or facts["outcome"] in FIXED_OUTCOMES:
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
     # A case with a person is answered the same way every time, with no LLM call.
     if facts["outcome"] == WITH_PERSON:

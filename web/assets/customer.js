@@ -4,6 +4,7 @@
 
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
+import { pendingButtons, pendingQuestion } from "./view.js";
 
 const api = createClient("customer");
 const DOCUMENT_TYPES = ["CURP", "INE", "CC", "CE", "DNI", "Pasaporte"];
@@ -394,16 +395,16 @@ function renderTurn(r) {
       onclick: () => send({ message: text, case_id: r.case_id, option: c.claim_id }, text),
     }));
   }
-  if (r.pending_action) {
-    const text = label(t, "confirm", r.pending_action.action);
-    buttons.push(el("button", {
-      type: "button", class: "btn primary", text,
-      onclick: () => send({
-        message: text, case_id: r.case_id, confirm_action_id: r.pending_action.action_id,
-      }, text),
-    }));
-  }
   if (buttons.length) parts.push(el("div", { class: "choices" }, buttons));
+  if (r.pending_action) {
+    const p = r.pending_action;
+    const answer = { confirm: "confirm_action_id", decline: "decline_action_id" };
+    parts.push(el("p", { class: "question", text: pendingQuestion(t, state.lang, p) }));
+    parts.push(el("div", { class: "choices" }, pendingButtons(t, p).map((b) => el("button", {
+      type: "button", class: `btn${b.primary ? " primary" : ""}`, text: b.label,
+      onclick: () => send({ message: b.label, case_id: r.case_id, [answer[b.kind]]: p.action_id }, b.label),
+    }))));
+  }
   if (r.dispute_folio) {
     parts.push(el("div", { class: "folio" }, el("span", { class: "pill" },
       `${t("folio")} `, el("span", { class: "mono", text: r.dispute_folio }), ` · ${t("verified")}`)));

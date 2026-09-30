@@ -73,6 +73,7 @@ _ACTIONS: dict[Lang, dict[str, str]] = {
     "es": {
         "register_and_offer_block": "registrar y ofrecer el bloqueo de la tarjeta",
         "register_and_block": "registrar y bloquear la tarjeta",
+        "block": "bloquear la tarjeta",
         "register": "registrar la aclaración",
         "explain_and_watch": "explicar la retención y esperar",
         "report_claim_status": "informar el estado del reclamo",
@@ -84,6 +85,7 @@ _ACTIONS: dict[Lang, dict[str, str]] = {
     "pt": {
         "register_and_offer_block": "registrar e oferecer o bloqueio do cartão",
         "register_and_block": "registrar e bloquear o cartão",
+        "block": "bloquear o cartão",
         "register": "registrar a contestação",
         "explain_and_watch": "explicar a retenção e aguardar",
         "report_claim_status": "informar o status da reclamação",
@@ -195,6 +197,18 @@ def _confirm(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if status == "executed":
         return f"O cliente confirmou de novo uma ação já executada: {action}."
     return f"O cliente confirmou a ação pendente: {action}."
+
+
+def _decline(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    pending = r.get("pending_action")
+    if not pending:
+        if lang == "es":
+            return "El cliente dijo que no, pero no había ninguna acción pendiente."
+        return "O cliente disse que não, mas não havia nenhuma ação pendente."
+    action = _label(_ACTIONS, lang, pending)
+    if lang == "es":
+        return f"El cliente no aceptó la acción ofrecida: {action}. No se hizo nada."
+    return f"O cliente não aceitou a ação oferecida: {action}. Nada foi feito."
 
 
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -509,6 +523,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "extract"): _extract,
     ("agent", "comprehend"): _extract,
     ("agent", "confirm"): _confirm,
+    ("agent", "decline"): _decline,
     ("agent", "compose"): _compose,
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,

@@ -41,6 +41,8 @@ class ChatIn(BaseModel):
         transaction_id: The charge a "No lo reconozco" or "¿Qué es esto?" button of Movimientos
             was pressed on; it opens a new case, so it goes without `case_id`. `message` is the
             button's label.
+        decline_action_id: The `action_id` of the pending action the customer declines ("No,
+            gracias"); it is cancelled and nothing runs.
     """
 
     customer_id: str | None = Field(default=None, max_length=64)
@@ -50,14 +52,19 @@ class ChatIn(BaseModel):
     recognition: Literal["not_recognized", "recognized"] | None = None
     option: str | None = Field(default=None, min_length=1, max_length=64)
     transaction_id: str | None = Field(default=None, min_length=1, max_length=64)
+    decline_action_id: str | None = Field(default=None, pattern=r"^ACT-[0-9A-F]{10}$")
 
     @model_validator(mode="after")
     def _one_answer(self) -> Self:
-        answers = [self.confirm_action_id, self.recognition, self.option]
+        answers = [self.confirm_action_id, self.recognition, self.option, self.decline_action_id]
         if sum(a is not None for a in answers) > 1:
-            raise ValueError("send at most one of confirm_action_id, recognition and option")
+            raise ValueError(
+                "send at most one of confirm_action_id, decline_action_id, recognition and option"
+            )
         if any(a is not None for a in answers) and self.case_id is None:
-            raise ValueError("confirm_action_id, recognition and option need a case_id")
+            raise ValueError(
+                "confirm_action_id, decline_action_id, recognition and option need a case_id"
+            )
         if self.transaction_id is not None and (
             self.case_id is not None or any(a is not None for a in answers)
         ):
@@ -219,12 +226,22 @@ class PendingActionOut(BaseModel):
     """An action waiting for the customer's confirmation.
 
     Attributes:
-        action_id: What `confirm_action_id` must name to run it.
-        action: register, register_and_offer_block or register_and_block.
+        action_id: What `confirm_action_id` must name to run it, or `decline_action_id` to
+            decline it.
+        action: register, register_and_offer_block, register_and_block, or block (the block
+            offered after a registration).
+        merchant: Merchant of the charge it acts on.
+        amount: Registered amount of that charge.
+        currency: Its currency.
+        last4: Last four digits of the card of that charge.
     """
 
     action_id: str
     action: str
+    merchant: str | None = None
+    amount: float | None = None
+    currency: str | None = None
+    last4: str | None = None
 
 
 class ChatOut(BaseModel):

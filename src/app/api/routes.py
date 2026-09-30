@@ -38,7 +38,7 @@ from app.schemas.api import (
 )
 from app.schemas.dossier import Dossier
 from app.services import auth, cases, dossier, me
-from app.services.agent import handle_message
+from app.services.agent import handle_message, pending_detail
 
 router = APIRouter()
 
@@ -151,7 +151,9 @@ def chat(
         recognition=body.recognition,
         option=body.option,
         transaction_id=body.transaction_id,
+        decline_action_id=body.decline_action_id,
     )
+    pending = r.facts.get("pending_action")
     auth.remember_case(session, customer, r.case_id)
     return ChatOut(
         case_id=r.case_id,
@@ -168,7 +170,9 @@ def chat(
         choices=r.facts.get("choices", []),
         options=r.facts.get("options", []),
         claims=r.facts.get("claims", []),
-        pending_action=r.facts.get("pending_action"),
+        pending_action=(
+            {**pending, **pending_detail(session, pending["action_id"])} if pending else None
+        ),
         dispute_folio=(r.facts.get("dispute") or {}).get("folio"),
         clues=[ClueOut(**dataclasses.asdict(c)) for c in r.clues],
     )
