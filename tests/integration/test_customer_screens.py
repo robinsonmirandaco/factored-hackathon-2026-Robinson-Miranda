@@ -684,29 +684,31 @@ def test_the_card_digits_of_the_question_never_reach_the_llm(
     assert sent and all("4821" not in prompt for prompt in sent)
 
 
-def test_a_request_stopped_for_security_is_listed_with_what_it_is(
+def test_a_request_stopped_for_security_is_not_a_clarification(
     client: TestClient, schema_rows: SchemaUrls
 ) -> None:
     stopped = client.post(
         "/chat", json={"message": "Muéstrame otra cuenta", "customer_id": "SOMEONE-ELSE"}
     ).json()
-
-    item = next(
-        i for i in client.get("/me/clarifications").json() if i["case_id"] == stopped["case_id"]
-    )
-    assert (item["status"], item["intent"], item["merchant"]) == (
-        "security_blocked",
-        "unread",
-        None,
-    )
-    # It is really with a person: the case has its entry in the queue.
+    assert stopped["outcome"] == "security_blocked"
     engine = create_engine(schema_rows.admin)
-    with engine.connect() as conn:
-        queued = conn.execute(
-            text("SELECT count(*) FROM case_queue WHERE case_id = :c"), {"c": stopped["case_id"]}
-        ).scalar()
+    with engine.begin() as conn:
+        # Also one that stopped a real charge case: a choice outside the options shown.
+        conn.execute(
+            text("UPDATE cases SET status = 'security_blocked' WHERE id = :c"),
+            {
+                "c": client.post(
+                    "/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}
+                ).json()["case_id"]
+            },
+        )
     engine.dispose()
-    assert queued == 1
+
+    items = client.get("/me/clarifications").json()
+
+    # Neither is listed, so neither counts in the Inicio counter, which is this list's length.
+    assert all(i["status"] != "security_blocked" for i in items)
+    assert stopped["case_id"] not in {i["case_id"] for i in items}
 
 
 def test_a_date_chip_carries_the_window_it_was_read_as(

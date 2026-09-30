@@ -31,12 +31,12 @@ from app.services.tools import read_open_claims
 
 # Cases the customer follows in Mis aclaraciones besides its disputes: with a person, or decided
 # by one. A case still in conversation lives in the chat; one that only informed or redirected is
-# over; a registered one is shown through its dispute.
+# over; a registered one is shown through its dispute. A case stopped for security is not a
+# clarification of the customer: it is reviewed by the bank and never listed.
 FOLLOWED_STATUSES = (
     "failed",
     "pending_analyst_approval",
     "escalated",
-    "security_blocked",
     "approved",
     "rejected",
 )

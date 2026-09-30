@@ -7,13 +7,6 @@ import { clarificationLines } from "../../web/assets/view.js";
 
 const es = translator("es");
 
-test("a request stopped for security says what it is, and its id once", () => {
-  const item = { id: "CASE-456452F596", source: "cases", status: "security_blocked", case_id: "CASE-456452F596", intent: "unread" };
-  const { title, ref } = clarificationLines(es, "es", item);
-  assert.equal(title, "Solicitud detenida por seguridad");
-  assert.equal(`${title} ${ref}`.split("CASE-456452F596").length - 1, 1);
-});
-
 test("a case without a charge is named by its intent", () => {
   const item = { id: "CASE-1", source: "cases", status: "escalated", case_id: "CASE-1", intent: "unrecognized_charge" };
   assert.equal(clarificationLines(es, "es", item).title, "Cargo no reconocido");

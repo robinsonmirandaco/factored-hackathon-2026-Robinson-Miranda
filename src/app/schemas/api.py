@@ -436,8 +436,7 @@ class ClarificationOut(BaseModel):
         status: registered for a dispute; the case status for a case; received, in_review or
             answered for a claim.
         case_id: The TRAZO case of a dispute or case.
-        intent: What it is about: the dispute type, or the case's intent (unread for a request
-            stopped for security before it was read).
+        intent: What it is about: the dispute type, or the case's intent.
         folio: Folio of the registered dispute.
         merchant: Merchant of the charge, when known.
         amount: Amount of the charge; for a dispute, the amount it was registered with.
