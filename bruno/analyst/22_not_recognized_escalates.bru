@@ -1,0 +1,26 @@
+meta {
+  name: the charge has no USD amount and goes to a person
+  type: http
+  seq: 22
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{colombiaToken}}
+}
+
+body:json {
+  {"message": "Sigo sin reconocerlo", "case_id": "{{approveCase}}", "recognition": "not_recognized"}
+}
+
+tests {
+  test("escalated", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("escalated");
+  });
+}

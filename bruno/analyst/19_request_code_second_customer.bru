@@ -1,0 +1,21 @@
+meta {
+  name: request the demo code of a customer of Colombia
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/request
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "CC", "document_number": "SYN0000004"}
+}
+
+tests {
+  test("202 code sent", function() {
+    expect(res.getStatus()).to.equal(202);
+  });
+}

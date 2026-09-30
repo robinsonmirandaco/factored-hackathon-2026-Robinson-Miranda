@@ -1,0 +1,30 @@
+meta {
+  name: another charge chosen with its button
+  type: http
+  seq: 26
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{colombiaToken}}
+}
+
+body:json {
+  {"message": "No reconozco este cargo", "transaction_id": "T00004018"}
+}
+
+script:post-response {
+  bru.setVar("infoCase", res.getBody().case_id);
+}
+
+tests {
+  test("the charge detail is shown", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("recognizing");
+  });
+}

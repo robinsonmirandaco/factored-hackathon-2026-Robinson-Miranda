@@ -1,0 +1,24 @@
+meta {
+  name: TRZ-27 CA6 the history tells the analyst and the reason
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{baseUrl}}/cases/{{dossierCase}}/history
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("the last line names the analyst and the reason", function() {
+    const lines = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(lines[lines.length - 1].text).to.equal(
+      "La analista " + bru.getEnvVar("analystUser") + " decidió rechazar: datos insuficientes.");
+  });
+}

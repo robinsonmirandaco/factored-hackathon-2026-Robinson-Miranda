@@ -1,0 +1,26 @@
+meta {
+  name: the analyst decides again on the case that came back
+  type: http
+  seq: 33
+}
+
+post {
+  url: {{baseUrl}}/cases/{{infoCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "reject", "reason": "should_not_act"}
+}
+
+tests {
+  test("200 rejected", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("rejected");
+  });
+}

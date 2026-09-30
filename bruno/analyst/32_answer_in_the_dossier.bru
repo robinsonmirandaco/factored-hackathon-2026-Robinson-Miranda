@@ -1,0 +1,24 @@
+meta {
+  name: TRZ-28 CA2 the answer is in the dossier
+  type: http
+  seq: 32
+}
+
+get {
+  url: {{baseUrl}}/cases/{{infoCase}}/dossier
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("the answer is a later message with its audit row", function() {
+    expect(res.getStatus()).to.equal(200);
+    const later = res.getBody().later_messages;
+    expect(later.map((m) => m.text)).to.include("No, esa compra no la hice.");
+    expect(later[later.length - 1].source.table).to.equal("audit_log");
+  });
+}

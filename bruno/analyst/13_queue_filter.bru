@@ -1,0 +1,24 @@
+meta {
+  name: TRZ-27 CA2 a filter shows as many rows as its counter
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/queue?filter=no_match
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("the rows of no_match match its counter", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(body.items.length).to.equal(body.counts.no_match);
+    for (const i of body.items) expect(i.reason).to.equal("escalate.conformal_set_empty");
+  });
+}

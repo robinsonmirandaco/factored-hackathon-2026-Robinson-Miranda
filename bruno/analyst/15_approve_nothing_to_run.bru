@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-27 approving a case with no charge is 409
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseUrl}}/cases/{{dossierCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "approve"}
+}
+
+tests {
+  test("409 nothing_to_approve", function() {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getBody().error_code).to.equal("nothing_to_approve");
+  });
+}

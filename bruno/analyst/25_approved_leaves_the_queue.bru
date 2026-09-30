@@ -1,0 +1,23 @@
+meta {
+  name: TRZ-27 CA3 the approved case left the queue
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("not listed", function() {
+    expect(res.getStatus()).to.equal(200);
+    const ids = res.getBody().items.map((i) => i.case_id);
+    expect(ids).to.not.include(bru.getVar("approveCase"));
+  });
+}

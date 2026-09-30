@@ -1,0 +1,25 @@
+meta {
+  name: TRZ-28 CA1 the customer sees the question in Mis aclaraciones
+  type: http
+  seq: 29
+}
+
+get {
+  url: {{baseUrl}}/me/clarifications
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{colombiaToken}}
+}
+
+tests {
+  test("the open question with its deadline", function() {
+    expect(res.getStatus()).to.equal(200);
+    const item = res.getBody().find((c) => c.case_id === bru.getVar("infoCase"));
+    expect(item.status).to.equal("awaiting_customer");
+    expect(item.info_request.status).to.equal("open");
+    expect(item.info_request.question).to.equal("¿Hiciste alguna compra en Mercado Libre ese día?");
+  });
+}
