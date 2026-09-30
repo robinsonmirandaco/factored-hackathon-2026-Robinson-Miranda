@@ -51,7 +51,8 @@ export function chipParts(t, lang, chip) {
   if (chip.field === "date" && chip.window_from && chip.window_to) {
     const from = dayMonth(lang, chip.window_from);
     const to = dayMonth(lang, chip.window_to);
-    value = from === to ? from : t("dateRange", { from, to });
+    // The search has no hard edge: days around the window score lower but can still match.
+    value = t("nearDays", { window: from === to ? from : t("dateRange", { from, to }) });
   }
   const same = chip.evidence.trim().toLowerCase() === String(value).trim().toLowerCase();
   return { label: t(`clue_${chip.field}`), value, evidence: same ? null : chip.evidence };
