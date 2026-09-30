@@ -169,3 +169,14 @@ export function statusTone(status) {
   if (status === "rejected") return "bad";
   return "warn";
 }
+
+// Which conversation the chat is in. "Nueva conversación" starts another one; an answer that
+// arrives for a conversation already left is dropped, so it cannot set its case back.
+export function createConversation() {
+  let turn = 0;
+  return {
+    current: () => turn,
+    startNew: () => ++turn,
+    isCurrent: (t) => t === turn,
+  };
+}

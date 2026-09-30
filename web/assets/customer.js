@@ -5,8 +5,8 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, canSend, clarificationLines, codeStep, errorText, movementDetail, reviewLine,
-  statusTone, turnModel,
+  buttonMessage, canSend, clarificationLines, codeStep, createConversation, errorText,
+  movementDetail, reviewLine, statusTone, turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -25,6 +25,7 @@ const state = {
 let t = translator(state.lang);
 
 const $ = (id) => document.getElementById(id);
+const talk = createConversation();
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -409,25 +410,37 @@ function redrawLastTurn() {
 async function send(body, shown) {
   if (state.busy) return;
   state.busy = true;
+  const turn = talk.current();
   bubble("me", shown);
   for (const b of $("log").querySelectorAll(".choices button")) b.disabled = true;
   try {
     const r = await api.call("/chat", { method: "POST", body });
+    // The customer started a new conversation meanwhile: this answer belongs to the old one.
+    if (!talk.isCurrent(turn)) return;
     setCase(r.case_id);
     renderTurn(r);
   } catch (e) {
+    if (!talk.isCurrent(turn)) return;
     if (e.code === "case_not_found") setCase(null);
     bubble("bot", el("span", { class: "error", text: errorText(t, e) }),
       e.traceId ? el("span", { class: "meta", text: `trace_id ${e.traceId}` }) : null);
   } finally {
-    state.busy = false;
+    if (talk.isCurrent(turn)) state.busy = false;
   }
+}
+
+// A new conversation: no case, an empty log, and nothing of the previous one still arriving.
+function newConversation() {
+  talk.startNew();
+  state.busy = false;
+  state.lastTurn = null;
+  setCase(null);
+  greet();
 }
 
 function openByButton(transactionId, text) {
   location.hash = "#/aclarar";
-  setCase(null);
-  greet();
+  newConversation();
   send({ message: text, transaction_id: transactionId }, text);
 }
 
@@ -448,16 +461,13 @@ $("composer").addEventListener("submit", (event) => {
   send(body, text);
 });
 
-$("new-case").addEventListener("click", () => {
-  setCase(null);
-  greet();
-});
+$("new-case").addEventListener("click", newConversation);
 
 $("cross-access").addEventListener("click", () => {
   // Names someone else in the body: the API ignores it for data and stops the case for
   // security (TRZ-09 CA6). Design 10.3, step 5.
   const text = t("crossAccessMessage");
-  setCase(null);
+  newConversation();
   send({ message: text, customer_id: "CUSTOMER-OF-SOMEONE-ELSE" }, `${t("crossAccess")}`);
 });
 
@@ -472,9 +482,8 @@ $("logout").addEventListener("click", async () => {
     // The session may already be gone; the local token is dropped either way.
   }
   api.clear();
-  setCase(null);
   state.me = null;
-  greet();
+  newConversation();
   location.hash = "";
   route();
 });
