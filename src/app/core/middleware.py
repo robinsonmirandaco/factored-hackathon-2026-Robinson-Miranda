@@ -24,6 +24,7 @@ PAGE_POLICY = (
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )
 _DOCS_PATHS = ("/docs", "/redoc")
+_WEB_PATHS = ("/assets/", "/index.html")
 
 
 def install_trace_middleware(app: FastAPI) -> None:
@@ -58,4 +59,8 @@ def install_trace_middleware(app: FastAPI) -> None:
         if html and not request.url.path.startswith(_DOCS_PATHS):
             response.headers["content-security-policy"] = PAGE_POLICY
             response.headers["referrer-policy"] = "no-referrer"
+        if request.url.path == "/" or request.url.path.startswith(_WEB_PATHS):
+            # Always revalidated (the ETag answers 304 when nothing changed), so a browser never
+            # runs an older module of the web after a deploy.
+            response.headers["cache-control"] = "no-cache"
         return response

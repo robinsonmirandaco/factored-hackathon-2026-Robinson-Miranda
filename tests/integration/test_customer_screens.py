@@ -851,3 +851,12 @@ def test_a_case_with_a_person_shows_the_review_time_the_chat_gave(client: TestCl
     )
 
     assert item["review_hours"] == 24 and item["due_date"] is None
+
+
+def test_the_web_is_revalidated_so_a_new_deploy_is_never_stale(app_client: TestClient) -> None:
+    # Without it, a browser may reuse by heuristic an older module of the web after a deploy
+    # (seen in QA: a language switch that did not redraw, from an old customer.js).
+    for path in ("/", "/assets/customer.js", "/assets/view.js", "/assets/trazo.css"):
+        r = app_client.get(path)
+        assert r.status_code == 200 and r.headers.get("cache-control") == "no-cache", path
+    assert app_client.get("/health").headers.get("cache-control") != "no-cache"
