@@ -131,9 +131,10 @@ class Autonomy(_Strict):
 
 
 class Queue(_Strict):
-    """Handoff queue settings (TRZ-25)."""
+    """Handoff queue settings (TRZ-25), and the days to answer an analyst (TRZ-28)."""
 
     sla_hours: dict[Priority, float]
+    info_request_business_days: int = Field(ge=1)
 
 
 class PolicyConfig(_Strict):

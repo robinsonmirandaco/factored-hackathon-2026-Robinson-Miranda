@@ -326,7 +326,7 @@ function decisionCard(d, item, status) {
       panel.canAsk ? el("hr", { class: "divider" }) : null,
       panel.canAsk ? el("label", { for: "info-question", text: "Pregunta al cliente" }) : null,
       panel.canAsk ? question : null,
-      panel.canAsk ? el("p", { class: "small muted", text: "El cliente la ve en Mis aclaraciones y tiene 5 días hábiles para responder. Se muestra en español aunque el cliente escriba en portugués." }) : null,
+      panel.canAsk ? el("p", { class: "small muted", text: "El cliente la ve en Mis aclaraciones y responde dentro del plazo en días hábiles de la política; al enviarla verás la fecha. Se muestra en español aunque el cliente escriba en portugués." }) : null,
       panel.canAsk ? ask : null,
       el("hr", { class: "divider" }),
       el("label", { for: "decision-note", text: "Nota" }), note,

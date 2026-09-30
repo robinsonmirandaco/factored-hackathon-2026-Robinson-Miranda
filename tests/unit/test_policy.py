@@ -24,7 +24,7 @@ from app.main import build_runtime
 from app.schemas.comprehension import ComprehensionContext, Intent
 
 POLICY = Path(__file__).resolve().parents[2] / "config" / "policy.yaml"
-VERSION = "2026.09.2"
+VERSION = "2026.09.3"
 
 
 @pytest.fixture(scope="module")
@@ -98,6 +98,7 @@ def test_the_policy_file_is_the_design_4_2_policy() -> None:
     assert policy.autonomy.initial_level == "A0"
     assert policy.max_clarifications == 2
     assert policy.queue.sla_hours == {"urgent": 1, "high": 4, "normal": 24}
+    assert policy.queue.info_request_business_days == 5
 
 
 def _broken(tmp_path: Path, change) -> Path:
@@ -122,6 +123,8 @@ BROKEN = {
     "unknown autonomy level": lambda r: r["autonomy"].update(initial_level="A9"),
     "priority without an SLA": lambda r: r["queue"]["sla_hours"].pop("urgent"),
     "negative clarifications": lambda r: r.update(max_clarifications=-1),
+    "no days to answer an analyst": lambda r: r["queue"].update(info_request_business_days=0),
+    "days to answer missing": lambda r: r["queue"].pop("info_request_business_days"),
 }
 
 

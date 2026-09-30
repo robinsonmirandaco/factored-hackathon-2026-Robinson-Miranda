@@ -33,9 +33,6 @@ from app.services.cases import (
 )
 from app.services.verification import verify_dispute
 
-# Business days the customer has to answer a request for information (design 12).
-INFO_REQUEST_BUSINESS_DAYS = 5  # [assumption]
-
 
 def record_decision(
     session: Session, deps: AgentDeps, analyst: str, case_id: str, body: HumanDecisionIn
@@ -197,7 +194,7 @@ def _ask(session: Session, deps: AgentDeps, analyst: str, case: Case, question: 
     customer = _customer(session, case)
     asked_on = deps.clock.today()
     due_on = deps.calendars[customer.country_code].add_business_days(
-        asked_on, INFO_REQUEST_BUSINESS_DAYS
+        asked_on, deps.policy.config.queue.info_request_business_days
     )
     session.add(
         InfoRequest(

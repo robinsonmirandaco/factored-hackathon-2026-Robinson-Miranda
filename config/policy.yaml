@@ -7,7 +7,7 @@
 # escalation and approval stages apply only to `dispute_intents`. Each rule list must name every
 # rule the code knows, exactly once; the order of the list is the order of evaluation.
 
-version: "2026.09.2"
+version: "2026.09.3"
 
 dispute_window_days: 120            # [assumption] the only source of this number at runtime
 open_dispute_lookback_days: 90      # [assumption] look-back of open_dispute_last_90d
@@ -61,6 +61,9 @@ queue:
     urgent: 1
     high: 4
     normal: 24
+  # Business days the customer has to answer an analyst's request for information (design
+  # 12), counted on the simulated clock with the holidays of the customer's country (TRZ-28).
+  info_request_business_days: 5     # [assumption]
 
 # Display level of each action (design 3.2): L0 read, L1 register, L2 block, L3 a person.
 action_level:
