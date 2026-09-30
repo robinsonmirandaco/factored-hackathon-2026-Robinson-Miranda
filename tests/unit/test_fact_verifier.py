@@ -451,3 +451,29 @@ def test_last_week_for_a_charge_of_this_week_is_caught() -> None:
     # The trace of the QA: a charge of 2026-06-16 called "de la semana pasada" on 2026-06-17.
     facts = VerifiedFacts(dates=frozenset({date(2026, 6, 16)}), today=TODAY)
     assert "relative_date" in [k for k, _ in _kinds("el cargo de la semana pasada", facts)]
+
+
+# ---- promises to keep the customer informed (QA of TRZ-34, trace abc3c7508d8e4e15) ----------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The exact sentence of the receipt the LLM wrote for CASE-3E48B7A323.
+        "Nos pondremos a revisar los detalles y te mantendremos informado del avance",
+        "Te mantendremos informada.",
+        "Te mantendremos al tanto.",
+        "Te informaremos cuando haya una decisión.",
+        "Te avisaremos del resultado.",
+        "Vamos mantê-lo informado.",
+        "Manteremos você informado sobre o andamento.",
+        "Vamos manter você informada.",
+    ],
+)
+def test_a_promise_to_keep_informed_is_never_backed(text: str) -> None:
+    assert "contact_promise" in [k for k, _ in _kinds(text)]
+
+
+def test_offering_a_person_still_passes_after_the_informed_lexicon() -> None:
+    for text in ("¿Quieres hablar con una persona?", "Você quer falar com uma pessoa?"):
+        assert _kinds(text, VerifiedFacts()) == []

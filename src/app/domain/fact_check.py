@@ -159,6 +159,9 @@ _CONTACT_PROMISE = re.compile(
     r"se\s+(?:pondr[aá]n?\s+en\s+contacto|comunicar[aá]n?\s+contigo)|"
     r"entrar(?:[aá]|[aã]o)\s+em\s+contato|entraremos\s+em\s+contato|"
     r"(?:vai|v[aã]o|vamos|iremos|ir[aá])\s+entrar\s+em\s+contato|"
+    r"te\s+mantendremos\s+(?:informad[oa]s?|al\s+tanto)|te\s+(?:informaremos|avisaremos)|"
+    r"mant[eê]-l[oa]s?\s+informad[oa]s?|manteremos\s+voc[eê]\s+informad[oa]|"
+    r"manter\s+voc[eê]\s+informad[oa]|"
     r"voc[eê]\s+receber[aá]\s+(?:not[ií]cias|novidades))\b",
     re.IGNORECASE,
 )
