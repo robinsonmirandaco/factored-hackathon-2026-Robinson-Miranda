@@ -42,3 +42,7 @@ test("the button's message names the charge it was pressed on", () => {
   const atm = { merchant: null, at: "2026-06-11T03:43:00", status: "Approved", transaction_type: "Withdrawal" };
   assert.equal(buttonMessage(es, "es", atm), "No reconozco el cargo de Retiro del 11 jun");
 });
+
+test("the audit panel has its Portuguese name", () => {
+  assert.equal(pt("auditView"), "Painel de auditoria (demo)");
+});

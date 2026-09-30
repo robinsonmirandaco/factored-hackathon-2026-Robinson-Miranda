@@ -204,7 +204,7 @@ const TEXT = {
     openedOn: "Registrada em {date}",
     expiredTitle: "Sua sessão expirou",
     expiredIntro: "Por segurança, verifique sua identidade novamente. Seu caso é mantido.",
-    auditView: "Vista de auditoria (demo)",
+    auditView: "Painel de auditoria (demo)",
     auditNote:
       "[simulado] Controles do demo. O trace_id de cada resposta permite à analista reconstruir a decisão.",
     crossAccess: "[simulado] Tentar ver as movimentações de outra pessoa",
