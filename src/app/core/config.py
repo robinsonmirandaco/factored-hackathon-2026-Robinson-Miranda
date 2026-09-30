@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     trazo_now: datetime = datetime(2026, 6, 17, 23, 59)
     seed: int = 42
     data_dir: Path = Path("data")
+    # Static customer and analyst web, served by the API from the same origin (TRZ-34).
+    web_dir: Path = Path("web")
 
     # Required: postgresql+psycopg://trazo_app:... There is no default, so a missing value fails
     # at startup. The API connects only as trazo_app, the role row level security applies to.

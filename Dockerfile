@@ -20,6 +20,7 @@ RUN uv sync --frozen --no-dev --no-editable --no-cache
 COPY --chown=appuser db ./db
 COPY --chown=appuser config ./config
 COPY --chown=appuser eval ./eval
+COPY --chown=appuser web ./web
 RUN mkdir -p data/seed && chown -R appuser data
 USER appuser
 EXPOSE 8000

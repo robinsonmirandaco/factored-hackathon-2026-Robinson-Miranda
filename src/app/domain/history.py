@@ -481,6 +481,12 @@ def _customer_note(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return "O cliente escreveu com o caso já nas mãos de uma pessoa: foi incluído no dossiê."
 
 
+def _button_press(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El cliente abrió el caso con el botón de un movimiento: el cargo llegó elegido."
+    return "O cliente abriu o caso pelo botão de uma movimentação: a cobrança chegou escolhida."
+
+
 def _case_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return "La sesión del cliente terminó: el caso quedó vencido, sin acción pendiente."
@@ -526,6 +532,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "merge_clues"): _merge_clues,
     ("agent", "translate"): _translate,
     ("agent", "customer_note"): _customer_note,
+    ("agent", "button_press"): _button_press,
     ("tool", "show_charge_detail"): _show_charge,
     ("auth", "case_expired"): _case_expired,
     ("auth", "document_locked"): _document_locked,

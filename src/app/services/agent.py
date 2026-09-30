@@ -64,7 +64,12 @@ from app.schemas.comprehension import Comprehension, ComprehensionContext, evide
 from app.services import tools as T
 from app.services.cases import HANDOFF_STATUSES
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
-from app.services.identification import candidate_of, identify_charge, load_candidates
+from app.services.identification import (
+    candidate_of,
+    identify_by_button,
+    identify_charge,
+    load_candidates,
+)
 from app.services.recognition import charge_detail
 from app.services.replies import (
     HANDOFF_OUTCOMES,
@@ -162,6 +167,7 @@ def handle_message(
     security_event: bool = False,
     recognition: Choice | None = None,
     option: str | None = None,
+    transaction_id: str | None = None,
 ) -> AgentResponse:
     """Handles one customer turn end to end.
 
@@ -178,6 +184,9 @@ def handle_message(
         recognition: The customer's answer to the recognition step of `case_id`.
         option: The charge the customer chose among the options shown in `case_id`, or
             `none` when none of them is the one.
+        transaction_id: The charge a "No lo reconozco" or "¿Qué es esto?" button was pressed
+            on. It opens a new case through the button door (TRZ-15 CA9): the charge arrives
+            chosen, is only checked, and no LLM is called; `text` is the button's label.
 
     Returns:
         What the system did and replied.
@@ -197,6 +206,15 @@ def handle_message(
         if security_event:
             case, language, facts = _stop_for_security(
                 session, deps, customer, case_id, redacted, pii_counts
+            )
+            stats = LLMCallStats()
+        elif transaction_id is not None:
+            case, language, facts = _by_button(
+                session,
+                deps,
+                customer,
+                Said(redacted, pii_counts, _button_language(redacted, customer)),
+                transaction_id,
             )
             stats = LLMCallStats()
         elif case_id is not None and (confirm_action_id or recognition or option):
@@ -816,6 +834,54 @@ def _security_stop(
         session, case, {"intent": None, "language": language, "security_event": True}, screened
     )
     return _apply(session, deps, case, screened, None)
+
+
+def _button_language(redacted: str, customer: Customer) -> LanguageDecision:
+    # The label is written in the language of the customer's screen.
+    return decide_language(redacted, None, None, customer.country_code)
+
+
+def _by_button(
+    session: Session, deps: AgentDeps, customer: Customer, said: Said, transaction_id: str
+) -> tuple[Case, Language, Facts]:
+    """Opens an unrecognized charge case on the charge whose button was pressed.
+
+    One of the customer's disputable charges goes to the recognition step, as a charge
+    identified in conversation does. A charge the session cannot see is another customer's, or
+    does not exist, and stops the case for security. One of the customer's own that is not
+    disputable is decided as no charge found.
+    """
+    language: Language = said.spoken.language
+    case = _open_case(session, customer.customer_id, None, "unrecognized_charge", language)
+    # The id is not written here: until it is known to be the customer's, it stays out of
+    # this customer's trail, as in _security_stop.
+    write_audit(
+        session,
+        "agent",
+        "button_press",
+        case.id,
+        said.audit(),
+        {"language_decision": asdict(said.spoken)},
+    )
+    found = identify_by_button(
+        session,
+        deps.clock,
+        customer.customer_id,
+        transaction_id,
+        deps.policy.config.dispute_window_days,
+        case.id,
+    )
+    tx = session.get(Transaction, transaction_id)
+    if tx is None:
+        return (
+            case,
+            language,
+            _security_stop(session, deps, case, language, said, "foreign_transaction_id"),
+        )
+    if found.decision != "identified":
+        return case, language, _decide_on_charge(session, deps, customer, case, language)
+    charge = candidate_of(tx)
+    return case, language, _identified(session, deps, customer, case, language, charge, None, said)
 
 
 # ---- choosing and recognizing -------------------------------------------------------------

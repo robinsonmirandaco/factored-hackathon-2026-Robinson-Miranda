@@ -38,6 +38,9 @@ class ChatIn(BaseModel):
         option: The `transaction_id` of the option chosen in `case_id` (the `claim_id` in a
             claim status case), or `none` when none of the options shown is the one. Any id that
             was not shown stops the case for security.
+        transaction_id: The charge a "No lo reconozco" or "¿Qué es esto?" button of Movimientos
+            was pressed on; it opens a new case, so it goes without `case_id`. `message` is the
+            button's label.
     """
 
     customer_id: str | None = Field(default=None, max_length=64)
@@ -46,6 +49,7 @@ class ChatIn(BaseModel):
     confirm_action_id: str | None = Field(default=None, pattern=r"^ACT-[0-9A-F]{10}$")
     recognition: Literal["not_recognized", "recognized"] | None = None
     option: str | None = Field(default=None, min_length=1, max_length=64)
+    transaction_id: str | None = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def _one_answer(self) -> Self:
@@ -54,6 +58,10 @@ class ChatIn(BaseModel):
             raise ValueError("send at most one of confirm_action_id, recognition and option")
         if any(a is not None for a in answers) and self.case_id is None:
             raise ValueError("confirm_action_id, recognition and option need a case_id")
+        if self.transaction_id is not None and (
+            self.case_id is not None or any(a is not None for a in answers)
+        ):
+            raise ValueError("transaction_id opens a new case: send it alone, without case_id")
         return self
 
 
@@ -306,3 +314,107 @@ class MetricsOut(BaseModel):
     turns: int
     avg_turn_latency_ms: float
     human_decisions: int
+
+
+# ---- the customer's own screens (TRZ-34) ------------------------------------------------
+
+
+class MeOut(BaseModel):
+    """The session customer, for the header of the customer screens.
+
+    Attributes:
+        first_name: First name as registered.
+        country_code: MX, CO or AR.
+        local_currency: Currency of the customer's country.
+        now: The simulated now every date of the screens is counted from (design 10.2, rule 7).
+        demo: Demo mode is on: the screens show the audit view and its simulated controls.
+    """
+
+    first_name: str | None
+    country_code: str
+    local_currency: str
+    now: datetime
+    demo: bool
+
+
+class ProductOut(BaseModel):
+    """A product of the session customer; only the last four digits of its number exist."""
+
+    product_id: str
+    product_type: str
+    last4: str | None
+    currency: str
+    current_balance: float | None
+    credit_limit: float | None
+    status: str
+
+
+class MovementOut(BaseModel):
+    """A transaction of the session customer.
+
+    Attributes:
+        amount: Registered amount, the primary figure.
+        converted_amount: Approximate amount in the local currency at the rate of the
+            transaction's day, when the currencies differ and a rate exists.
+        converted_label: Label of the converted figure.
+        disputable: A charge of the dispute window: the screen offers "No lo reconozco" on it,
+            or "¿Qué es esto?" when it is pending.
+    """
+
+    transaction_id: str
+    at: datetime
+    transaction_type: str
+    merchant: str | None
+    amount: float
+    currency: str
+    converted_amount: float | None
+    converted_currency: str
+    converted_label: str | None
+    channel: str
+    city: str | None
+    status: str
+    disputable: bool
+
+
+class MovementsOut(BaseModel):
+    """A page of transactions, newest first.
+
+    Attributes:
+        items: The transactions of the page.
+        next_before: Cursor of the next page (the last transaction's id), or None at the end.
+    """
+
+    items: list[MovementOut]
+    next_before: str | None
+
+
+class ClarificationOut(BaseModel):
+    """One of the customer's clarifications: a case of TRAZO or an open claim of the bank.
+
+    Attributes:
+        id: Case id of TRAZO, or complaint id of the bank's records.
+        source: cases or complaints.
+        status: Case status for a case of TRAZO; received, in_review or answered for a claim.
+        folio: Folio of the registered dispute, when there is one.
+        merchant: Merchant of the disputed charge, when known.
+        amount: Registered amount of that charge.
+        currency: Its currency.
+        charge_at: Local date and time of that charge.
+        opened_on: Business day it was registered; only disputes and claims have one.
+        due_date: Response deadline, in business days with the country's holidays.
+        overdue: The deadline is before the simulated today.
+        passage_id: The demo policy passage that backs the deadline.
+    """
+
+    id: str
+    source: Literal["cases", "complaints"]
+    status: str
+    folio: str | None = None
+    merchant: str | None = None
+    amount: float | None = None
+    currency: str | None = None
+    charge_at: datetime | None = None
+    opened_on: str | None = None
+    due_date: str | None = None
+    overdue: bool = False
+    passage_id: str | None = None
