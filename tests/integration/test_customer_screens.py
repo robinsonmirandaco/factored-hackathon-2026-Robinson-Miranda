@@ -860,3 +860,13 @@ def test_the_web_is_revalidated_so_a_new_deploy_is_never_stale(app_client: TestC
         r = app_client.get(path)
         assert r.status_code == 200 and r.headers.get("cache-control") == "no-cache", path
     assert app_client.get("/health").headers.get("cache-control") != "no-cache"
+
+
+def test_the_confirmation_turn_has_no_text_besides_the_question(llm_client: TestClient) -> None:
+    # The screen asks with the amount, merchant and buttons; no line such as "Este es el cargo
+    # de tu aclaración." comes with it, and no LLM text either.
+    first = llm_client.post("/chat", json={"message": READ_NETFLIX}).json()
+    offered = still_not_recognized(llm_client, first["case_id"])
+
+    assert offered["outcome"] == "awaiting_confirmation" and offered["pending_action"]
+    assert offered["reply"] == ""

@@ -315,7 +315,8 @@ def handle_message(
                 "attempts": rstats.calls,
             },
             rstats.latency_ms,
-            llm=None if recognizing else rstats,
+            # A reply written by code made no LLM call and has no model, tokens or cost.
+            llm=None if recognizing or not rstats.calls else rstats,
         )
         # A note on a case with a person leaves its summary as the handoff wrote it.
         if facts["outcome"] != WITH_PERSON:
@@ -1552,6 +1553,10 @@ def _reply(
         return _joined(template_reply(facts, language), note), LLMCallStats(fallback=True)
     if facts["outcome"] in CODE_WRITTEN_OUTCOMES:
         return _joined(template_reply(facts, language), note), LLMCallStats()
+    # The screen asks for the confirmation with the amount, the merchant and its buttons: the
+    # turn needs no text of its own.
+    if facts["outcome"] == "awaiting_confirmation":
+        return "", LLMCallStats()
     # A case with a person is answered the same way every time, with no LLM call.
     if facts["outcome"] == WITH_PERSON:
         return _joined(template_reply(facts, language), note), LLMCallStats()

@@ -169,20 +169,30 @@ def test_a_slow_llm_is_retried_once_then_the_rules_and_the_fixed_reply_answer(
 def test_after_the_comprehension_spent_the_retry_the_reply_gets_no_second_attempt(
     make_client: Callable[[Llm], TestClient], settings: Settings, schema: Any
 ) -> None:
-    billing = reading(
-        "billing_error_amount",
-        amount={"value": 120, "currency": "USD", "approximate": False, "evidence": "120 dólares"},
-        merchant_hint={"value": "Netflix", "evidence": "Netflix"},
+    # A second Netflix charge, so the message fits two and they are shown as options: a reply
+    # the LLM writes. (A handoff and a confirmation are written by code and call no LLM.)
+    engine = create_engine(schema.admin)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO transactions (transaction_id, transaction_date, process_date, "
+                "product_id, customer_id, transaction_type, amount, currency, channel, "
+                "merchant_name, transaction_status) VALUES ('TX2', :at, :day, 'P1', 'C1', "
+                "'Purchase', 60.0, 'USD', 'POS', 'Netflix', 'Approved')"
+            ),
+            {"at": NOW - timedelta(days=2), "day": (NOW - timedelta(days=2)).date()},
+        )
+    engine.dispose()
+    netflix = reading(
+        "unrecognized_charge", merchant_hint={"value": "Netflix", "evidence": "Netflix"}
     )
-    attempts = iter([api_error(503), message(json.dumps(billing))])
+    attempts = iter([api_error(503), message(json.dumps(netflix))])
     llm = Llm(settings, lambda _s, _u: next(attempts), _down)
     client = make_client(llm)
 
-    # The charge is found and offered for confirmation: that reply is written by the LLM. (A
-    # handoff is written by code, so it would call no LLM at all.)
-    body = client.post("/chat", json={"message": "Me cobraron mal 120 dólares en Netflix"}).json()
+    body = client.post("/chat", json={"message": "No reconozco un cargo de Netflix"}).json()
 
-    assert body["outcome"] == "awaiting_confirmation"
+    assert body["outcome"] == "identifying" and len(body["options"]) == 2
     # comprehension: one failure and its retry; reply: one attempt, no retry left.
     assert llm.requests == ["comprehend", "comprehend", "compose"]
     wrote = _audit(schema, body["case_id"], "compose")

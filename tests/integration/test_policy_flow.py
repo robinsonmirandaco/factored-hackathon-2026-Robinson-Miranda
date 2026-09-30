@@ -167,6 +167,7 @@ def _turn(
     sent=None,
     security_event: bool = False,
     not_recognized: bool = False,
+    confirm: bool = False,
 ):
     settings = llm_settings(database_url)
     deps = agent_deps(settings, fake_llm(settings, answer, sent))
@@ -182,6 +183,15 @@ def _turn(
                     "Sigo sin reconocerlo",
                     case_id=result.case_id,
                     recognition="not_recognized",
+                )
+            if confirm:
+                result = handle_message(
+                    s,
+                    deps,
+                    "C1",
+                    "Sí",
+                    case_id=result.case_id,
+                    confirm_action_id=result.facts["pending_action"]["action_id"],
                 )
     finally:
         db.dispose()
@@ -294,9 +304,11 @@ def test_no_llm_call_carries_the_policy(schema: SchemaUrls, database_url: str) -
         "No reconozco un cargo de 120 dólares en Netflix",
         sent,
         not_recognized=True,
+        confirm=True,
     )
-    assert result.outcome == "awaiting_confirmation"
-    # comprehend; the recognition step is written by code; then compose, checked by code
+    assert result.outcome == "registered_verified"
+    # comprehend; the recognition step and the confirmation are written by code; then the
+    # compose of the registration, checked by code
     assert len(sent) == 2
 
     policy = yaml.safe_load(POLICY.read_text(encoding="utf-8"))

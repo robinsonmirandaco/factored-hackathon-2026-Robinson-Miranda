@@ -639,8 +639,8 @@ _REPLIES: dict[str, dict[str, str]] = {
             "con la opción de bloqueo de la app de tu banco o llamando a la línea de bloqueo que "
             "aparece en el sitio oficial del banco."
         ),
-        # The screen asks the question with its buttons; the reply only gives context.
-        "confirm_context": "Este es el cargo de tu aclaración.",
+        # The screen asks the question with its buttons; the turn has no text.
+        "awaiting_confirmation": "",
         "approval": (
             "Una analista revisará tu aclaración antes de registrarla. Verás su decisión en "
             "Mis aclaraciones."
@@ -756,7 +756,7 @@ _REPLIES: dict[str, dict[str, str]] = {
             "seu cartão agora mesmo pela opção de bloqueio do app do seu banco ou ligando para a "
             "central de bloqueio indicada no site oficial do banco."
         ),
-        "confirm_context": "Esta é a cobrança da sua contestação.",
+        "awaiting_confirmation": "",
         "approval": (
             "Uma analista vai revisar a sua contestação antes de registrá-la. Você verá a "
             "decisão em Minhas contestações."
@@ -925,7 +925,7 @@ def reply_key(facts: dict[str, Any]) -> str:
             return "registered_card_block"
         return "registered_not_blocked" if facts.get("card_not_blocked") else outcome
     if outcome == "awaiting_confirmation":
-        return "confirm_context"
+        return "awaiting_confirmation"
     if outcome == "existing_case":
         registered = facts.get("existing_status") == "registered_verified"
         return "registered_existing" if registered else "with_person_existing"

@@ -136,9 +136,11 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
     rows = _rows(schema, case_id)
 
     def by_llm(r: AuditRecord) -> bool:
-        # The recognition step is written by code (TRZ-16), so its compose row has no model.
+        # The recognition step (TRZ-16) and the confirmation question are written by code, so
+        # their compose rows have no model.
         if r.action == "compose":
-            return (r.payload or {})["facts"]["outcome"] != "recognizing"
+            outcome = (r.payload or {})["facts"]["outcome"]
+            return outcome not in ("recognizing", "awaiting_confirmation")
         return r.action == "comprehend"
 
     assert {r.action for r in rows} >= {

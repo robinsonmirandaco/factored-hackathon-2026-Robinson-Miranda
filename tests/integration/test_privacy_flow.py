@@ -77,11 +77,20 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
                 case_id=shown.case_id,
                 recognition="not_recognized",
             )
+            result = handle_message(
+                s,
+                deps,
+                "C1",
+                "Sí",
+                case_id=shown.case_id,
+                confirm_action_id=result.facts["pending_action"]["action_id"],
+            )
     finally:
         app_db.dispose()
 
     assert not result.llm_fallback
-    # comprehend; the recognition step is written by code; then compose, checked by code
+    # comprehend; the recognition step and the confirmation are written by code; then the
+    # compose of the registration, checked by code
     assert len(sent) == 2
     for body in sent:
         assert FIRST_NAME not in body
