@@ -1,6 +1,6 @@
 """Request and response contracts of the HTTP API."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -215,11 +215,15 @@ class ClueOut(BaseModel):
         field: amount, date, merchant_hint, channel_hint or card_in_possession.
         value: The value read; yes or no for card_in_possession.
         evidence: The literal fragment of the redacted message the value was read from.
+        window_from: For a date, the first day it can mean, counted from the simulated now.
+        window_to: For a date, the last day it can mean.
     """
 
     field: Literal["amount", "date", "merchant_hint", "channel_hint", "card_in_possession"]
     value: str
     evidence: str
+    window_from: date | None = None
+    window_to: date | None = None
 
 
 class PendingActionOut(BaseModel):

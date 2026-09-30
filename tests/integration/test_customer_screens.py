@@ -410,6 +410,26 @@ def _read(message: str) -> dict[str, Any]:
     )
 
 
+READ_LAST_WEEK = "No reconozco un cargo de Netflix de la semana pasada"
+
+
+def _read_last_week(message: str) -> dict[str, Any]:
+    return reading(
+        "unrecognized_charge",
+        "es-CO",
+        merchant_hint={"value": "Netflix", "evidence": "Netflix"},
+        date={
+            "expression": "la semana pasada",
+            "kind": "last_week",
+            "count": None,
+            "day": None,
+            "month": None,
+            "year": None,
+            "evidence": "de la semana pasada",
+        },
+    )
+
+
 @pytest.fixture
 def llm_client(schema_rows: SchemaUrls, database_url: str) -> Iterator[TestClient]:
     settings = llm_settings(database_url, log_level="WARNING")
@@ -424,10 +444,16 @@ def llm_client(schema_rows: SchemaUrls, database_url: str) -> Iterator[TestClien
 def test_chat_shows_what_it_read_with_the_literal_fragment(llm_client: TestClient) -> None:
     body = llm_client.post("/chat", json={"message": READ_NETFLIX}).json()
 
+    no_window = {"window_from": None, "window_to": None}
     assert body["clues"] == [
-        {"field": "amount", "value": "120 USD", "evidence": "120 dólares"},
-        {"field": "merchant_hint", "value": "Netflix", "evidence": "Netflix"},
-        {"field": "card_in_possession", "value": "yes", "evidence": "todavía tengo la tarjeta"},
+        {"field": "amount", "value": "120 USD", "evidence": "120 dólares", **no_window},
+        {"field": "merchant_hint", "value": "Netflix", "evidence": "Netflix", **no_window},
+        {
+            "field": "card_in_possession",
+            "value": "yes",
+            "evidence": "todavía tengo la tarjeta",
+            **no_window,
+        },
     ]
     assert all(c["evidence"] in READ_NETFLIX for c in body["clues"])
     # The charge found in the database is shown apart; no chip carries its data.
@@ -681,3 +707,22 @@ def test_a_request_stopped_for_security_is_listed_with_what_it_is(
         ).scalar()
     engine.dispose()
     assert queued == 1
+
+
+def test_a_date_chip_carries_the_window_it_was_read_as(
+    schema_rows: SchemaUrls, database_url: str
+) -> None:
+    settings = llm_settings(database_url, log_level="WARNING")
+    app = create_app(settings)
+    deps = agent_deps(settings, fake_llm(settings, _read_last_week))
+    app.state.runtime = dataclasses.replace(app.state.runtime, agent=deps)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
+        body = c.post("/chat", json={"message": READ_LAST_WEEK}).json()
+
+    date_chip = next(c for c in body["clues"] if c["field"] == "date")
+    assert date_chip["evidence"] == "de la semana pasada"
+    # Resolved against the simulated now (2026-06-17, a Wednesday): the week before.
+    assert (date_chip["window_from"], date_chip["window_to"]) == ("2026-06-08", "2026-06-14")
+    merchant = next(c for c in body["clues"] if c["field"] == "merchant_hint")
+    assert merchant["window_from"] is None and merchant["window_to"] is None

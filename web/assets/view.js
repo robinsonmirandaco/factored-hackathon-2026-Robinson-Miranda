@@ -1,7 +1,7 @@
 // What the customer screens say, built from API data. Pure functions, no DOM: the chat and the
 // lists render their output, and tests/web checks it.
 
-import { day, money } from "./i18n.js";
+import { day, dayMonth, money } from "./i18n.js";
 
 const card = (p) => (p.last4 ? `•••• ${p.last4}` : "");
 
@@ -42,4 +42,17 @@ export function clarificationLines(t, lang, item) {
   if (item.folio) refs.push(`${t("folio")} ${item.folio}`);
   if (item.case_id) refs.push(`${t("caseLabel")} ${item.case_id}`);
   return { title, ref: refs.join(" · ") };
+}
+
+// A chip: what was understood, and the literal fragment it came from when it adds something.
+export function chipParts(t, lang, chip) {
+  let value = chip.value;
+  if (chip.field === "card_in_possession") value = t(chip.value === "yes" ? "card_yes" : "card_no");
+  if (chip.field === "date" && chip.window_from && chip.window_to) {
+    const from = dayMonth(lang, chip.window_from);
+    const to = dayMonth(lang, chip.window_to);
+    value = from === to ? from : t("dateRange", { from, to });
+  }
+  const same = chip.evidence.trim().toLowerCase() === String(value).trim().toLowerCase();
+  return { label: t(`clue_${chip.field}`), value, evidence: same ? null : chip.evidence };
 }

@@ -4,7 +4,7 @@
 
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
-import { clarificationLines, pendingButtons, pendingQuestion } from "./view.js";
+import { chipParts, clarificationLines, pendingButtons, pendingQuestion } from "./view.js";
 
 const api = createClient("customer");
 const DOCUMENT_TYPES = ["CURP", "INE", "CC", "CE", "DNI", "Pasaporte"];
@@ -354,10 +354,10 @@ function chipRow(clues) {
   return el("div", { class: "chips" },
     el("span", { class: "muted small", text: `${t("understood")}:` }),
     clues.map((c) => {
-      const value = c.field === "card_in_possession" ? t(c.value === "yes" ? "card_yes" : "card_no") : c.value;
+      const chip = chipParts(t, state.lang, c);
       return el("span", { class: "chip", title: c.evidence },
-        el("strong", { text: `${t(`clue_${c.field}`)}: ` }), value,
-        el("span", { class: "evidence", text: ` «${c.evidence}»` }));
+        el("strong", { text: `${chip.label}: ` }), chip.value,
+        chip.evidence ? el("span", { class: "evidence", text: ` «${chip.evidence}»` }) : null);
     }));
 }
 

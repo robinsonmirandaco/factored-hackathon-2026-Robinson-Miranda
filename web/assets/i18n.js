@@ -114,6 +114,7 @@ const TEXT = {
     clue_merchant_hint: "Comercio",
     clue_channel_hint: "Canal",
     clue_card_in_possession: "Tarjeta",
+    dateRange: "{from} a {to}",
     card_yes: "la tienes",
     card_no: "no la tienes",
   },
@@ -228,6 +229,7 @@ const TEXT = {
     clue_merchant_hint: "Estabelecimento",
     clue_channel_hint: "Canal",
     clue_card_in_possession: "Cartão",
+    dateRange: "{from} a {to}",
     card_yes: "está com você",
     card_no: "não está com você",
   },
@@ -274,6 +276,14 @@ export function day(lang, iso) {
     year: "numeric",
     timeZone: "UTC",
   }).format(parts(iso));
+}
+
+export function dayMonth(lang, iso) {
+  return new Intl.DateTimeFormat(LOCALES[lang], {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(parts(iso)).replace(".", "");
 }
 
 export function dayTime(lang, iso) {

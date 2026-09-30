@@ -343,6 +343,9 @@ class Chip:
     field: str
     value: str
     evidence: str
+    # A date is read as a window of days, resolved against the simulated now.
+    window_from: date | None = None
+    window_to: date | None = None
 
 
 def chips(clues: Comprehension) -> list[Chip]:
@@ -363,7 +366,8 @@ def chips(clues: Comprehension) -> list[Chip]:
             )
         )
     if clues.date:
-        out.append(Chip("date", clues.date.expression, clues.date.evidence))
+        first, last = clues.date.window()
+        out.append(Chip("date", clues.date.expression, clues.date.evidence, first, last))
     if clues.merchant_hint:
         out.append(Chip("merchant_hint", clues.merchant_hint.value, clues.merchant_hint.evidence))
     if clues.channel_hint:
