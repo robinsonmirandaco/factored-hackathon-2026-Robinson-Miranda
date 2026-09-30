@@ -942,3 +942,21 @@ def test_an_escalation_without_a_charge_is_listed_without_one(
         i for i in client.get("/me/clarifications").json() if i["case_id"] == first["case_id"]
     )
     assert (item["merchant"], item["amount"], item["charge_at"]) == (None, None, None)
+
+
+@pytest.mark.parametrize("answer", [{"recognition": "not_recognized"}, {"option": "none"}])
+def test_an_answer_on_a_case_with_a_person_gets_the_fixed_reply(
+    starbucks_client: TestClient, answer: dict[str, str]
+) -> None:
+    escalated = starbucks_client.post(
+        "/chat", json={"message": BUTTON_ES, "transaction_id": "TXOLD"}
+    ).json()
+    assert escalated["outcome"] == "escalated"
+
+    r = starbucks_client.post(
+        "/chat", json={"message": "Sigo sin reconocerlo", "case_id": escalated["case_id"], **answer}
+    ).json()
+
+    assert r["outcome"] == "with_person" and r["case_id"] == escalated["case_id"]
+    assert "Texto del LLM" not in r["reply"]
+    assert r["reply"].startswith("Tu caso ya está con una persona.")

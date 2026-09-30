@@ -119,6 +119,9 @@ FIXED_OUTCOMES = ("security_blocked", "failed")
 # a doubt the customer never voiced and a contact promise instead).
 CODE_WRITTEN_OUTCOMES = (
     "existing_case",
+    "no_pending_action",
+    "no_pending_recognition",
+    "no_pending_choice",
     "card_blocked",
     "declined",
     "block_declined",
@@ -260,6 +263,14 @@ def handle_message(
                 transaction_id,
             )
             stats = LLMCallStats()
+        elif case_id is not None and _with_person(session, customer_id, case_id):
+            # A person has the case: a message or a button pressed on it is added to the
+            # dossier and answered the same way, by code; nothing is decided again.
+            case = _own_case(session, customer_id, case_id)
+            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
+            language = spoken.language
+            facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
+            stats = LLMCallStats()
         elif case_id is not None and (
             confirm_action_id or recognition or option or decline_action_id
         ):
@@ -278,12 +289,6 @@ def handle_message(
                 facts = _recognize(session, deps, customer, case, language, recognition, said)
             else:
                 facts = _choose(session, deps, customer, case, language, str(option), said)
-            stats = LLMCallStats()
-        elif case_id is not None and _with_person(session, customer_id, case_id):
-            case = _own_case(session, customer_id, case_id)
-            spoken = decide_language(redacted, None, _case_language(case), customer.country_code)
-            language = spoken.language
-            facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
             stats = LLMCallStats()
         else:
             case, language, facts, stats, read = _understand_and_decide(
