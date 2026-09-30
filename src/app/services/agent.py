@@ -27,7 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import timed, write_audit
-from app.adapters.db.models import Case, CaseAction, Customer, Product, Transaction
+from app.adapters.db.models import Case, CaseAction, Customer, Dispute, Product, Transaction
 from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMCallStats, LLMClient, TurnBudget, template_reply
 from app.core.errors import AppError
@@ -101,6 +101,16 @@ FINAL_STATUSES = (
     "rejected",
     "expired",
 )
+# A case in one of these statuses holds its charge: another case on the same charge would be a
+# second clarification of one charge, so the customer is taken back to it instead.
+HOLDS_CHARGE = (
+    "recognizing",
+    "awaiting_confirmation",
+    "escalated",
+    "pending_analyst_approval",
+    "failed",
+    "registered_verified",
+)
 # Outcomes answered with a fixed reply instead of the LLM's: a security stop must not send the
 # text of the turn to the LLM, and a failed read-back confirms nothing.
 FIXED_OUTCOMES = ("security_blocked", "failed")
@@ -108,6 +118,7 @@ FIXED_OUTCOMES = ("security_blocked", "failed")
 # offer, and a handoff, whose reason and review time come from the decision (the LLM once wrote
 # a doubt the customer never voiced and a contact promise instead).
 CODE_WRITTEN_OUTCOMES = (
+    "existing_case",
     "card_blocked",
     "declined",
     "block_declined",
@@ -282,6 +293,9 @@ def handle_message(
             if facts["outcome"] != "awaiting_confirmation":
                 T.settle_pending_action(session, case.id, "canceled")
 
+        if moved := facts.pop("moved_to", None):
+            # The charge already had a case: the turn continues on it.
+            case = _own_case(session, customer_id, moved)
         reply, rstats = _reply(session, deps, customer, case, redacted, facts, language, budget)
         stats.add(rstats)
         # The charge detail and the recognition text carry the last four digits of the card:
@@ -627,7 +641,21 @@ def _identified(
     said: Said,
 ) -> Facts:
     """Once the charge is known: an unrecognized one is shown for recognition first (TRZ-16);
-    a billing error, which the customer already recognizes, goes to the policy."""
+    a billing error, which the customer already recognizes, goes to the policy. A charge that
+    another case already holds sends the turn to that case, and this one is closed."""
+    held = _case_on_charge(session, customer.customer_id, charge.transaction_id, case.id)
+    if held is not None:
+        write_audit(
+            session,
+            "agent",
+            "existing_case",
+            case.id,
+            said.audit(),
+            {"existing_case_id": held.id, "status": held.status},
+        )
+        T.settle_pending_action(session, case.id, "canceled")
+        case.status, case.shown_options = "closed", None
+        return {"moved_to": held.id, **_resume(session, deps, customer, held, language, said)}
     case.transaction_id = charge.transaction_id
     if case.intent != "unrecognized_charge":
         return _decide_on_charge(session, deps, customer, case, language, charge, twin)
@@ -939,6 +967,21 @@ def _by_button(
     disputable is decided as no charge found.
     """
     language: Language = said.spoken.language
+    held = (
+        _case_on_charge(session, customer.customer_id, transaction_id)
+        if session.get(Transaction, transaction_id) is not None
+        else None
+    )
+    if held is not None:
+        write_audit(
+            session,
+            "agent",
+            "existing_case",
+            held.id,
+            said.audit(),
+            {"door": "button", "status": held.status},
+        )
+        return held, language, _resume(session, deps, customer, held, language, said)
     case = _open_case(session, customer.customer_id, None, "unrecognized_charge", language)
     # The id is not written here: until it is known to be the customer's, it stays out of
     # this customer's trail, as in _security_stop.
@@ -1340,6 +1383,72 @@ def _pending_row(session: Session, case: Case) -> CaseAction | None:
     return session.execute(
         select(CaseAction).where(CaseAction.case_id == case.id, CaseAction.status == "pending")
     ).scalar_one_or_none()
+
+
+def _case_on_charge(
+    session: Session, customer_id: str, transaction_id: str, other_than: str | None = None
+) -> Case | None:
+    """The case that already holds a charge: one in progress, with a person or registered, or
+    the case of an opened dispute on it."""
+    held = session.execute(
+        select(Case)
+        .where(
+            Case.customer_id == customer_id,
+            Case.transaction_id == transaction_id,
+            Case.status.in_(HOLDS_CHARGE),
+            Case.id != (other_than or ""),
+        )
+        .order_by(Case.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if held is not None:
+        return held
+    dispute = session.execute(
+        select(Dispute).where(
+            Dispute.customer_id == customer_id,
+            Dispute.transaction_id == transaction_id,
+            Dispute.status == "opened",
+            Dispute.case_id != (other_than or ""),
+        )
+    ).scalar_one_or_none()
+    return session.get(Case, dispute.case_id) if dispute is not None else None
+
+
+def _resume(
+    session: Session,
+    deps: AgentDeps,
+    customer: Customer,
+    case: Case,
+    language: Language,
+    said: Said,
+) -> Facts:
+    """Where the customer is taken back to on a case that already holds the charge: its
+    recognition step, its pending question, or what became of it (registered, with a person)."""
+    tx = session.get(Transaction, case.transaction_id) if case.transaction_id else None
+    if case.status == "recognizing" and tx is not None:
+        return _identified(session, deps, customer, case, language, candidate_of(tx), None, said)
+    pending = _pending_row(session, case)
+    if case.status == "awaiting_confirmation" and pending is not None and tx is not None:
+        return {
+            "intent": case.intent,
+            "action": pending.action,
+            "outcome": "awaiting_confirmation",
+            "transaction": _charge_facts(
+                session, candidate_of(tx), local_currency(customer.country_code)
+            ),
+            "pending_action": {"action_id": pending.id, "action": pending.action},
+            "actions_taken": [],
+        }
+    dispute = session.execute(
+        select(Dispute).where(Dispute.case_id == case.id, Dispute.status == "opened").limit(1)
+    ).scalar_one_or_none()
+    return {
+        "intent": case.intent,
+        "outcome": "existing_case",
+        "existing_status": case.status,
+        "dispute": {"folio": dispute.folio} if dispute is not None else None,
+        "actions_taken": [],
+    }
 
 
 def pending_detail(session: Session, action_id: str) -> dict[str, Any]:

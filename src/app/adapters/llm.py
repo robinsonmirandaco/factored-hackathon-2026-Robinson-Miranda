@@ -708,6 +708,13 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Tu caso ya está con una persona. Agregamos tu mensaje a su expediente para que lo "
             "tenga en cuenta."
         ),
+        "registered_existing": (
+            "Ya registramos una aclaración por este cargo con el folio {folio}. Puedes seguirla "
+            "en Mis aclaraciones."
+        ),
+        "with_person_existing": (
+            "Este cargo ya tiene un caso con una analista. Puedes seguirlo en Mis aclaraciones."
+        ),
         "card_blocked": "Bloqueamos la tarjeta de ese cargo. Tu aclaración sigue registrada.",
         "card_not_blocked": (
             "No pudimos confirmar el bloqueo de tu tarjeta. Bloquéala de inmediato con la opción "
@@ -818,6 +825,14 @@ _REPLIES: dict[str, dict[str, str]] = {
             "O seu caso já está com uma pessoa. Incluímos a sua mensagem no dossiê para que ela "
             "a considere."
         ),
+        "registered_existing": (
+            "Já registramos uma contestação desta cobrança com o protocolo {folio}. Você pode "
+            "acompanhá-la em Minhas contestações."
+        ),
+        "with_person_existing": (
+            "Esta cobrança já tem um caso com uma analista. Você pode acompanhá-lo em Minhas "
+            "contestações."
+        ),
         "card_blocked": (
             "Bloqueamos o cartão dessa cobrança. A sua contestação continua registrada."
         ),
@@ -907,6 +922,9 @@ def reply_key(facts: dict[str, Any]) -> str:
         return "registered_not_blocked" if facts.get("card_not_blocked") else outcome
     if outcome == "awaiting_confirmation":
         return "confirm_context"
+    if outcome == "existing_case":
+        registered = facts.get("existing_status") == "registered_verified"
+        return "registered_existing" if registered else "with_person_existing"
     if outcome == "abstained":
         if facts.get("redirect") == "card_block":
             return "card_block"

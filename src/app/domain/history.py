@@ -199,6 +199,12 @@ def _confirm(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return f"O cliente confirmou a ação pendente: {action}."
 
 
+def _existing_case(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return "El cargo ya tenía un caso: el cliente volvió a ese caso en lugar de abrir otro."
+    return "A cobrança já tinha um caso: o cliente voltou a esse caso em vez de abrir outro."
+
+
 def _decline(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     pending = r.get("pending_action")
     if not pending:
@@ -524,6 +530,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "comprehend"): _extract,
     ("agent", "confirm"): _confirm,
     ("agent", "decline"): _decline,
+    ("agent", "existing_case"): _existing_case,
     ("agent", "compose"): _compose,
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,

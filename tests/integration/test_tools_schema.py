@@ -121,8 +121,9 @@ def test_a_dispute_gets_a_folio_its_business_date_and_the_backed_deadline(db: Da
 
 def test_folios_are_consecutive(db: Database) -> None:
     with db.session(customer_id="C1") as s:
-        a = _register(s, "K1").data["folio"]
-        b = _register(s, "K2").data["folio"]
+        # Two charges: one charge takes one opened dispute (migration 0014).
+        a = _register(s, "K1", "TX1").data["folio"]
+        b = _register(s, "K2", "TXS").data["folio"]
     assert int(b[-5:]) == int(a[-5:]) + 1
 
 

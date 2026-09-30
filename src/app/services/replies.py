@@ -79,6 +79,7 @@ HANDOFF_OUTCOMES = (
     "security_blocked",
     "failed",
     "with_person",
+    "existing_case",
 )
 
 # The closed vocabulary of a claim's status and last step: the LLM never words them (TRZ-22).

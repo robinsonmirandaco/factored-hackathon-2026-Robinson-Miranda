@@ -758,3 +758,85 @@ def test_a_reply_that_misdates_the_charge_is_not_sent(
         ).scalar()
     engine.dispose()
     assert '"relative_date"' in str(check) and '"sent": false' in str(check)
+
+
+# ---- one charge, one case (QA finding 2 of the third round) ---------------------------------
+
+
+def _cases_on(schema: SchemaUrls, tx_id: str) -> list[tuple[str, str]]:
+    engine = create_engine(schema.admin)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, status FROM cases WHERE transaction_id = :t ORDER BY created_at"),
+            {"t": tx_id},
+        ).all()
+    engine.dispose()
+    return [(r[0], r[1]) for r in rows]
+
+
+def test_a_second_button_on_a_charge_in_progress_goes_back_to_its_case(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    first = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()
+
+    again = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()
+
+    assert again["case_id"] == first["case_id"] and again["outcome"] == "recognizing"
+    assert _cases_on(schema_rows, "TX1") == [(first["case_id"], "recognizing")]
+
+
+def test_a_charge_already_registered_opens_no_second_case_nor_dispute(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    case_id, folio = _register_tx1(client)
+
+    again = client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()
+
+    assert again["case_id"] == case_id and again["outcome"] == "existing_case"
+    assert folio in again["reply"]
+    assert _cases_on(schema_rows, "TX1") == [(case_id, "registered_verified")]
+    assert _counts(schema_rows)[0] == 1
+
+
+def test_a_conversation_about_a_charge_with_a_case_is_taken_to_that_case(
+    llm_client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    first = llm_client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()
+
+    again = llm_client.post("/chat", json={"message": READ_NETFLIX}).json()
+
+    assert again["case_id"] == first["case_id"] and again["outcome"] == "recognizing"
+    # The case the message opened is closed, pointing to the one that already had the charge.
+    statuses = dict(_cases_on(schema_rows, "TX1"))
+    assert statuses == {first["case_id"]: "recognizing"}
+
+
+def test_two_cases_cannot_register_two_disputes_on_one_charge(schema_rows: SchemaUrls) -> None:
+    from app.adapters.db.session import Database
+    from app.domain.clock import SimulatedClock
+    from app.domain.policy_passages import Unsupported
+    from app.services import tools as T
+
+    db = Database(schema_rows.app)
+    try:
+        with db.session(customer_id="C1") as s:
+            for case in ("CASE-A", "CASE-B"):
+                s.execute(
+                    text(
+                        "INSERT INTO cases (id, customer_id, intent, status, trace_id) "
+                        "VALUES (:c, 'C1', 'unrecognized_charge', 'awaiting_confirmation', 't')"
+                    ),
+                    {"c": case},
+                )
+            clock = SimulatedClock(NOW)
+            first = T.register_dispute(
+                s, clock, lambda _d: Unsupported("x"), "C1", "CASE-A", "TX1", "unrecognized_charge"
+            )
+            second = T.register_dispute(
+                s, clock, lambda _d: Unsupported("x"), "C1", "CASE-B", "TX1", "unrecognized_charge"
+            )
+    finally:
+        db.dispose()
+
+    assert first.ok and not second.ok
+    assert _counts(schema_rows)[0] == 1

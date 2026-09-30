@@ -398,6 +398,27 @@ def register_dispute(
         return ToolResult(True, prev.result or {}, "already applied (idempotent)")
     with timed() as t:
         tx = _owned_transaction(session, customer_id, transaction_id)
+        # One opened dispute per charge, whichever case asks (migration 0014 holds it too).
+        other = session.execute(
+            select(Dispute).where(
+                Dispute.transaction_id == transaction_id, Dispute.status == "opened"
+            )
+        ).scalar_one_or_none()
+    if other is not None:
+        refused = ToolResult(
+            False, {"existing_folio": other.folio}, "the charge already has an opened dispute"
+        )
+        write_audit(
+            session,
+            "tool",
+            "register_dispute",
+            case_id,
+            {"transaction_id": transaction_id, "dispute_type": dispute_type},
+            {"ok": False, "existing_folio": other.folio},
+            t["ms"],
+        )
+        return refused
+    with timed() as t:
         business_at = clock.now
         number = session.execute(text("SELECT nextval('dispute_folio_seq')")).scalar_one()
         folio = f"DSP-{business_at.year:04d}-{number:05d}"
