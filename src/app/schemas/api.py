@@ -201,6 +201,20 @@ class ClaimOut(BaseModel):
     opened_on: str
 
 
+class ClueOut(BaseModel):
+    """A chip of what the system read in the customer's message (design 10.1).
+
+    Attributes:
+        field: amount, date, merchant_hint, channel_hint or card_in_possession.
+        value: The value read; yes or no for card_in_possession.
+        evidence: The literal fragment of the redacted message the value was read from.
+    """
+
+    field: Literal["amount", "date", "merchant_hint", "channel_hint", "card_in_possession"]
+    value: str
+    evidence: str
+
+
 class PendingActionOut(BaseModel):
     """An action waiting for the customer's confirmation.
 
@@ -223,6 +237,8 @@ class ChatOut(BaseModel):
         claims: The open claims to choose from, when the customer has several.
         pending_action: The action to confirm, when `outcome` is awaiting_confirmation.
         dispute_folio: Folio DSP-AAAA-NNNNN of the dispute registered in this turn.
+        clues: What was read in the customer's message, each with its literal fragment; empty
+            for a button, a choice or a confirmation.
     """
 
     case_id: str
@@ -241,6 +257,7 @@ class ChatOut(BaseModel):
     claims: list[ClaimOut] = Field(default_factory=list)
     pending_action: PendingActionOut | None = None
     dispute_folio: str | None = None
+    clues: list[ClueOut] = Field(default_factory=list)
 
 
 class CaseOut(BaseModel):

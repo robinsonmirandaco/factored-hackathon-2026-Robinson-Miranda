@@ -1,7 +1,9 @@
 """The customer web and the reads behind it (TRZ-34): the button door of /chat (TRZ-15 CA9),
 GET /me, /me/products, /me/transactions and /me/clarifications with success, validation and a
-failed dependency, and the web served from the same origin with its security headers (CA5)."""
+failed dependency, the chips of what /chat read (design 10.1), and the web served from the same
+origin with its security headers (CA5)."""
 
+import dataclasses
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
@@ -16,7 +18,7 @@ from app.adapters.db.session import SchemaUrls
 from app.api.deps import get_customer_session
 from app.core.config import Settings
 from app.main import create_app
-from tests.agent_support import still_not_recognized
+from tests.agent_support import agent_deps, fake_llm, llm_settings, reading, still_not_recognized
 from tests.auth_support import analyst_headers, customer_headers
 from tests.serving_data import card, customer, load, transaction
 
@@ -390,3 +392,51 @@ def test_the_web_is_served_with_its_security_policy(app_client: TestClient) -> N
     assert script.status_code == 200
     # The API keeps answering JSON next to the web.
     assert app_client.get("/health").headers["content-type"].startswith("application/json")
+
+
+# ---- the chips of what was read (design 10.1) ------------------------------------------------
+
+READ_NETFLIX = "No reconozco 120 dólares en Netflix, todavía tengo la tarjeta"
+
+
+def _read(message: str) -> dict[str, Any]:
+    return reading(
+        "unrecognized_charge",
+        "es-CO",
+        amount={"value": 120, "currency": "USD", "approximate": False, "evidence": "120 dólares"},
+        merchant_hint={"value": "Netflix", "evidence": "Netflix"},
+        card_in_possession={"value": True, "evidence": "todavía tengo la tarjeta"},
+    )
+
+
+@pytest.fixture
+def llm_client(schema_rows: SchemaUrls, database_url: str) -> Iterator[TestClient]:
+    settings = llm_settings(database_url, log_level="WARNING")
+    app = create_app(settings)
+    deps = agent_deps(settings, fake_llm(settings, _read))
+    app.state.runtime = dataclasses.replace(app.state.runtime, agent=deps)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
+        yield c
+
+
+def test_chat_shows_what_it_read_with_the_literal_fragment(llm_client: TestClient) -> None:
+    body = llm_client.post("/chat", json={"message": READ_NETFLIX}).json()
+
+    assert body["clues"] == [
+        {"field": "amount", "value": "120 USD", "evidence": "120 dólares"},
+        {"field": "merchant_hint", "value": "Netflix", "evidence": "Netflix"},
+        {"field": "card_in_possession", "value": "yes", "evidence": "todavía tengo la tarjeta"},
+    ]
+    assert all(c["evidence"] in READ_NETFLIX for c in body["clues"])
+    # The charge found in the database is shown apart; no chip carries its data.
+    assert body["charge"]["last4"] == "4821"
+    assert all("4821" not in c["value"] + c["evidence"] for c in body["clues"])
+    assert all("Bogotá" not in c["value"] + c["evidence"] for c in body["clues"])
+
+
+def test_a_button_reads_nothing(llm_client: TestClient) -> None:
+    first = llm_client.post("/chat", json={"message": BUTTON_ES, "transaction_id": "TX1"}).json()
+    after = still_not_recognized(llm_client, first["case_id"])
+
+    assert first["clues"] == [] and after["clues"] == []

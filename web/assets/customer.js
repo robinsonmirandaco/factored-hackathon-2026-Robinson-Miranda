@@ -351,9 +351,22 @@ function chargeCard(c) {
     el("dl", {}, rows.flatMap(([k, v]) => [el("dt", { text: t(k) }), el("dd", {}, v)])));
 }
 
+// What the system read, each value with the literal fragment of the message it came from.
+function chipRow(clues) {
+  if (!clues.length) return null;
+  return el("div", { class: "chips" },
+    el("span", { class: "muted small", text: `${t("understood")}:` }),
+    clues.map((c) => {
+      const value = c.field === "card_in_possession" ? t(c.value === "yes" ? "card_yes" : "card_no") : c.value;
+      return el("span", { class: "chip", title: c.evidence },
+        el("strong", { text: `${t(`clue_${c.field}`)}: ` }), value,
+        el("span", { class: "evidence", text: ` «${c.evidence}»` }));
+    }));
+}
+
 function renderTurn(r) {
   $("last-trace").textContent = r.trace_id;
-  const parts = [el("span", { text: r.reply })];
+  const parts = [chipRow(r.clues), el("span", { text: r.reply })];
   if (r.charge) parts.push(chargeCard(r.charge));
   const buttons = [];
   // The API sends the primary choice first ("Sigo sin reconocerlo", design 10.2 rule 4).

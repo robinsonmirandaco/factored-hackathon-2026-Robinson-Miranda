@@ -1,5 +1,6 @@
 """HTTP routes. Thin: validate input, call one service, return a schema."""
 
+import dataclasses
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
@@ -21,6 +22,7 @@ from app.schemas.api import (
     ChatIn,
     ChatOut,
     ClarificationOut,
+    ClueOut,
     HealthOut,
     HistoryEntryOut,
     HumanDecisionIn,
@@ -168,6 +170,7 @@ def chat(
         claims=r.facts.get("claims", []),
         pending_action=r.facts.get("pending_action"),
         dispute_folio=(r.facts.get("dispute") or {}).get("folio"),
+        clues=[ClueOut(**dataclasses.asdict(c)) for c in r.clues],
     )
 
 

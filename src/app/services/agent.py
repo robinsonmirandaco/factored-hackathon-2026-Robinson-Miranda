@@ -155,6 +155,7 @@ class AgentResponse:
     tokens: int = 0
     latency_ms: int = 0
     facts: Facts = field(default_factory=dict)
+    clues: list["Chip"] = field(default_factory=list)
 
 
 def handle_message(
@@ -201,6 +202,8 @@ def handle_message(
         raise AppError("customer_not_found", f"Customer {customer_id} not found.", 404)
     # One retry of the LLM in the whole turn, shared by comprehension and reply (TRZ-36 CA3).
     budget = deps.llm.new_turn()
+    # What the system read in this message, shown back to the customer; buttons read nothing.
+    read: list[Chip] = []
     with timed() as total:
         redacted, pii_counts = redact(text, name=customer.first_name)
         if security_event:
@@ -239,7 +242,7 @@ def handle_message(
             facts = _note_for_the_analyst(session, case, Said(redacted, pii_counts, spoken))
             stats = LLMCallStats()
         else:
-            case, language, facts, stats = _understand_and_decide(
+            case, language, facts, stats, read = _understand_and_decide(
                 session, deps, customer, redacted, pii_counts, case_id, budget
             )
             # A new message that offers nothing new leaves no earlier action to confirm.
@@ -294,10 +297,50 @@ def handle_message(
         tokens=tokens,
         latency_ms=total["ms"],
         facts=facts,
+        clues=read,
     )
 
 
 # ---- understanding and deciding ---------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Chip:
+    """One clue as the customer's screen shows it: what was read and the literal fragment of
+    the (redacted) message it was read from. Nothing in it comes from the database."""
+
+    field: str
+    value: str
+    evidence: str
+
+
+def chips(clues: Comprehension) -> list[Chip]:
+    """The clues of a reading as chips, in the order of CLUE_FIELDS.
+
+    Args:
+        clues: The comprehension of the turn, after merging an answer with earlier clues.
+
+    Returns:
+        One chip per clue that was read.
+    """
+    out = []
+    if clues.amount:
+        a = clues.amount
+        out.append(
+            Chip(
+                "amount", f"{a.value:g} {a.currency}" if a.currency else f"{a.value:g}", a.evidence
+            )
+        )
+    if clues.date:
+        out.append(Chip("date", clues.date.expression, clues.date.evidence))
+    if clues.merchant_hint:
+        out.append(Chip("merchant_hint", clues.merchant_hint.value, clues.merchant_hint.evidence))
+    if clues.channel_hint:
+        out.append(Chip("channel_hint", str(clues.channel_hint.value), clues.channel_hint.evidence))
+    if clues.card_in_possession:
+        c = clues.card_in_possession
+        out.append(Chip("card_in_possession", "yes" if c.value else "no", c.evidence))
+    return out
 
 
 def _understand_and_decide(
@@ -308,7 +351,7 @@ def _understand_and_decide(
     pii_counts: dict[str, int],
     case_id: str | None,
     budget: TurnBudget,
-) -> tuple[Case, Language, Facts, LLMCallStats]:
+) -> tuple[Case, Language, Facts, LLMCallStats, list[Chip]]:
     # Checked before any LLM call, so a case id that is not the customer's costs no tokens.
     existing = _own_case(session, customer.customer_id, case_id) if case_id else None
     previous = _case_language(existing) if existing else None
@@ -382,7 +425,7 @@ def _understand_and_decide(
             facts = _claim_status(session, deps, customer, case, language, facts)
         elif screened.action == "abstain_and_redirect" and screened.redirect is None:
             facts["topic"] = out_of_scope_topic(redacted)
-        return case, language, facts, stats
+        return case, language, facts, stats, chips(clues)
 
     policy = deps.policy.config
     params = deps.identification["rules" if stats.fallback else "llm"]
@@ -409,16 +452,18 @@ def _understand_and_decide(
                 conformal_set_size=len(found.conformal_set),
                 clarifications_exhausted=True,
             )
-            return case, language, exhausted, stats
-        return case, language, _identifying(case, found), stats
+            return case, language, exhausted, stats, chips(clues)
+        return case, language, _identifying(case, found), stats, chips(clues)
     said = Said(redacted, pii_counts, spoken)
     if charge is None:
-        return case, language, _decide_on_charge(session, deps, customer, case, language), stats
+        decided = _decide_on_charge(session, deps, customer, case, language)
+        return case, language, decided, stats, chips(clues)
     return (
         case,
         language,
         _identified(session, deps, customer, case, language, charge, twin, said),
         stats,
+        chips(clues),
     )
 
 
