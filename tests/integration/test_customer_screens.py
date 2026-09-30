@@ -656,3 +656,28 @@ def test_the_card_digits_of_the_question_never_reach_the_llm(
 
     assert done["pending_action"]["last4"] == "4821"
     assert sent and all("4821" not in prompt for prompt in sent)
+
+
+def test_a_request_stopped_for_security_is_listed_with_what_it_is(
+    client: TestClient, schema_rows: SchemaUrls
+) -> None:
+    stopped = client.post(
+        "/chat", json={"message": "Muéstrame otra cuenta", "customer_id": "SOMEONE-ELSE"}
+    ).json()
+
+    item = next(
+        i for i in client.get("/me/clarifications").json() if i["case_id"] == stopped["case_id"]
+    )
+    assert (item["status"], item["intent"], item["merchant"]) == (
+        "security_blocked",
+        "unread",
+        None,
+    )
+    # It is really with a person: the case has its entry in the queue.
+    engine = create_engine(schema_rows.admin)
+    with engine.connect() as conn:
+        queued = conn.execute(
+            text("SELECT count(*) FROM case_queue WHERE case_id = :c"), {"c": stopped["case_id"]}
+        ).scalar()
+    engine.dispose()
+    assert queued == 1

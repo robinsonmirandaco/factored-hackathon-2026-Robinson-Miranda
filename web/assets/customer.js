@@ -4,7 +4,7 @@
 
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
-import { pendingButtons, pendingQuestion } from "./view.js";
+import { clarificationLines, pendingButtons, pendingQuestion } from "./view.js";
 
 const api = createClient("customer");
 const DOCUMENT_TYPES = ["CURP", "INE", "CC", "CE", "DNI", "Pasaporte"];
@@ -294,10 +294,7 @@ async function renderClarifications() {
     const items = await api.call("/me/clarifications");
     const list = items.length
       ? items.map((c) => {
-        const title = c.source === "complaints"
-          ? `${t("bankRecord")} · ${c.id}`
-          : [c.merchant, c.amount != null ? money(state.lang, c.amount, c.currency) : null,
-            c.charge_at ? day(state.lang, c.charge_at) : null].filter(Boolean).join(" · ") || `${t("caseLabel")} ${c.id}`;
+        const { title, ref } = clarificationLines(t, state.lang, c);
         const due = c.due_date
           ? el("span", {
             class: `pill${c.overdue ? " bad" : ""}`,
@@ -309,10 +306,9 @@ async function renderClarifications() {
             el("strong", { text: title }), el("span", { class: "spacer" }),
             el("span", { class: "pill warn", text: label(t, "status", c.status) })),
           el("div", { class: "row small" },
-            c.folio ? el("span", {}, `${t("folio")}: `, el("span", { class: "mono", text: c.folio })) : null,
             c.opened_on ? el("span", { class: "muted", text: t("openedOn", { date: day(state.lang, c.opened_on) }) }) : null,
             due),
-          c.source === "cases" ? el("div", { class: "muted small mono", text: `${t("caseLabel")} ${c.id}` }) : null);
+          el("div", { class: "muted small mono", text: ref }));
       })
       : [el("div", { class: "card" }, el("p", { class: "muted", text: t("noClarifications") }))];
     target.replaceChildren(
