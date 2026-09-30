@@ -193,7 +193,11 @@ def _deadline_text(
 
 
 def verified_facts(
-    session: Session, customer_id: str, facts: dict[str, Any], passages: dict[str, Passage]
+    session: Session,
+    customer_id: str,
+    facts: dict[str, Any],
+    passages: dict[str, Passage],
+    today: date | None = None,
 ) -> VerifiedFacts:
     """Builds the verified facts of a turn (TRZ-20 CA1).
 
@@ -202,6 +206,7 @@ def verified_facts(
         customer_id: Customer of the session.
         facts: Facts of the turn, as decided by code.
         passages: Demo policy passages by rule.
+        today: The simulated today, against which relative dates of the reply are checked.
 
     Returns:
         What a reply of this turn may state.
@@ -255,6 +260,7 @@ def verified_facts(
         known_merchants=frozenset(str(m).casefold() for m in known),
         actions=frozenset(facts.get("actions_taken", [])),
         counts=frozenset({len(facts["options"])} if facts.get("options") else set()),
+        today=today,
     )
 
 

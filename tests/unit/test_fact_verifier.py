@@ -410,3 +410,44 @@ def test_a_vague_deadline_is_never_backed(text: str) -> None:
 def test_offering_a_person_or_a_backed_deadline_still_passes(text: str) -> None:
     facts = VerifiedFacts(dates=frozenset({date(2026, 7, 8)}), deadlines=frozenset({15}))
     assert _kinds(text, facts) == []
+
+
+# ---- relative dates must match the charge's real date (QA of TRZ-34) -----------------------
+
+TODAY = date(2026, 6, 17)  # a Wednesday
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Encontramos el cargo de Netflix de la semana pasada.",
+        "Veja a cobrança da semana passada.",
+        "El cargo de ayer ya aparece.",
+        "O cargo de ontem já aparece.",
+    ],
+)
+def test_a_relative_date_that_misses_the_charge_is_unsupported(text: str) -> None:
+    # The only charge is from 2026-06-05: neither yesterday nor last week.
+    facts = VerifiedFacts(dates=frozenset({date(2026, 6, 5)}), today=TODAY)
+    assert "relative_date" in [k for k, _ in _kinds(text, facts)]
+
+
+@pytest.mark.parametrize(
+    ("text", "charge"),
+    [
+        ("Encontramos el cargo de Netflix de la semana pasada.", date(2026, 6, 10)),
+        ("Veja a cobrança da semana passada.", date(2026, 6, 8)),
+        ("El cargo de ayer ya aparece.", date(2026, 6, 16)),
+        ("O cargo de ontem já aparece.", date(2026, 6, 16)),
+        ("Es un cargo de esta semana.", date(2026, 6, 16)),
+    ],
+)
+def test_a_relative_date_that_fits_the_charge_passes(text: str, charge: date) -> None:
+    facts = VerifiedFacts(dates=frozenset({charge}), today=TODAY)
+    assert [k for k, _ in _kinds(text, facts)] == []
+
+
+def test_last_week_for_a_charge_of_this_week_is_caught() -> None:
+    # The trace of the QA: a charge of 2026-06-16 called "de la semana pasada" on 2026-06-17.
+    facts = VerifiedFacts(dates=frozenset({date(2026, 6, 16)}), today=TODAY)
+    assert "relative_date" in [k for k, _ in _kinds("el cargo de la semana pasada", facts)]

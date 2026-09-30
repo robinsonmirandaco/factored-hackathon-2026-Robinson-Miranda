@@ -728,3 +728,33 @@ def test_a_date_chip_carries_the_window_it_was_read_as(
     assert (date_chip["window_from"], date_chip["window_to"]) == ("2026-06-08", "2026-06-14")
     merchant = next(c for c in body["clues"] if c["field"] == "merchant_hint")
     assert merchant["window_from"] is None and merchant["window_to"] is None
+
+
+def test_a_reply_that_misdates_the_charge_is_not_sent(
+    schema_rows: SchemaUrls, database_url: str
+) -> None:
+    # TX1 is from 2026-06-17 03:59, the simulated today: never "de la semana pasada".
+    settings = llm_settings(database_url, log_level="WARNING")
+    app = create_app(settings)
+    llm = fake_llm(
+        settings, _read, reply="Registramos tu aclaración del cargo de Netflix de la semana pasada."
+    )
+    app.state.runtime = dataclasses.replace(app.state.runtime, agent=agent_deps(settings, llm))
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update(customer_headers(c, "C1"))
+        first = c.post("/chat", json={"message": READ_NETFLIX}).json()
+        done = _confirm(c, still_not_recognized(c, first["case_id"]))
+
+    assert done["outcome"] == "registered_verified"
+    assert "semana pasada" not in done["reply"]
+    engine = create_engine(schema_rows.admin)
+    with engine.connect() as conn:
+        check = conn.execute(
+            text(
+                "SELECT result::text FROM audit_log WHERE case_id = :c AND action = 'fact_check' "
+                "ORDER BY id DESC LIMIT 1"
+            ),
+            {"c": done["case_id"]},
+        ).scalar()
+    engine.dispose()
+    assert '"relative_date"' in str(check) and '"sent": false' in str(check)

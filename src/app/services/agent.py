@@ -1460,7 +1460,9 @@ def _reply(
     text = _joined(body, note)
     if stats.fallback:
         return text, stats
-    verified = verified_facts(session, customer.customer_id, facts, dict(deps.passages))
+    verified = verified_facts(
+        session, customer.customer_id, facts, dict(deps.passages), deps.clock.today()
+    )
     if check_reply(session, case.id, text, verified, deps.fact_check):
         return text, stats
     stats.fallback = True

@@ -29,6 +29,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
+from app.domain.clock import relative_window
 from app.domain.recognition import MONTHS
 
 Kind = Literal[
@@ -43,6 +44,7 @@ Kind = Literal[
     "forbidden_request",
     "contact_promise",
     "vague_deadline",
+    "relative_date",
     "action_claim",
 ]
 
@@ -81,6 +83,8 @@ class VerifiedFacts:
             list a mentioned merchant is looked for in.
         actions: Actions verified in the turn, such as register_dispute and block_card.
         counts: How many records were shown, such as the number of options to choose from.
+        today: The simulated today of the turn; a relative date ("la semana pasada") is
+            checked against it. Without it, no relative date is backed.
     """
 
     amounts: frozenset[Decimal] = frozenset()
@@ -93,6 +97,7 @@ class VerifiedFacts:
     known_merchants: frozenset[str] = frozenset()
     actions: frozenset[str] = frozenset()
     counts: frozenset[int] = frozenset()
+    today: date | None = None
 
     def numbers(self) -> frozenset[int]:
         """Whole numbers a bare figure may be: parts of the amounts, dates, deadlines, digits,
@@ -157,6 +162,22 @@ _CONTACT_PROMISE = re.compile(
     r"voc[eê]\s+receber[aá]\s+(?:not[ií]cias|novidades))\b",
     re.IGNORECASE,
 )
+# Relative dates a reply may give a charge, with the key of their window in the clock's table.
+# Each is backed only if a date of the turn falls in that window counted from the simulated
+# today: the LLM once called a charge of the day before "de la semana pasada".
+_RELATIVE_DATES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (key, re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE))
+    for key, pattern in (
+        ("day_before_yesterday", r"anteayer|anteontem"),
+        ("yesterday", r"ayer|ontem"),
+        ("today", r"hoy|hoje"),
+        ("last_week", r"semana\s+pasada|semana\s+passada"),
+        ("this_week", r"esta\s+semana|nesta\s+semana"),
+        ("last_month", r"mes\s+pasado|m[eê]s\s+passado"),
+        ("weekend", r"fin\s+de\s+semana|fim\s+de\s+semana"),
+    )
+)
+
 # Timelines no passage backs: only a deadline written by code, with its passage, may be stated.
 _VAGUE_DEADLINE = re.compile(
     r"\b(?:en\s+(?:los\s+pr[oó]ximos|unos|pocos)\s+d[ií]as|"
@@ -257,6 +278,8 @@ def extract(text: str, known_merchants: frozenset[str] = frozenset()) -> list[Cl
     claims += [
         Claim("vague_deadline", m.group(0), m.group(0)) for m in _VAGUE_DEADLINE.finditer(text)
     ]
+    for key, pattern in _RELATIVE_DATES:
+        claims += [Claim("relative_date", m.group(0), key) for m in pattern.finditer(text)]
     for action, pattern in _ACTION_CLAIMS:
         claims += [Claim("action_claim", m.group(0), action) for m in pattern.finditer(text)]
     return claims
@@ -296,6 +319,12 @@ def _backed(c: Claim, facts: VerifiedFacts) -> bool:
         return int(c.value) in facts.numbers()
     if c.kind == "action_claim":
         return c.value in facts.actions
+    if c.kind == "relative_date":
+        window = relative_window(facts.today, c.value) if facts.today else None
+        if window is None or facts.today is None:
+            return False
+        low, high = window
+        return any(low <= (facts.today - d).days <= high for d in facts.dates)
     return False  # forbidden requests, contact promises and vague deadlines are never backed
 
 
