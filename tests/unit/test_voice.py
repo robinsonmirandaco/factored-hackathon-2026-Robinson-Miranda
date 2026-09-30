@@ -1,0 +1,82 @@
+"""One voice and one term for what the customer reads (QA finding 9): the bank speaks as "we",
+a clarification is always an "aclaración" ("contestação"), and a policy citation is a
+[simulado] label on its own line, not running text."""
+
+import re
+from pathlib import Path
+
+import pytest
+
+from app.adapters.llm import _REPLIES
+from app.domain.policy_passages import Passage
+from app.services.replies import _NOTES, deadline_note
+
+# First person singular, which the bank never uses to speak to the customer.
+SINGULAR = {
+    "es": re.compile(
+        r"\b(tengo|comunico|atiendo|escr[ií]beme|reviso|encontr[eé]|encuentro|puedo|veo|"
+        r"me dices)\b",
+        re.IGNORECASE,
+    ),
+    "pt": re.compile(
+        r"\b(eu|me escreva|encontrei|consigo|vejo|coloco|verifico|pode me dizer|tenho)\b",
+        re.IGNORECASE,
+    ),
+}
+# Other words for a clarification.
+OTHER_TERMS = {
+    "es": re.compile(r"\b(reclamos?|disputas?)\b", re.IGNORECASE),
+    "pt": re.compile(r"\b(reclama[çc](ão|ões)|disputas?)\b", re.IGNORECASE),
+}
+PASSAGE = Passage(
+    id="§2.1",
+    rule="response_deadline",
+    label={"es": "política de demostración, no del banco", "pt": "política de demonstração"},
+    text={"es": "...", "pt": "..."},
+    business_days=15,
+)
+
+
+def _texts(language: str) -> dict[str, str]:
+    return {**_REPLIES[language], **{f"note:{k}": v for k, v in _NOTES[language].items()}}
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_the_bank_speaks_as_we(language: str) -> None:
+    found = {
+        k: m.group(0) for k, v in _texts(language).items() if (m := SINGULAR[language].search(v))
+    }
+    assert not found, found
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_a_clarification_has_one_name(language: str) -> None:
+    found = {
+        k: m.group(0) for k, v in _texts(language).items() if (m := OTHER_TERMS[language].search(v))
+    }
+    assert not found, found
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+def test_the_policy_citation_is_a_simulated_label_on_its_own_line(language: str) -> None:
+    facts = {
+        "outcome": "registered_verified",
+        "dispute": {"folio": "DSP-2026-00001", "due_date": "2026-07-08", "passage": "§2.1"},
+    }
+
+    note = deadline_note(facts, {"response_deadline": PASSAGE}, language)
+
+    first, label = note.split("\n")
+    assert "§2.1" not in first
+    assert label == f"[simulado] §2.1 · {PASSAGE.label[language]}"
+
+
+def test_the_web_speaks_as_we_with_one_term() -> None:
+    i18n = Path("web/assets/i18n.js").read_text(encoding="utf-8")
+    es, pt = i18n.split("\n  pt: {", 1)
+    for text, language in ((es, "es"), (pt, "pt")):
+        values = re.findall(r':\s*"([^"]*)"', text)
+        singular = [v for v in values if SINGULAR[language].search(v)]
+        others = [v for v in values if OTHER_TERMS[language].search(v)]
+        assert not singular and not others, (language, singular, others)
+    assert "Cuéntame" not in es and 'Entendí"' not in es

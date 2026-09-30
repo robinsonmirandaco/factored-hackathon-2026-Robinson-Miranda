@@ -20,51 +20,45 @@ from app.domain.recognition import long_date
 
 _NOTES: dict[str, dict[str, str]] = {
     "es": {
-        "deadline": (
-            "Plazo de respuesta: a más tardar el {due}, {days} {unit} según el {passage} ({label})."
-        ),
+        "deadline": "Plazo de respuesta: a más tardar el {due} ({days} {unit}).",
         "business": "días hábiles",
         "calendar": "días naturales",
         "no_deadline": (
-            "No tengo un plazo de respuesta respaldado por la política para esta aclaración. "
-            "Si quieres, te comunico con una persona."
+            "No tenemos un plazo de respuesta respaldado por la política para esta aclaración. "
+            "Si quieres, te comunicamos con una persona."
         ),
         "claim_status": (
-            "Tu reclamo {claim_id}, abierto el {opened}, está {status}. Último paso: {step}, "
+            "Tu aclaración {claim_id}, abierta el {opened}, está {status}. Último paso: {step}, "
             "el {step_on}."
         ),
-        "claim_source": "Fuente: registro del reclamo {claim_id}.",
-        "claim_overdue": (
-            "El plazo de respuesta venció el {due}: {days} {unit} según el {passage} ({label})."
-        ),
+        "claim_source": "Fuente: registro de la aclaración {claim_id}.",
+        "claim_overdue": "El plazo de respuesta venció el {due} ({days} {unit}).",
         "claim_no_deadline": (
-            "No tengo un plazo de respuesta respaldado por la política para este reclamo. "
-            "Si quieres, te comunico con una persona."
+            "No tenemos un plazo de respuesta respaldado por la política para esta aclaración. "
+            "Si quieres, te comunicamos con una persona."
         ),
-        "person": "Si quieres, te comunico con una persona.",
+        "person": "Si quieres, te comunicamos con una persona.",
         "case_number": "Tu número de caso es {case_number}.",
     },
     "pt": {
-        "deadline": ("Prazo de resposta: até {due}, {days} {unit} conforme o {passage} ({label})."),
+        "deadline": "Prazo de resposta: até {due} ({days} {unit}).",
         "business": "dias úteis",
         "calendar": "dias corridos",
         "no_deadline": (
-            "Não tenho um prazo de resposta respaldado pela política para esta contestação. "
-            "Se quiser, eu coloco você em contato com uma pessoa."
+            "Não temos um prazo de resposta respaldado pela política para esta contestação. "
+            "Se quiser, colocamos você em contato com uma pessoa."
         ),
         "claim_status": (
-            "A sua reclamação {claim_id}, aberta em {opened}, está {status}. Última etapa: "
+            "A sua contestação {claim_id}, aberta em {opened}, está {status}. Última etapa: "
             "{step}, em {step_on}."
         ),
-        "claim_source": "Fonte: registro da reclamação {claim_id}.",
-        "claim_overdue": (
-            "O prazo de resposta venceu em {due}: {days} {unit} conforme o {passage} ({label})."
-        ),
+        "claim_source": "Fonte: registro da contestação {claim_id}.",
+        "claim_overdue": "O prazo de resposta venceu em {due} ({days} {unit}).",
         "claim_no_deadline": (
-            "Não tenho um prazo de resposta respaldado pela política para esta reclamação. "
-            "Se quiser, eu coloco você em contato com uma pessoa."
+            "Não temos um prazo de resposta respaldado pela política para esta contestação. "
+            "Se quiser, colocamos você em contato com uma pessoa."
         ),
-        "person": "Se quiser, eu coloco você em contato com uma pessoa.",
+        "person": "Se quiser, colocamos você em contato com uma pessoa.",
         "case_number": "O número do seu caso é {case_number}.",
     },
 }
@@ -82,7 +76,7 @@ HANDOFF_OUTCOMES = (
 # The closed vocabulary of a claim's status and last step: the LLM never words them (TRZ-22).
 STATUS_WORDS: dict[str, dict[str, str]] = {
     "es": {
-        "received": "recibido",
+        "received": "recibida",
         "in_review": "en revisión",
         "answered": "con una primera respuesta del banco, pendiente de resolución",
         "created": "su creación",
@@ -172,13 +166,13 @@ def _claim_note(
 def _deadline_text(
     template: str, due: str, passage: Passage, language: str, notes: dict[str, str]
 ) -> str:
-    return template.format(
+    deadline = template.format(
         due=long_date(date.fromisoformat(due), language),
         days=passage.business_days or passage.calendar_days,
         unit=notes["business" if passage.business_days else "calendar"],
-        passage=passage.id,
-        label=passage.label[language],
     )
+    # The citation is a label on its own line: the passage is demo policy, not the bank's.
+    return f"{deadline}\n[simulado] {passage.id} · {passage.label[language]}"
 
 
 def verified_facts(

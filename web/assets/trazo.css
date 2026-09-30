@@ -156,3 +156,5 @@ input, select, textarea {
 .chip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; font-size: 0.82rem; background: var(--paper); }
 .chip .evidence { color: var(--muted); }
 .question { font-weight: 600; margin: 10px 0 0; white-space: normal; }
+.msg .line { display: block; }
+.sim-label { display: block; margin-top: 6px; font-size: 0.8rem; color: var(--muted); white-space: normal; }

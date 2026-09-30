@@ -28,5 +28,5 @@ turns:
     policy_action: abstain_and_redirect
     policy_rule: routing.out_of_scope
     reply_contains:
-    - não consigo contratar empréstimos
+    - não conseguimos contratar empréstimos
     - área de empréstimos do app

@@ -60,7 +60,7 @@ def _in(reply: str, language: str) -> bool:
         + rf"(?: {note}: .+)?(?: {number} CASE-[0-9A-F]+\.)?"
         for t in _REPLIES[language].values()
     )
-    return any(re.fullmatch(f, reply) for f in fixed) or reply.startswith(intro)
+    return any(re.fullmatch(f, reply, re.DOTALL) for f in fixed) or reply.startswith(intro)
 
 
 def _case(schema: SchemaUrls, case_id: str) -> tuple[str | None, list[dict]]:

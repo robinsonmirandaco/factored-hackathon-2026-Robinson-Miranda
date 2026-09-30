@@ -6,7 +6,7 @@ import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
   buttonMessage, chipParts, clarificationLines, codeStep, errorText, pendingButtons,
-  pendingQuestion,
+  pendingQuestion, replyLines,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -379,7 +379,10 @@ function chipRow(clues) {
 
 function renderTurn(r) {
   $("last-trace").textContent = r.trace_id;
-  const parts = [chipRow(r.clues), el("span", { text: r.reply })];
+  const lines = replyLines(r.reply).map((line) => (line.simulated
+    ? el("span", { class: "sim-label" }, el("span", { class: "badge sim", text: "simulado" }), ` ${line.text}`)
+    : el("span", { class: "line", text: line.text })));
+  const parts = [chipRow(r.clues), ...lines];
   if (r.charge) parts.push(chargeCard(r.charge));
   const buttons = [];
   // The API sends the primary choice first ("Sigo sin reconocerlo", design 10.2 rule 4).

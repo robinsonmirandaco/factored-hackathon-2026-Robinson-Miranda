@@ -223,7 +223,9 @@ amount, date, folio, duration, card digits or merchant that is not in them, and 
 only the actions listed in actions_taken. Never promise refunds or cancellations. Never ask for
 or mention passwords, PINs, security codes, card numbers or identity documents. Do not state
 response deadlines nor cite policy: they are added after your text. Never promise to contact
-the customer or to send news. Do not mention internal scores, rules or system names."""
+the customer or to send news. Do not mention internal scores, rules or system names. Speak for
+the bank in the first person plural (nosotros in Spanish, nós in Portuguese), and call the
+customer's request an "aclaración" in Spanish or a "contestação" in Portuguese."""
 
 
 TRANSLATE_SYSTEM = """Translate the customer's message from Portuguese into Spanish for a bank
@@ -607,8 +609,8 @@ class LLMClient:
         return reply.strip(), stats
 
 
-_HERE_ES = " Por aquí atiendo aclaraciones de cargos y el estado de tus reclamos."
-_HERE_PT = " Por aqui eu atendo contestações de cobranças e o status das suas reclamações."
+_HERE_ES = " Por aquí atendemos aclaraciones de cargos y te informamos su estado."
+_HERE_PT = " Por aqui atendemos contestações de cobranças e informamos o status delas."
 
 _REPLIES: dict[str, dict[str, str]] = {
     "es": {
@@ -652,48 +654,50 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Por seguridad no podemos continuar este caso por aquí. Una analista lo revisará."
         ),
         "out_of_scope": (
-            "Por este canal atiendo aclaraciones de cargos y el estado de tus reclamos. Para "
+            "Por este canal atendemos aclaraciones de cargos y te informamos su estado. Para "
             "esta solicitud, usa la app o la línea de atención de tu banco."
         ),
         "card_block": (
             "Bloquea tu tarjeta de inmediato con la opción de bloqueo de la app de tu banco o "
             "llamando a la línea de bloqueo que aparece en el sitio oficial del banco. Si ves "
-            "cargos que no reconoces, escríbeme y los reviso contigo."
+            "cargos que no reconoces, escríbenos y los revisamos contigo."
         ),
-        "show_options": ("Encontré varios cargos que podrían ser el que mencionas. Elige cuál es."),
+        "show_options": (
+            "Encontramos varios cargos que podrían ser el que mencionas. Elige cuál es."
+        ),
         "ask_for_detail": (
-            "Encontré muchos cargos posibles. ¿Me dices el monto o la fecha aproximada?"
+            "Encontramos muchos cargos posibles. ¿Nos dices el monto o la fecha aproximada?"
         ),
         "explain_and_watch": (
             "Uno de los dos cargos todavía está pendiente: suele ser una retención temporal "
             "que no se cobra. Si al liquidarse sigue apareciendo dos veces, escríbenos."
         ),
         "out_of_scope_loan": (
-            "Por este canal no puedo tramitar préstamos ni créditos. Para solicitarlo, usa la "
+            "Por este canal no podemos tramitar préstamos ni créditos. Para solicitarlo, usa la "
             "sección de préstamos de la app de tu banco o acude a una sucursal."
             f"{_HERE_ES}"
         ),
         "out_of_scope_investment": (
-            "Por este canal no puedo asesorarte sobre inversiones. Para eso, habla con un asesor "
+            "Por este canal no podemos asesorarte sobre inversiones. Para eso, habla con un asesor "
             f"de tu banco desde la app o en una sucursal.{_HERE_ES}"
         ),
         "out_of_scope_branch": (
-            "Por este canal no tengo información de sucursales ni de sus horarios. Consúltala en "
+            "Por este canal no tenemos información de sucursales ni de sus horarios. Consúltala en "
             f"el sitio oficial o en la app de tu banco.{_HERE_ES}"
         ),
         "out_of_scope_personal_data": (
-            "Por este canal no puedo cambiar tus datos personales. Actualízalos en la app de tu "
+            "Por este canal no podemos cambiar tus datos personales. Actualízalos en la app de tu "
             f"banco o en una sucursal.{_HERE_ES}"
         ),
         "out_of_scope_app": (
-            "Por este canal no puedo resolver problemas de la app ni de ingreso. Para eso, usa la "
-            "opción de ayuda de la app o la línea de atención que aparece en el sitio oficial de "
-            f"tu banco.{_HERE_ES}"
+            "Por este canal no podemos resolver problemas de la app ni de ingreso. Para eso, usa "
+            "la opción de ayuda de la app o la línea de atención que aparece en el sitio oficial "
+            f"de tu banco.{_HERE_ES}"
         ),
-        "claim_none": "No encuentro reclamos abiertos a tu nombre.",
-        "claim_one": "Esto es lo que veo de tu reclamo.",
-        "claim_other": "No veo otro reclamo abierto a tu nombre.",
-        "show_claims": "Tienes varios reclamos abiertos. Elige cuál quieres consultar.",
+        "claim_none": "No encontramos aclaraciones abiertas a tu nombre.",
+        "claim_one": "Esto es lo que vemos de tu aclaración.",
+        "claim_other": "No vemos otra aclaración abierta a tu nombre.",
+        "show_claims": "Tienes varias aclaraciones abiertas. Elige cuál quieres consultar.",
         "no_pending_action": "No hay ninguna acción pendiente de confirmar en este caso.",
         "recognized_closed": (
             "Listo: cerramos el caso sin registrar nada. Si ves otro cargo que no reconoces, "
@@ -761,19 +765,19 @@ _REPLIES: dict[str, dict[str, str]] = {
             "Por segurança não podemos continuar este caso por aqui. Uma analista vai revisá-lo."
         ),
         "out_of_scope": (
-            "Por este canal eu atendo contestações de cobranças e o status das suas "
-            "reclamações. Para este pedido, use o app ou a central de atendimento do seu banco."
+            "Por este canal atendemos contestações de cobranças e informamos o status delas. "
+            "Para este pedido, use o app ou a central de atendimento do seu banco."
         ),
         "card_block": (
             "Bloqueie o seu cartão agora mesmo pela opção de bloqueio do app do seu banco ou "
             "ligando para a central de bloqueio indicada no site oficial do banco. Se houver "
-            "cobranças que você não reconhece, me escreva e eu verifico com você."
+            "cobranças que você não reconhece, escreva para nós e verificamos com você."
         ),
         "show_options": (
-            "Encontrei várias cobranças que podem ser a que você mencionou. Escolha qual é."
+            "Encontramos várias cobranças que podem ser a que você mencionou. Escolha qual é."
         ),
         "ask_for_detail": (
-            "Encontrei muitas cobranças possíveis. Pode me dizer o valor ou a data aproximada?"
+            "Encontramos muitas cobranças possíveis. Pode nos dizer o valor ou a data aproximada?"
         ),
         "explain_and_watch": (
             "Uma das duas cobranças ainda está pendente: costuma ser uma retenção temporária "
@@ -781,31 +785,31 @@ _REPLIES: dict[str, dict[str, str]] = {
             "fale com a gente."
         ),
         "out_of_scope_loan": (
-            "Por este canal não consigo contratar empréstimos nem financiamentos. Para isso, use "
-            "a área de empréstimos do app do seu banco ou vá a uma agência."
+            "Por este canal não conseguimos contratar empréstimos nem financiamentos. Para isso, "
+            "use a área de empréstimos do app do seu banco ou vá a uma agência."
             f"{_HERE_PT}"
         ),
         "out_of_scope_investment": (
-            "Por este canal não consigo orientar sobre investimentos. Para isso, fale com um "
+            "Por este canal não conseguimos orientar sobre investimentos. Para isso, fale com um "
             f"assessor do seu banco pelo app ou em uma agência.{_HERE_PT}"
         ),
         "out_of_scope_branch": (
-            "Por este canal não tenho informações de agências nem dos seus horários. Consulte no "
+            "Por este canal não temos informações de agências nem dos seus horários. Consulte no "
             f"site oficial ou no app do seu banco.{_HERE_PT}"
         ),
         "out_of_scope_personal_data": (
-            "Por este canal não consigo alterar os seus dados pessoais. Atualize-os no app do seu "
-            f"banco ou em uma agência.{_HERE_PT}"
+            "Por este canal não conseguimos alterar os seus dados pessoais. Atualize-os no app do "
+            f"seu banco ou em uma agência.{_HERE_PT}"
         ),
         "out_of_scope_app": (
-            "Por este canal não consigo resolver problemas do app nem de acesso. Para isso, use "
-            "a opção de ajuda do app ou a central de atendimento indicada no site oficial do seu "
-            f"banco.{_HERE_PT}"
+            "Por este canal não conseguimos resolver problemas do app nem de acesso. Para isso, "
+            "use a opção de ajuda do app ou a central de atendimento indicada no site oficial do "
+            f"seu banco.{_HERE_PT}"
         ),
-        "claim_none": "Não encontrei reclamações abertas em seu nome.",
-        "claim_one": "Veja como está a sua reclamação.",
-        "claim_other": "Não vejo outra reclamação aberta em seu nome.",
-        "show_claims": "Você tem várias reclamações abertas. Escolha qual quer consultar.",
+        "claim_none": "Não encontramos contestações abertas em seu nome.",
+        "claim_one": "Veja como está a sua contestação.",
+        "claim_other": "Não vemos outra contestação aberta em seu nome.",
+        "show_claims": "Você tem várias contestações abertas. Escolha qual quer consultar.",
         "no_pending_action": "Não há nenhuma ação pendente de confirmação neste caso.",
         "recognized_closed": (
             "Pronto: encerramos o caso sem registrar nada. Se você vir outra cobrança que não "

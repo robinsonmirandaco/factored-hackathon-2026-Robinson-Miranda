@@ -25,7 +25,7 @@ from tests.serving_data import card, customer, load, transaction
 pytestmark = pytest.mark.integration
 
 ASK = {"es": "¿Cómo va mi reclamo?", "pt": "Como vai minha reclamação?"}
-PASSAGE = "15 días hábiles según el §2.1 (política de demostración, no del banco)"
+PASSAGE = "(15 días hábiles).\n[simulado] §2.1 · política de demostración, no del banco"
 
 
 @pytest.fixture
@@ -175,8 +175,8 @@ def test_no_llm_writes_a_claim_status_reply(
 @pytest.mark.parametrize(
     ("language", "reply"),
     [
-        ("es", "No encuentro reclamos abiertos a tu nombre."),
-        ("pt", "Não encontrei reclamações abertas em seu nome."),
+        ("es", "No encontramos aclaraciones abiertas a tu nombre."),
+        ("pt", "Não encontramos contestações abertas em seu nome."),
     ],
 )
 def test_no_open_claim_is_said_and_nothing_is_written(
@@ -213,10 +213,10 @@ def test_one_claim_gets_status_last_step_and_the_cited_deadline(
     }
     assert claim["passage_id"] == "§2.1" and claim["overdue"] is False
     assert r.reply.startswith(
-        "Esto es lo que veo de tu reclamo. Tu reclamo CMP-TEST000000000000001, abierto el "
+        "Esto es lo que vemos de tu aclaración. Tu aclaración CMP-TEST000000000000001, abierta el "
     )
     assert "está en revisión. Último paso: la asignación a una analista, el" in r.reply
-    assert "Fuente: registro del reclamo CMP-TEST000000000000001." in r.reply
+    assert "Fuente: registro de la aclaración CMP-TEST000000000000001." in r.reply
     assert "Plazo de respuesta: a más tardar el" in r.reply and PASSAGE in r.reply
     assert _backed(r.reply, [claim]) == []
     assert _written(schema) == (0, 0, 0, 0)
@@ -247,8 +247,8 @@ def test_without_a_backing_passage_no_deadline_is_stated_and_a_person_is_offered
 
     claim = r.facts["claim"]
     assert claim["due_date"] is None and claim["due_unsupported"]
-    assert r.reply.startswith("Veja como está a sua reclamação. A sua reclamação CMP-")
-    assert "Não tenho um prazo de resposta respaldado pela política" in r.reply
+    assert r.reply.startswith("Veja como está a sua contestação. A sua contestação CMP-")
+    assert "Não temos um prazo de resposta respaldado pela política" in r.reply
     assert (
         "uma pessoa" in r.reply and "§" not in r.reply and "Prazo de resposta: até" not in r.reply
     )
@@ -314,8 +314,8 @@ def test_a_dispute_registered_by_trazo_is_a_claim_with_its_registered_deadline(
     assert (claim["claim_id"], claim["source"]) == (folio, "disputes")
     assert claim["due_date"] == registered.facts["dispute"]["due_date"]
     assert claim["last_step"]["step"] == "registered"
-    assert "está recibido. Último paso: el registro de la aclaración" in r.reply
-    assert f"Fuente: registro del reclamo {folio}." in r.reply and PASSAGE in r.reply
+    assert "está recibida. Último paso: el registro de la aclaración" in r.reply
+    assert f"Fuente: registro de la aclaración {folio}." in r.reply and PASSAGE in r.reply
     assert _backed(r.reply, [claim]) == []
 
 
@@ -333,8 +333,8 @@ def two_claims(schema: SchemaUrls, settings: Settings) -> tuple[str, str]:
 @pytest.mark.parametrize(
     ("language", "listed"),
     [
-        ("es", "Tienes varios reclamos abiertos. Elige cuál quieres consultar."),
-        ("pt", "Você tem várias reclamações abertas. Escolha qual quer consultar."),
+        ("es", "Tienes varias aclaraciones abiertas. Elige cuál quieres consultar."),
+        ("pt", "Você tem várias contestações abertas. Escolha qual quer consultar."),
     ],
 )
 def test_several_claims_are_listed_newest_first_and_the_chosen_one_is_reported(
@@ -363,7 +363,7 @@ def test_none_of_the_claims_shown_offers_a_person(
 
     assert (none.outcome, none.facts["claim"]) == ("informed", None)
     assert none.reply == (
-        "No veo otro reclamo abierto a tu nombre. Si quieres, te comunico con una persona."
+        "No vemos otra aclaración abierta a tu nombre. Si quieres, te comunicamos con una persona."
     )
 
 

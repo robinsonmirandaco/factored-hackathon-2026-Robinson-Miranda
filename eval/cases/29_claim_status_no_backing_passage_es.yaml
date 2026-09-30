@@ -30,5 +30,5 @@ turns:
     autonomy_level: L0
     actions_taken: []
     reply_contains:
-    - No tengo un plazo de respuesta respaldado por la política
-    - te comunico con una persona
+    - No tenemos un plazo de respuesta respaldado por la política
+    - te comunicamos con una persona

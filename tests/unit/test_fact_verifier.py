@@ -346,6 +346,8 @@ def test_a_contact_promise_is_never_backed(text: str) -> None:
     [
         "Si quieres, te comunico con una persona.",
         "Se quiser, eu coloco você em contato com uma pessoa.",
+        "Si quieres, te comunicamos con una persona.",
+        "Se quiser, colocamos você em contato com uma pessoa.",
         "Una analista revisará tu aclaración antes de registrarla.",
     ],
 )

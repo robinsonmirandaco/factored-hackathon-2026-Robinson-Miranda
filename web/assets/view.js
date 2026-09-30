@@ -79,3 +79,12 @@ export function buttonMessage(t, lang, movement) {
   const key = movement.status === "Pending" ? "btnWhatIs" : "btnNotRecognized";
   return t(key, { what, date: dayMonth(lang, movement.at) });
 }
+
+// The lines of a reply; a line that starts with [simulado] is a label of demo content (the
+// policy citation), shown apart from the text.
+export function replyLines(reply) {
+  return String(reply).split("\n").filter((line) => line.trim()).map((line) => {
+    const simulated = line.startsWith("[simulado]");
+    return { text: simulated ? line.slice("[simulado]".length).trim() : line, simulated };
+  });
+}

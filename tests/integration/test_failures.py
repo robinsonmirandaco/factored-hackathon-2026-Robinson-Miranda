@@ -242,7 +242,7 @@ def test_with_the_llm_down_the_reply_is_in_the_language_of_the_customer(
     body = client.post("/chat", json={"message": "Quero um empréstimo pessoal"}).json()
 
     assert body["outcome"] == "abstained"
-    assert "não consigo contratar empréstimos" in body["reply"]
+    assert "não conseguimos contratar empréstimos" in body["reply"]
 
 
 # ---- row 2: invalid JSON --------------------------------------------------------------------
