@@ -335,25 +335,29 @@ function parts(iso) {
   return new Date(Date.UTC(y, m - 1, day, hh || 0, mm || 0));
 }
 
+// Month abbreviations come with a point in some locales ("jun."), not in others: none is kept,
+// so every date of the screens reads the same way.
+const noPoint = (text) => text.replace(/\./g, "");
+
 export function day(lang, iso) {
-  return new Intl.DateTimeFormat(LOCALES[lang], {
+  return noPoint(new Intl.DateTimeFormat(LOCALES[lang], {
     day: "numeric",
     month: "short",
     year: "numeric",
     timeZone: "UTC",
-  }).format(parts(iso));
+  }).format(parts(iso)));
 }
 
 export function dayMonth(lang, iso) {
-  return new Intl.DateTimeFormat(LOCALES[lang], {
+  return noPoint(new Intl.DateTimeFormat(LOCALES[lang], {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
-  }).format(parts(iso)).replace(".", "");
+  }).format(parts(iso)));
 }
 
 export function dayTime(lang, iso) {
-  return new Intl.DateTimeFormat(LOCALES[lang], {
+  return noPoint(new Intl.DateTimeFormat(LOCALES[lang], {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -361,5 +365,5 @@ export function dayTime(lang, iso) {
     minute: "2-digit",
     hourCycle: "h23",
     timeZone: "UTC",
-  }).format(parts(iso)).replace(".", "");
+  }).format(parts(iso)));
 }

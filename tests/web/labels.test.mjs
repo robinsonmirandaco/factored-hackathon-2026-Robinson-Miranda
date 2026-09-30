@@ -46,3 +46,19 @@ test("the button's message names the charge it was pressed on", () => {
 test("the audit panel has its Portuguese name", () => {
   assert.equal(pt("auditView"), "Painel de auditoria (demo)");
 });
+
+test("a purchase's detail line does not repeat Compra", async () => {
+  const { movementDetail } = await import("../../web/assets/view.js");
+  const web = { transaction_type: "Purchase", city: "Bogotá", channel: "Web" };
+  assert.equal(movementDetail(es, web), "Bogotá · Compra en línea");
+  const atm = { transaction_type: "Withdrawal", city: null, channel: "ATM" };
+  assert.equal(movementDetail(es, atm), "Retiro · Cajero automático");
+});
+
+test("Portuguese dates have one form: no abbreviation point anywhere", async () => {
+  const { day, dayMonth } = await import("../../web/assets/i18n.js");
+  for (const text of [day("pt", "2026-06-17"), dayTime("pt", "2026-06-17T10:05:00"), dayMonth("pt", "2026-06-16")]) {
+    assert.ok(!text.includes("."), text);
+  }
+  assert.equal(day("pt", "2026-06-17"), "17 de jun de 2026");
+});

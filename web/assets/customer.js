@@ -5,7 +5,8 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, canSend, clarificationLines, codeStep, errorText, reviewLine, turnModel,
+  buttonMessage, canSend, clarificationLines, codeStep, errorText, movementDetail, reviewLine,
+  turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -289,7 +290,7 @@ async function renderMovements(reset) {
         el("td", { text: dayTime(state.lang, m.at) }),
         el("td", {},
           el("div", { text: m.merchant || label(t, "type", m.transaction_type) }),
-          el("div", { class: "muted small", text: [label(t, "type", m.transaction_type), m.city, label(t, "channel", m.channel)].filter(Boolean).join(" · ") })),
+          el("div", { class: "muted small", text: movementDetail(t, m) })),
         el("td", { class: "amount" }, amountCell(m)),
         el("td", { class: "hide-sm" }, el("span", {
           class: `pill${pending ? " warn" : ""}`, text: label(t, "tx", m.status),

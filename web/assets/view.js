@@ -155,3 +155,10 @@ export function reviewLine(t, item) {
   if (item.review_hours == null) return null;
   return { text: t("reviewTime", { hours: item.review_hours }), label: t("reviewLabel") };
 }
+
+// The second line of a movement: city and channel, and the type unless the channel already
+// says it is a purchase ("Compra en línea").
+export function movementDetail(t, m) {
+  const type = m.transaction_type === "Purchase" ? null : label(t, "type", m.transaction_type);
+  return [type, m.city, label(t, "channel", m.channel)].filter(Boolean).join(" · ");
+}
