@@ -89,26 +89,43 @@ function loginForm(form, onDone) {
     id: `${form.id}-code`, class: "code-input", inputmode: "numeric", autocomplete: "one-time-code",
     maxlength: 6, pattern: "\\d{6}", placeholder: "000000",
   });
-  const codeRow = el("div", { hidden: true },
-    el("label", { for: code.id, text: t("code") }), code);
   const info = el("p", { class: "muted small", "aria-live": "polite" });
   const error = el("p", { class: "error", role: "alert" });
   const askButton = el("button", { type: "button", class: "btn primary block", text: t("requestCode") });
-  const enterButton = el("button", { type: "submit", class: "btn primary block", text: t("verify"), hidden: true });
+  const enterButton = el("button", { type: "submit", class: "btn primary block", text: t("verify") });
+  const changeButton = el("button", { type: "button", class: "link small", text: t("changeDocument") });
   const doc = () => ({ document_type: type.value, document_number: number.value.trim() });
   let requestedFor = null;
+
+  // Two steps, as in the prototype: the document, then the code that was sent for it.
+  const docField = el("div", {},
+    el("label", { for: number.id, text: t("documentLabel") }),
+    el("div", { class: "doc-field" }, type, number));
+  const docStep = el("div", { class: "stack login-step" }, docField, askButton,
+    el("p", { class: "login-note", text: t("loginNote") }));
+  const codeField = el("div", {},
+    el("div", { class: "label-row" }, el("label", { for: code.id, text: t("code") }), changeButton),
+    code);
+  const codeStepBlock = el("div", { class: "stack login-step" }, codeField, info,
+    el("p", { class: "notice", text: t("identityNote") }), enterButton);
+
   // A code belongs to the document it was asked for: changing the document hides the field.
   const sync = () => {
     const { showCode } = codeStep(requestedFor, { type: type.value, number: number.value.trim() });
-    codeRow.hidden = !showCode;
-    enterButton.hidden = !showCode;
-    askButton.className = showCode ? "btn block" : "btn primary block";
+    docStep.hidden = showCode;
+    codeStepBlock.hidden = !showCode;
     code.disabled = !showCode;
     if (!showCode) code.value = "";
-    info.textContent = showCode ? info.textContent : t("codeFirst");
+    (showCode ? codeField : docField).after(error);
   };
   type.addEventListener("change", () => { requestedFor = null; sync(); });
   number.addEventListener("input", sync);
+  changeButton.addEventListener("click", () => {
+    requestedFor = null;
+    error.textContent = "";
+    sync();
+    number.focus();
+  });
 
   askButton.addEventListener("click", async () => {
     error.textContent = "";
@@ -131,7 +148,7 @@ function loginForm(form, onDone) {
     event.preventDefault();
     error.textContent = "";
     code.removeAttribute("aria-invalid");
-    if (codeRow.hidden) return askButton.click();
+    if (codeStepBlock.hidden) return askButton.click();
     enterButton.disabled = true;
     try {
       const r = await api.call("/auth/otp/verify", {
@@ -147,18 +164,7 @@ function loginForm(form, onDone) {
     }
   };
 
-  form.append(
-    el("p", { class: "muted small", text: t("loginIntro") }),
-    el("div", {},
-      el("label", { for: number.id, text: `${t("documentType")} · ${t("documentNumber")}` }),
-      el("div", { class: "doc-field" }, type, number)),
-    codeRow,
-    enterButton,
-    askButton,
-    info,
-    error,
-    el("p", { class: "notice", text: t("identityNote") }),
-  );
+  form.append(docStep, codeStepBlock);
   sync();
 }
 
@@ -453,7 +459,7 @@ function bubble(who, ...children) {
     return node;
   }
   const turn = el("div", { class: "turn" }, ...children);
-  const node = el("div", { class: "msg bot" }, el("span", { class: "bot-mark", "aria-hidden": "true", text: "T" }), turn);
+  const node = el("div", { class: "msg bot" }, el("span", { class: "bot-mark", "aria-hidden": "true", text: "L" }), turn);
   $("log").append(node);
   node.scrollIntoView({ block: "end", behavior: "smooth" });
   return turn;

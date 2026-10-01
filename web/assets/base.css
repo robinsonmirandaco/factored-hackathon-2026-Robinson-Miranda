@@ -182,6 +182,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); }
   outline: 2px solid var(--primary); outline-offset: 2px;
 }
 .error { color: var(--bad); font-size: 13px; font-weight: 500; }
+.error:empty { display: none; }
 
 /* Pills and tags */
 .pill {
@@ -309,6 +310,9 @@ a.trow:hover { background: var(--surface-3); text-decoration: none; color: var(-
 }
 .modal { width: 100%; max-width: 420px; border-radius: var(--radius); padding: 28px; gap: 16px; }
 .modal h2 { font-size: 18px; }
+
+/* Login: every block of the card is 22px apart, as in the prototype. */
+.card.narrow form.stack, .card.narrow .login-step { gap: 22px; }
 
 @media (max-width: 640px) {
   /* A wrapped bar would cover a third of a phone screen if it stayed fixed. */
