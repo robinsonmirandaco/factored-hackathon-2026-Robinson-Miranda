@@ -3,7 +3,7 @@
 // Text reaches the page only through textContent, never as HTML.
 
 import { createClient } from "./api.js";
-import { day, dayTime, label, money, translator } from "./i18n.js";
+import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   buttonMessage, canSend, clarificationLines, closedNote, codeStep, createConversation, deadlineKind,
   errorText,
@@ -251,33 +251,86 @@ function statusPill(c) {
   return el("span", { class: `pill ${statusTone(c.status)}`, text: label(t, "status", c.status) });
 }
 
-async function renderHome() {
-  const target = $("view-home");
-  try {
-    const [products, clarifications] = await Promise.all([
-      api.call("/me/products"), api.call("/me/clarifications"),
-    ]);
-    const questions = markQuestions(clarifications);
-    const name = state.me.first_name;
-    const productRows = products.length
-      ? products.map((p) => el("div", { class: "product" },
-        el("div", { class: "row" },
-          el("strong", { text: label(t, "product", p.product_type) }),
-          p.last4 ? el("span", { class: "mono small muted", text: `•••• ${p.last4}` }) : null,
-          el("span", { class: "spacer" }),
-          el("span", {
-            class: `pill ${p.status === "Active" ? "ok" : p.status === "Blocked" ? "bad" : ""}`,
-            text: label(t, "pstatus", p.status),
-          })),
+const SVG = "http://www.w3.org/2000/svg";
+
+// The contactless mark of the prototype's card, drawn as DOM nodes (no inline markup).
+function contactless() {
+  const svg = document.createElementNS(SVG, "svg");
+  for (const [k, v] of Object.entries({
+    width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+    "stroke-width": "1.8", "stroke-linecap": "round", class: "vcard-wave", "aria-hidden": "true",
+  })) svg.setAttribute(k, v);
+  for (const d of ["M8.5 8.5a5 5 0 0 1 0 7", "M12 6a8.5 8.5 0 0 1 0 12", "M15.5 3.5a12 12 0 0 1 0 17"]) {
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+// A card drawn with what the record has: the kind, the last four digits and the holder's first
+// name. No expiry, number or limit bar is drawn, since the API has none of them.
+function virtualCard(p) {
+  const credit = p.product_type === "credit_card";
+  return el("div", { class: `vcard ${credit ? "credit" : "debit"}`, "aria-hidden": "true" },
+    el("div", { class: "vcard-row" },
+      el("span", { class: "vcard-brand" }, el("span", { class: "vcard-logo", text: "L" }), "LATAM Bank"),
+      el("span", { class: "vcard-kind", text: t(`cardKind_${p.product_type}`) })),
+    el("div", { class: "vcard-row start" }, el("span", { class: "vcard-chip" }), contactless()),
+    el("div", { class: "vcard-foot" },
+      el("span", { class: "vcard-number", text: `•••• •••• •••• ${p.last4}` }),
+      el("span", { class: "vcard-holder", text: (state.me.first_name || "").toUpperCase() })));
+}
+
+function productSection(p) {
+  const drawn = p.last4 && (p.product_type === "credit_card" || p.product_type === "debit_card");
+  return el("section", { class: "card" },
+    el("div", { class: "card-head" },
+      el("h2", { text: label(t, "product", p.product_type) }),
+      el("span", {
+        class: `pill ${p.status === "Active" ? "ok" : p.status === "Blocked" ? "bad" : ""}`,
+        text: label(t, "pstatus", p.status),
+      })),
+    drawn ? virtualCard(p) : p.last4 ? el("span", { class: "mono small muted", text: `•••• ${p.last4}` }) : null,
+    p.current_balance != null || p.credit_limit != null
+      ? el("div", { class: "figures" },
         p.current_balance != null
           ? [el("span", { class: "small muted", text: t("balance") }),
             el("span", { class: "figure", text: money(state.lang, p.current_balance, p.currency) })]
           : null,
         p.credit_limit != null
           ? el("span", { class: "small muted", text: `${t("limit")}: ${money(state.lang, p.credit_limit, p.currency)}` })
-          : null))
-      : [el("p", { class: "muted", text: t("noProducts") })];
-    const recent = clarifications.slice(0, 3).map((c) => {
+          : null)
+      : null);
+}
+
+function recentSection(items) {
+  const rows = items.map((m) => {
+    const what = m.merchant || label(t, "type", m.transaction_type);
+    return el("li", { class: "recent-row" },
+      el("span", { class: "initial", text: initialOf(what) }),
+      el("span", { class: "main" },
+        el("span", { class: "title", text: what }),
+        el("span", { class: "sub", text: [dayMonth(state.lang, m.at), label(t, "channel", m.channel)].filter(Boolean).join(" · ") })),
+      el("span", { class: "end" }, amountCell(m),
+        m.status === "Pending" ? el("span", { class: "pill warn", text: label(t, "tx", m.status) }) : null));
+  });
+  return el("section", { class: "card recent" },
+    el("div", { class: "card-head recent-head" },
+      el("h2", { text: t("recentMovements") }),
+      el("a", { class: "link", href: "#/movimientos", text: t("seeAll") })),
+    rows.length ? el("ul", { class: "list" }, rows) : el("p", { class: "muted small recent-empty", text: t("noMovements") }));
+}
+
+async function renderHome() {
+  const target = $("view-home");
+  try {
+    const [products, clarifications, recent] = await Promise.all([
+      api.call("/me/products"), api.call("/me/clarifications"), api.call("/me/transactions?limit=5"),
+    ]);
+    const questions = markQuestions(clarifications);
+    const name = state.me.first_name;
+    const claims = clarifications.slice(0, 3).map((c) => {
       const { title, ref } = clarificationLines(t, state.lang, c);
       return el("div", { class: "claim-mini" },
         el("div", {},
@@ -285,13 +338,17 @@ async function renderHome() {
           ref ? el("span", { class: "tiny muted mono", text: ref }) : null),
         statusPill(c));
     });
+    const [first, ...others] = products.map(productSection);
     target.replaceChildren(
       el("div", { class: "page-head" },
         el("span", { class: "eyebrow", text: day(state.lang, state.me.now) }),
         el("h1", { text: name ? t("hello", { name }) : t("helloAnon") })),
       el("div", { class: "grid-2" },
-        el("section", { class: "card tight" }, el("h2", { text: t("products") }), el("div", {}, productRows)),
         el("div", { class: "stack-gap" },
+          first || el("section", { class: "card" }, el("p", { class: "muted", text: t("noProducts") })),
+          recentSection(recent.items)),
+        el("div", { class: "stack-gap" },
+          others,
           el("section", { class: "card soft" },
             el("h2", { class: "soft-title", text: t("reviewChargeTitle") }),
             el("p", { class: "soft-body", text: t("reviewChargeBody") }),
@@ -303,7 +360,7 @@ async function renderHome() {
             el("div", { class: "card-head" },
               el("h2", { text: t("navClarifications") }),
               el("a", { class: "link", href: "#/aclaraciones", text: t("see") })),
-            recent.length ? el("div", {}, recent) : el("p", { class: "muted small", text: t("noClarifications") })))),
+            claims.length ? el("div", {}, claims) : el("p", { class: "muted small", text: t("noClarifications") })))),
     );
   } catch (e) {
     failure(target, e);

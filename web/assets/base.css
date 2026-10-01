@@ -99,10 +99,14 @@ p { margin: 0; }
   flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--ink); color: var(--lime);
   display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px;
 }
+.app-tag {
+  flex: none; padding: 3px 8px; border-radius: 999px; background: var(--ink); color: var(--lime);
+  font: 600 11px var(--mono); letter-spacing: 0.08em;
+}
 .navpills { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; align-items: center; }
 .navpills a {
   position: relative; padding: 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 500;
-  color: var(--muted);
+  color: var(--muted); white-space: nowrap;
 }
 .navpills a:hover { text-decoration: none; color: var(--ink); }
 .navpills a[aria-current="page"] { background: var(--surface-2); color: var(--ink); }
@@ -112,7 +116,6 @@ p { margin: 0; }
   background: var(--primary-soft); color: var(--primary); display: flex; align-items: center;
   justify-content: center; font-size: 13px; font-weight: 600;
 }
-.clock { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
 
 main.page {
   flex: 1; width: 100%; max-width: 1240px; margin: 0 auto;
