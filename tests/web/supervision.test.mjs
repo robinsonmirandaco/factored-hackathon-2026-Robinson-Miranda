@@ -101,3 +101,11 @@ test("the console asks with the system's dialog, never the browser's own window"
   assert.match(html, /<div class="backdrop" id="switch-dialog" hidden>/);
   assert.match(dialog, /class="card modal" role="dialog" aria-modal="true" aria-labelledby="switch-title"/);
 });
+
+test("the switch is centered in the header like the other controls", () => {
+  // QA of TRZ-35: .pill sits at the top (align-self: flex-start), which lifted it in the header.
+  const css = readFileSync(new URL("../../web/assets/analyst.css", import.meta.url), "utf8");
+  const rule = css.slice(css.indexOf(".pill.switch {"), css.indexOf("}", css.indexOf(".pill.switch {")));
+  assert.match(rule, /align-self: center;/);
+  assert.match(css, /\.pill\.switch:focus-visible \{ outline: 2px solid var\(--primary\); outline-offset: 2px; \}/);
+});
