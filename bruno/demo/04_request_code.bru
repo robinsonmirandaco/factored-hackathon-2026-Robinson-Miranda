@@ -1,0 +1,21 @@
+meta {
+  name: the persona asks for a code with the invented document
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/request
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "DNI", "document_number": "DEMO-MX-0001"}
+}
+
+tests {
+  test("202 code sent", function() {
+    expect(res.getStatus()).to.equal(202);
+  });
+}
