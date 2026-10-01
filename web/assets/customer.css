@@ -181,6 +181,5 @@
   .trace { position: static; }
 }
 @media (max-width: 640px) {
-  .appbar-inner { gap: 12px; }
   .list-row .end { align-items: flex-start; }
 }

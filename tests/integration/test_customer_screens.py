@@ -406,6 +406,14 @@ def test_the_analyst_console_is_served_with_the_same_policy(app_client: TestClie
         assert app_client.get(asset).status_code == 200
 
 
+def test_the_favicon_is_the_icon_of_this_origin(app_client: TestClient) -> None:
+    moved = app_client.get("/favicon.ico", follow_redirects=False)
+    icon = app_client.get("/favicon.ico")
+
+    assert moved.status_code == 301 and moved.headers["location"] == "/assets/favicon.svg"
+    assert icon.status_code == 200 and icon.headers["content-type"].startswith("image/svg+xml")
+
+
 def test_the_fonts_are_served_from_the_same_origin(app_client: TestClient) -> None:
     font = app_client.get("/assets/fonts/Geist-Variable.woff2")
     policy = app_client.get("/").headers["content-security-policy"]

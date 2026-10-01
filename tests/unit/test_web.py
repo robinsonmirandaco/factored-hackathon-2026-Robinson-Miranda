@@ -47,6 +47,13 @@ def test_a_stylesheet_loads_its_files_from_this_origin(sheet: Path) -> None:
         assert (sheet.parent / url).is_file(), url
 
 
+@pytest.mark.parametrize("page", PAGES, ids=str)
+def test_a_page_declares_the_icon_of_this_origin(page: Path) -> None:
+    html = page.read_text(encoding="utf-8")
+    assert '<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">' in html
+    assert Path("web/assets/favicon.svg").is_file()
+
+
 def test_the_fonts_travel_with_their_license() -> None:
     fonts = sorted(f.name for f in FONTS.glob("*.woff2"))
     assert fonts == ["Geist-Variable.woff2", "GeistMono-Variable.woff2"]

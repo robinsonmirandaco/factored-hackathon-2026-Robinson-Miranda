@@ -319,11 +319,14 @@ a.trow:hover { background: var(--surface-3); text-decoration: none; color: var(-
 .card.narrow form.stack, .card.narrow .login-step { gap: 22px; }
 
 @media (max-width: 640px) {
-  /* A wrapped bar would cover a third of a phone screen if it stayed fixed. */
-  .appbar { position: static; }
-  .appbar-inner { gap: 10px 12px; }
-  .navpills { order: 3; flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; }
-  .navpills a { white-space: nowrap; }
+  /* One line on a phone: the logo, the menu scrolling sideways and the controls. The names
+     beside the logo and the avatar give way; the page itself still says both names. */
+  .appbar-inner { flex-wrap: nowrap; gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+  .appbar .brand-name, .appbar .app-tag, .appbar .avatar { display: none; }
+  .navpills { flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .navpills::-webkit-scrollbar { display: none; }
+  .navpills a { padding: 8px 10px; font-size: 13px; }
+  .appbar-end { flex-wrap: nowrap; gap: 8px; }
   .card { padding: 18px; }
   .card.narrow { padding: 24px; }
 }
