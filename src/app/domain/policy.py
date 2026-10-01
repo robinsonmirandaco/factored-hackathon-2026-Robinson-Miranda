@@ -40,6 +40,7 @@ AutonomyLookup = Callable[[Intent, Language], AutonomyLevel]
 
 SECURITY_RULES = ("security_event",)
 ESCALATION_RULES = (
+    "automation_disabled",
     "comprehension_unavailable",
     "clarifications_exhausted",
     "amount_above_human_review",
@@ -127,6 +128,7 @@ class Autonomy(_Strict):
     promote_if_rate_lt: float = Field(gt=0, lt=1)
     promote_after_consecutive_windows: int = Field(ge=1)
     audit_sample_rate: float = Field(gt=0, lt=1)
+    audit_sample_seed: int
     reversal_reasons: tuple[str, ...] = Field(min_length=1)
 
 
@@ -194,6 +196,8 @@ class PolicyContext:
             `max_clarifications` allows (TRZ-25).
         comprehension_unavailable: The LLM failed and the rules recognized nothing in the
             message, so no intent is known (TRZ-36).
+        automation_disabled: The global automation switch sends every case to a person
+            (TRZ-35).
     """
 
     intent: Intent
@@ -207,6 +211,7 @@ class PolicyContext:
     security_event: bool = False
     clarifications_exhausted: bool = False
     comprehension_unavailable: bool = False
+    automation_disabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -395,6 +400,7 @@ class PolicyEngine:
         bands = self.config.amount_usd
         amount = ctx.amount_usd
         checks = {
+            "automation_disabled": ctx.automation_disabled,
             "comprehension_unavailable": ctx.comprehension_unavailable,
             "clarifications_exhausted": ctx.clarifications_exhausted,
             "amount_above_human_review": amount is not None and amount > bands.human_review_above,

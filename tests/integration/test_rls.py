@@ -88,6 +88,14 @@ def _seed_operational_rows(admin_url: str) -> None:
                 ),
                 {**params, "d": AT.date()},
             )
+            conn.execute(
+                text(
+                    "INSERT INTO notifications (customer_id, case_id, kind, language, text, "
+                    "checked, source_key) "
+                    "VALUES (:c, :k, 'rejected', 'es', 'No procedió.', true, :k)"
+                ),
+                params,
+            )
     engine.dispose()
 
 
@@ -140,6 +148,7 @@ def test_every_customer_table_is_covered(two_customers: SchemaUrls) -> None:
         "customers",
         "disputes",
         "info_requests",
+        "notifications",
         "products",
         "transactions",
     ]

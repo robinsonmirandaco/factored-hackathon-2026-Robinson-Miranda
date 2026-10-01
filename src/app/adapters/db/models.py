@@ -7,7 +7,18 @@ not query through the ORM (complaints, exchange rates, seed runs) are not mapped
 
 from datetime import date, datetime
 
-from sqlalchemy import ARRAY, JSON, Boolean, Date, DateTime, Integer, Numeric, Text, func
+from sqlalchemy import (
+    ARRAY,
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Integer,
+    Numeric,
+    SmallInteger,
+    Text,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Numeric columns come back as float: tool results are stored as JSON, which has no Decimal.
@@ -183,6 +194,37 @@ class InfoRequest(Base):
     # open | answered | expired
     status: Mapped[str] = mapped_column(Text, default="open")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Notification(Base):
+    """What the customer is told about a decision on a clarification (TRZ-32). The text is
+    written by code and checked by the fact checker before it is stored."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    customer_id: Mapped[str] = mapped_column(Text)
+    case_id: Mapped[str] = mapped_column(Text)
+    # approved | rejected | info_requested | audit_reversed
+    kind: Mapped[str] = mapped_column(Text)
+    language: Mapped[str] = mapped_column(Text)
+    text: Mapped[str] = mapped_column(Text)
+    checked: Mapped[bool] = mapped_column(Boolean)
+    # The decision it comes from; a replayed decision does not notify twice.
+    source_key: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class AutomationSwitch(Base):
+    """The global automation switch (TRZ-35): one row, read on every decision."""
+
+    __tablename__ = "automation_switch"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    all_to_human: Mapped[bool] = mapped_column(Boolean, default=False)
+    changed_by: Mapped[str | None] = mapped_column(Text)
+    changed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class CardBlock(Base):

@@ -7,7 +7,7 @@
 # escalation and approval stages apply only to `dispute_intents`. Each rule list must name every
 # rule the code knows, exactly once; the order of the list is the order of evaluation.
 
-version: "2026.09.3"
+version: "2026.09.4"
 
 dispute_window_days: 120            # [assumption] the only source of this number at runtime
 open_dispute_lookback_days: 90      # [assumption] look-back of open_dispute_last_90d
@@ -27,6 +27,7 @@ security_if:
   - security_event
 
 escalate_if:
+  - automation_disabled             # the global switch sends every dispute to a person (11.5)
   - comprehension_unavailable       # the LLM failed and the rules recognized nothing
   - clarifications_exhausted        # a third question would be needed to identify the charge
   - amount_above_human_review       # amount_usd > amount_usd.human_review_above
@@ -86,6 +87,9 @@ autonomy:
   promote_if_rate_lt: 0.15
   promote_after_consecutive_windows: 2
   audit_sample_rate: 0.10           # rho
+  # Seed of the audit sample draws: draw n is Random(f"{seed}:{n}"), so any draw can be
+  # recomputed from the seed and the n its audit row keeps. With this seed draw 1 is selected.
+  audit_sample_seed: 20260934
   reversal_reasons:
     - wrong_charge
     - should_not_act
