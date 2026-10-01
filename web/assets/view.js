@@ -180,3 +180,59 @@ export function createConversation() {
     isCurrent: (t) => t === turn,
   };
 }
+
+// The analyst's question on a clarification (TRZ-28): open with its deadline and a form, or
+// already answered. The deadline is a date of the simulated clock; the time of the answer is
+// not shown, since it runs on the real clock (design 10.2, rule 7).
+export function infoRequestView(t, lang, item) {
+  return item.info_request ? requestView(t, lang, item, item.info_request, true) : null;
+}
+
+// Every question of the analyst on a clarification, oldest first, each with its answer or its
+// form, as the analyst sees them in the dossier.
+export function infoRequestViews(t, lang, item) {
+  const list = item.info_requests?.length ? item.info_requests : item.info_request ? [item.info_request] : [];
+  return list.map((r, i) => requestView(t, lang, item, r, i === list.length - 1));
+}
+
+function requestView(t, lang, item, r, last) {
+  if (r.status !== "open") {
+    // Only the latest answer is under review, and only while the case is not decided.
+    const closed = item.status === "rejected" || item.status === "approved";
+    return {
+      question: r.question,
+      answer: r.answer,
+      answered: last && !closed ? t("answered") : null,
+      canAnswer: false,
+    };
+  }
+  return {
+    question: r.question,
+    due: t(r.overdue ? "answerOverdue" : "answerBy", { date: day(lang, r.due_on) }),
+    overdue: r.overdue,
+    canAnswer: true,
+  };
+}
+
+// How many clarifications wait for the customer's answer: the dot of the menu, until the
+// notifications of TRZ-32.
+export function openQuestions(items) {
+  return items.filter((i) => i.info_request?.status === "open").length;
+}
+
+// Which deadline a clarification shows: the review time of a case with a person, the response
+// deadline of a dispute or claim, or none. A case waiting for the customer's answer shows only
+// the deadline to answer, in its question (TRZ-28); a rejected one is closed and shows none.
+export function deadlineKind(item) {
+  if (item.info_request?.status === "open") return "answer";
+  if (item.status === "rejected") return "closed";
+  if (item.review_hours != null) return "review";
+  if (item.due_date) return "due";
+  return "none";
+}
+
+// What a closed clarification tells the customer: a rejection says it did not proceed and what
+// to do next, never the analyst's internal reason (QA of TRZ-27/28).
+export function closedNote(t, item) {
+  return item.status === "rejected" ? t("rejectedNote") : null;
+}

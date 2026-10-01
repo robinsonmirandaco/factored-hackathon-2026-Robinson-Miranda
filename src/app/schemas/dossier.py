@@ -6,6 +6,7 @@ comprehension row of the message they were read in. Nothing in it is written by 
 the translation of a Portuguese message, which is labeled automatic.
 """
 
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -90,11 +91,12 @@ class ActionTaken(_Strict):
     """An action of the case and what became of it.
 
     Attributes:
-        action: register, register_and_offer_block or register_and_block.
+        action: register, register_and_offer_block, register_and_block or block.
         state: verified (read back and matched), not_executed (never confirmed, replaced or
-            canceled), failed (read back and did not match), or not_verified (executed with no
-            read-back row, only possible for rows older than TRZ-19).
-        source: The case_actions row.
+            canceled, or a block an analyst's approval leaves out), failed (read back and did
+            not match), or not_verified (executed with no read-back row, only possible for rows
+            older than TRZ-19).
+        source: The case_actions row, or the audit row of the analyst's approval.
     """
 
     action: str
@@ -110,7 +112,8 @@ class OpenQuestion(_Strict):
 
 
 class LaterMessage(_Strict):
-    """A message the customer wrote once the case was with a person, redacted (TRZ-25).
+    """A message the customer wrote once the case was with a person, or an answer to the
+    analyst's question, redacted (TRZ-25, TRZ-28).
 
     Attributes:
         text: The message with PII replaced.
@@ -118,6 +121,28 @@ class LaterMessage(_Strict):
     """
 
     text: str
+    source: Source
+
+
+class InfoExchange(_Strict):
+    """A question of the analyst to the customer and its answer, both PII-redacted (TRZ-28).
+
+    Attributes:
+        question: The question as the analyst wrote it.
+        asked_by: User name of the analyst.
+        asked_on: Simulated day it was asked.
+        due_on: Last business day to answer.
+        status: open, answered or expired.
+        answer: The customer's answer; None while there is none.
+        source: The info_requests row.
+    """
+
+    question: str
+    asked_by: str
+    asked_on: date
+    due_on: date
+    status: str
+    answer: str | None
     source: Source
 
 
@@ -156,3 +181,4 @@ class Dossier(_Strict):
     policy_rule_triggered: RuleTriggered | None
     recommended_action: str | None
     later_messages: list[LaterMessage]
+    info_exchanges: list[InfoExchange]

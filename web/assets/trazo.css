@@ -161,3 +161,11 @@ input, select, textarea {
 .pill.tone-ok { background: var(--accent-soft); color: var(--accent); }
 .pill.tone-warn { background: var(--warn-soft); color: var(--warn); }
 .pill.tone-bad { background: var(--bad-soft); color: var(--bad); }
+.dot {
+  align-self: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: var(--bad); color: #fff; font: 700 0.75rem/20px var(--sans); text-align: center;
+}
+.info-request { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.info-request .question { margin: 2px 0 8px; }
+.info-request .answer { margin: 2px 0 8px; white-space: pre-wrap; }
+.info-entry + .info-entry { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }

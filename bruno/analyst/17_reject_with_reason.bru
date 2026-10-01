@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-27 CA4 CA6 a rejection with a reason of the list
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{baseUrl}}/cases/{{dossierCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "reject", "reason": "insufficient_data"}
+}
+
+tests {
+  test("200 rejected", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("rejected");
+  });
+}

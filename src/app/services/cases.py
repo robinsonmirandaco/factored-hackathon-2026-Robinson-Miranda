@@ -1,16 +1,25 @@
-"""Operator-side use cases: read cases, traces and histories, record human decisions, compute
-metrics."""
+"""Operator-side use cases: read cases, traces, histories and the queue, compute metrics."""
+
+from collections.abc import Callable
+from datetime import datetime
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.adapters.db.audit import write_audit
-from app.adapters.db.models import AuditRecord, Case
+from app.adapters.db.models import AuditRecord, Case, QueueItem
 from app.core.errors import AppError
+from app.core.time import utcnow
 from app.domain.history import Lang, describe
-from app.domain.pii import redact
-from app.schemas.api import CaseOut, HistoryEntryOut, HumanDecisionIn, MetricsOut, TraceEventOut
+from app.schemas.api import (
+    CaseOut,
+    HistoryEntryOut,
+    MetricsOut,
+    QueueFilter,
+    QueueItemOut,
+    QueueOut,
+    TraceEventOut,
+)
 
 _HISTORY = text(
     "SELECT id, trace_id, actor, action, payload, result, policy_version, created_at "
@@ -21,11 +30,18 @@ _HISTORY = text(
 # stopped by a security rule, and an action whose read-back did not match.
 HANDOFF_STATUSES = ("escalated", "pending_analyst_approval", "security_blocked", "failed")
 
-_STATUS_AFTER_DECISION = {
-    "approve": "approved",
-    "reject": "rejected",
-    "need_info": "awaiting_customer",
-}
+# Intents that are about one charge.
+DISPUTE_INTENTS = ("unrecognized_charge", "billing_error_amount", "billing_error_duplicate")
+# Recommendations an analyst's approval can run, and whether they include a card block it
+# leaves out (design 3.2: a block needs the customer's explicit confirmation).
+REGISTERS = {"register": False, "register_and_offer_block": True, "register_and_block": True}
+_PRIORITY_RANK = {"urgent": 0, "high": 1, "normal": 2}
+# Queue filters of TRZ-27 CA2 read the reason of the queue row: no charge fits the clues, or an
+# action whose read-back did not match (the policy rule, or the reason written after acting).
+NO_MATCH_REASON = "escalate.conformal_set_empty"
+# Escalation reason of a case whose read-back after acting did not match (TRZ-19 CA3).
+VERIFICATION_FAILED_REASON = "verification.registration_failed"
+VERIFICATION_REASONS = ("escalate.verification_failed", VERIFICATION_FAILED_REASON)
 
 
 def check_database(session: Session) -> None:
@@ -124,63 +140,101 @@ def get_history(session: Session, case_id: str, lang: Lang) -> list[HistoryEntry
     ]
 
 
-def list_queue(session: Session) -> list[CaseOut]:
-    """Lists the cases a person must decide, oldest first.
+def list_queue(
+    session: Session, human_review_above: float, only: QueueFilter | None = None
+) -> QueueOut:
+    """Lists the open rows of the queue a person must decide, most urgent first (TRZ-27).
+
+    The queue is case_queue, not the case status: a case is listed while its row is open, and
+    a decision closes the row. Rows are ordered by priority, then by the end of their SLA.
 
     Args:
-        session: Open database session.
+        session: Open session with the analyst role.
+        human_review_above: USD amount above which a case is a large one, from the policy.
+        only: Filter to apply; None lists every open row.
 
     Returns:
-        The escalation queue.
-    """
-    rows = (
-        session.execute(
-            select(Case).where(Case.status.in_(HANDOFF_STATUSES)).order_by(Case.created_at)
-        )
-        .scalars()
-        .all()
-    )
-    return [_to_out(c) for c in rows]
-
-
-def record_decision(session: Session, case_id: str, body: HumanDecisionIn) -> CaseOut:
-    """Stores an operator decision on an escalated case next to the system recommendation.
-
-    The free-text note is PII-redacted before it reaches the audit log.
-
-    Args:
-        session: Open database session.
-        case_id: Escalated case.
-        body: The decision.
-
-    Returns:
-        The updated case.
+        The rows of the filter and the counter of every filter over the same open rows.
 
     Raises:
-        AppError: 404 case_not_found, 409 case_not_escalated, or 409 decision_not_allowed
-            when a case stopped by security is sent back to the customer.
+        AppError: 503 db_unavailable if the database fails.
     """
-    case = _require_case(session, case_id)
-    if case.status not in HANDOFF_STATUSES:
-        raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
-    # Asking the customer for more would hand a case stopped by security back to the chat.
-    if case.status == "security_blocked" and body.decision == "need_info":
-        raise AppError(
-            "decision_not_allowed", "A case stopped by security can only be closed.", 409
-        )
-    case.human_decision = body.decision
-    case.status = _STATUS_AFTER_DECISION[body.decision]
-    note = redact(body.note)[0] if body.note else None
-    write_audit(
-        session,
-        "human",
-        "decision",
-        case_id,
-        {"decision": body.decision, "note": note, "agent_id": body.agent_id},
-        {"status": case.status, "system_recommended": case.recommended_action},
-        customer_id=case.customer_id,
+    try:
+        rows = session.execute(
+            select(QueueItem, Case)
+            .join(Case, Case.id == QueueItem.case_id)
+            .where(QueueItem.resolved_at.is_(None))
+        ).all()
+        now = utcnow()
+        items = [_queue_item(session, q, c, now) for q, c in rows]
+    except SQLAlchemyError as exc:
+        raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
+    items.sort(key=lambda i: (_PRIORITY_RANK[i.priority], i.sla_due_at or datetime.max, i.queue_id))
+    tests: dict[str, Callable[[QueueItemOut], bool]] = {
+        "high_priority": lambda i: i.priority in ("high", "urgent"),
+        "over_1000_usd": lambda i: i.amount_usd is not None and i.amount_usd > human_review_above,
+        "no_match": lambda i: i.reason == NO_MATCH_REASON,
+        "verification_failed": lambda i: i.status == "failed" or i.reason in VERIFICATION_REASONS,
+        "audit": lambda i: i.kind == "audit_sample",
+    }
+    counts = {"all": len(items)} | {k: sum(map(f, items)) for k, f in tests.items()}
+    return QueueOut(items=[i for i in items if only is None or tests[only](i)], counts=counts)
+
+
+def approvable(case: Case) -> bool:
+    """Tells whether approving the case has a registration to run.
+
+    Args:
+        case: A case with a person.
+
+    Returns:
+        True when the recommendation registers a dispute on an identified charge.
+    """
+    return (
+        case.recommended_action in REGISTERS
+        and case.transaction_id is not None
+        and case.intent in DISPUTE_INTENTS
     )
-    return _to_out(case)
+
+
+def _queue_item(session: Session, q: QueueItem, c: Case, now: datetime) -> QueueItemOut:
+    security = c.status == "security_blocked"
+    return QueueItemOut(
+        queue_id=q.id,
+        case_id=c.id,
+        kind="security_event" if security else q.kind,  # type: ignore[arg-type]
+        # A security event shows no customer data (CA8).
+        customer_id=None if security else c.customer_id,
+        intent=None if security else c.intent,
+        amount_usd=None if security else _amount_usd(session, c.id),
+        language=c.language,
+        reason=q.reason,
+        priority=q.priority,
+        sla_due_at=q.sla_due_at,
+        overdue=q.sla_due_at is not None and q.sla_due_at < now,
+        updated=q.updated,
+        status=c.status,
+        recommended_action=None if security else c.recommended_action,
+        # Approving a security event closes it; any other case needs a registration to run.
+        can_approve=security or approvable(c),
+        created_at=q.created_at,
+    )
+
+
+def _amount_usd(session: Session, case_id: str) -> float | None:
+    """The USD amount the policy compared when it handed the case over."""
+    decide = session.execute(
+        select(AuditRecord)
+        .where(
+            AuditRecord.case_id == case_id,
+            AuditRecord.actor == "policy",
+            AuditRecord.action == "decide",
+        )
+        .order_by(AuditRecord.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    value = ((decide.payload if decide else None) or {}).get("amount_usd")
+    return None if value is None else float(value)
 
 
 def get_metrics(session: Session) -> MetricsOut:

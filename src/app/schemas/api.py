@@ -330,18 +330,152 @@ class HistoryEntryOut(BaseModel):
     text: str
 
 
+QueueFilter = Literal["high_priority", "over_1000_usd", "no_match", "verification_failed", "audit"]
+
+
+class QueueItemOut(BaseModel):
+    """One open row of the analyst queue (TRZ-27 CA1).
+
+    A security event shows no customer data: no customer, intent or amount (CA8).
+
+    Attributes:
+        queue_id: Row of case_queue; a decision closes it.
+        case_id: The case.
+        kind: escalation, audit_sample or security_event.
+        customer_id: Customer of the case; None for a security event.
+        intent: What the case is about; None for a security event.
+        amount_usd: USD amount of the identified charge, as the policy compared it; None when
+            there is no charge, it was not convertible, or it is a security event.
+        language: es or pt.
+        reason: Rule that handed the case to a person.
+        priority: normal, high or urgent.
+        sla_due_at: End of the SLA of its priority, on the real clock.
+        overdue: The SLA already ended.
+        updated: The case came back with the customer's answer (TRZ-28).
+        status: Status of the case.
+        recommended_action: What the system suggests.
+        can_approve: Approving has something to do: run the recommended registration, or
+            close a security event.
+        created_at: When the row entered the queue.
+    """
+
+    queue_id: int
+    case_id: str
+    kind: Literal["escalation", "audit_sample", "security_event"]
+    customer_id: str | None
+    intent: str | None
+    amount_usd: float | None
+    language: str | None
+    reason: str | None
+    priority: str
+    sla_due_at: datetime | None
+    overdue: bool
+    updated: bool
+    status: str
+    recommended_action: str | None
+    can_approve: bool
+    created_at: datetime
+
+
+class QueueOut(BaseModel):
+    """The analyst queue with one counter per filter (TRZ-27 CA2).
+
+    Attributes:
+        items: Open rows of the filter asked for, most urgent first.
+        counts: Rows of each filter, and "all"; each one is the length of that filter's items.
+    """
+
+    items: list[QueueItemOut]
+    counts: dict[str, int]
+
+
 class HumanDecisionIn(BaseModel):
-    """Operator decision on an escalated case.
+    """Analyst decision on a case in the queue. The analyst comes from the session.
+
+    Required fields depend on the decision and are checked by the service, which answers 400:
+    a rejection needs a reason of the closed list, a request for information needs the question.
 
     Attributes:
         decision: approve, reject or need_info.
+        reason: For a rejection, one of `autonomy.reversal_reasons` of the policy.
+        question: For need_info, what the customer is asked; PII is redacted before it is
+            stored and it is shown to the customer as written.
         note: Optional free text; PII is redacted before it is stored.
-        agent_id: Operator identifier.
     """
 
     decision: Literal["approve", "reject", "need_info"]
+    reason: str | None = Field(default=None, max_length=64)
+    question: str | None = Field(default=None, max_length=1000)
     note: str | None = Field(default=None, max_length=1000)
-    agent_id: str = Field(default="human", min_length=1, max_length=64)
+
+
+class DecisionOut(BaseModel):
+    """What an analyst decision did.
+
+    Attributes:
+        case_id: The case.
+        decision: approve, reject or need_info.
+        status: Status of the case after the decision.
+        dispute_folio: Folio of the dispute an approval registered and verified.
+        block_not_executed: The recommendation included a card block, which an approval does
+            not run: it needs the customer's explicit confirmation (design 3.2).
+        due_on: For need_info, the last business day for the customer's answer.
+    """
+
+    case_id: str
+    decision: str
+    status: str
+    dispute_folio: str | None = None
+    block_not_executed: bool = False
+    due_on: date | None = None
+
+
+class InfoRequestOut(BaseModel):
+    """The analyst's question on a clarification, as the customer sees it (TRZ-28).
+
+    Attributes:
+        id: Row of info_requests.
+        question: The question, PII-redacted, as the analyst wrote it.
+        asked_on: Simulated day it was asked.
+        due_on: Last business day to answer, with the country's holidays.
+        overdue: The deadline is before the simulated today.
+        status: open, answered or expired.
+        answered_at: When the customer answered.
+        answer: The customer's answer as the system stored it, PII-redacted.
+    """
+
+    id: int
+    question: str
+    asked_on: date
+    due_on: date
+    overdue: bool
+    status: str
+    answered_at: datetime | None
+    answer: str | None = None
+
+
+class InfoReplyIn(BaseModel):
+    """The customer's answer to the analyst's question.
+
+    Attributes:
+        text: The answer; PII is redacted before it is stored.
+    """
+
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class InfoReplyOut(BaseModel):
+    """The case after the customer answered.
+
+    Attributes:
+        case_id: The case.
+        status: Status the case went back to, with a person again.
+        answered_at: When the answer was stored.
+    """
+
+    case_id: str
+    status: str
+    answered_at: datetime
 
 
 class MetricsOut(BaseModel):
@@ -448,6 +582,9 @@ class ClarificationOut(BaseModel):
         passage_id: The demo policy passage that backs the deadline.
         review_hours: For a case with a person, the review time of its queue priority, the
             one the chat gave (demo policy).
+        info_request: The analyst's latest question on the case, if any (TRZ-28).
+        info_requests: Every question of the analyst on the case with its answer, oldest
+            first.
     """
 
     id: str
@@ -465,3 +602,5 @@ class ClarificationOut(BaseModel):
     overdue: bool = False
     passage_id: str | None = None
     review_hours: float | None = None
+    info_request: InfoRequestOut | None = None
+    info_requests: list[InfoRequestOut] = Field(default_factory=list)

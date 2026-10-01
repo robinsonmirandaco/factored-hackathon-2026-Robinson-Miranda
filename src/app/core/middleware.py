@@ -24,7 +24,7 @@ PAGE_POLICY = (
     "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 )
 _DOCS_PATHS = ("/docs", "/redoc")
-_WEB_PATHS = ("/assets/", "/index.html")
+_WEB_PATHS = ("/assets/", "/index.html", "/analista/")
 
 
 def install_trace_middleware(app: FastAPI) -> None:

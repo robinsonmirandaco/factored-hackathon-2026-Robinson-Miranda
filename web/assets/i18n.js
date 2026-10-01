@@ -101,6 +101,22 @@ const TEXT = {
     status_received: "Recibido",
     status_in_review: "En revisión",
     status_answered: "Respondido",
+    status_awaiting_customer: "Esperando tu respuesta",
+    infoTitle: "La analista te pregunta",
+    answerBy: "Responde antes del {date}",
+    answerOverdue: "El plazo para responder venció el {date}",
+    answerPlaceholder: "Escribe tu respuesta",
+    sendAnswer: "Enviar respuesta",
+    answered: "Respondiste. Una analista lo revisa.",
+    pendingQuestions: "Tienes {n} pregunta(s) de la analista por responder",
+    error_no_open_request: "Esta aclaración ya no espera tu respuesta.",
+    rejectedNote: "Revisamos tu aclaración y no procedió. Si sigues sin reconocer el cargo, escríbenos de nuevo con más detalles, como el monto, la fecha o el comercio.",
+    yourAnswer: "Tu respuesta",
+    error_nothing_to_approve: "No hay acción que ejecutar.",
+    error_charge_already_disputed: "El cargo ya tiene una aclaración abierta.",
+    error_reason_required: "Falta el motivo.",
+    error_reason_not_allowed: "El motivo no está en la lista.",
+    error_question_required: "Falta la pregunta.",
     askRegister: "¿Registramos la aclaración por {amount} de {merchant}?",
     askRegisterAndBlock:
       "¿Registramos la aclaración por {amount} de {merchant} y bloqueamos tu tarjeta {card}?",
@@ -249,6 +265,22 @@ const TEXT = {
     status_received: "Recebida",
     status_in_review: "Em análise",
     status_answered: "Respondida",
+    status_awaiting_customer: "Aguardando sua resposta",
+    infoTitle: "A analista pergunta",
+    answerBy: "Responda até {date}",
+    answerOverdue: "O prazo para responder venceu em {date}",
+    answerPlaceholder: "Escreva sua resposta",
+    sendAnswer: "Enviar resposta",
+    answered: "Você respondeu. Uma analista está analisando.",
+    pendingQuestions: "Você tem {n} pergunta(s) da analista para responder",
+    error_no_open_request: "Este esclarecimento não aguarda mais sua resposta.",
+    rejectedNote: "Revisamos seu esclarecimento e ele não foi aceito. Se você ainda não reconhece a cobrança, escreva de novo com mais detalhes, como o valor, a data ou o estabelecimento.",
+    yourAnswer: "Sua resposta",
+    error_nothing_to_approve: "Não há ação para executar.",
+    error_charge_already_disputed: "A cobrança já tem um esclarecimento aberto.",
+    error_reason_required: "Falta o motivo.",
+    error_reason_not_allowed: "O motivo não está na lista.",
+    error_question_required: "Falta a pergunta.",
     askRegister: "Registramos a contestação de {amount} de {merchant}?",
     askRegisterAndBlock:
       "Registramos a contestação de {amount} de {merchant} e bloqueamos o seu cartão {card}?",
@@ -320,7 +352,10 @@ export function label(t, prefix, code) {
 
 export function money(lang, amount, currency) {
   try {
-    return new Intl.NumberFormat(LOCALES[lang], { style: "currency", currency }).format(amount);
+    // Always the cents of the record: Intl drops them for COP, which would show 257.21 as 257.
+    return new Intl.NumberFormat(LOCALES[lang], {
+      style: "currency", currency, minimumFractionDigits: 2, maximumFractionDigits: 2,
+    }).format(amount);
   } catch {
     return `${amount} ${currency}`;
   }

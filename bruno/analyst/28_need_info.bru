@@ -1,0 +1,28 @@
+meta {
+  name: TRZ-27 CA5 asking for information leaves the case waiting for the customer
+  type: http
+  seq: 28
+}
+
+post {
+  url: {{baseUrl}}/cases/{{infoCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "need_info", "question": "¿Hiciste alguna compra en Mercado Libre ese día?"}
+}
+
+tests {
+  test("200 awaiting_customer with the deadline", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    expect(body.status).to.equal("awaiting_customer");
+    expect(body.due_on).to.match(/^2026-06-\d\d$/);
+  });
+}

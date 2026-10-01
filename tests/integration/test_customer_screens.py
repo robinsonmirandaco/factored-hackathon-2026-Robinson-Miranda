@@ -395,6 +395,17 @@ def test_the_web_is_served_with_its_security_policy(app_client: TestClient) -> N
     assert app_client.get("/health").headers["content-type"].startswith("application/json")
 
 
+def test_the_analyst_console_is_served_with_the_same_policy(app_client: TestClient) -> None:
+    page = app_client.get("/analista/")
+
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    assert page.headers["cache-control"] == "no-cache"
+    for asset in ("/assets/analyst.js", "/assets/base.css", "/assets/analyst.css"):
+        assert asset in page.text
+        assert app_client.get(asset).status_code == 200
+
+
 # ---- the chips of what was read (design 10.1) ------------------------------------------------
 
 READ_NETFLIX = "No reconozco 120 dólares en Netflix, todavía tengo la tarjeta"

@@ -1,0 +1,23 @@
+/* Analyst console layout, on top of base.css. */
+.login-title { margin: 20px 0 18px; font-size: 1.6rem; }
+.login-form { margin-top: 20px; }
+.queue-filters { margin-bottom: 16px; }
+.back { display: inline-block; margin-bottom: 12px; color: var(--ink-2); text-decoration: none; }
+.case-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.case-main .card + .card, .case-side .card + .card { margin-top: 16px; }
+.case-side { position: sticky; top: 16px; }
+.quote { margin: 0 0 8px; padding: 10px 14px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 6px; white-space: pre-wrap; }
+.candidates { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.candidate { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.candidate.in-set { border: 2px solid var(--primary); }
+.probability { font-size: 1.4rem; font-weight: 700; margin: 4px 0; }
+.action-row { padding: 10px 0; }
+.decision .stack > label { margin-top: 4px; }
+
+@media (max-width: 900px) {
+  .case-grid { grid-template-columns: 1fr; }
+  .case-side { position: static; }
+}
+.exchanges { margin: 0; padding-left: 20px; }
+.exchanges > li + li { margin-top: 16px; }
+.exchanges .question { font-weight: 600; margin: 0; }

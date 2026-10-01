@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-28 CA2 the customer answers and the case goes back with a person
+  type: http
+  seq: 30
+}
+
+post {
+  url: {{baseUrl}}/me/clarifications/{{infoCase}}/reply
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{colombiaToken}}
+}
+
+body:json {
+  {"text": "No, esa compra no la hice."}
+}
+
+tests {
+  test("200 escalated again", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("escalated");
+  });
+}

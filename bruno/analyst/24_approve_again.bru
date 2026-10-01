@@ -1,0 +1,26 @@
+meta {
+  name: the same approval sent again runs once
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{baseUrl}}/cases/{{approveCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "approve"}
+}
+
+tests {
+  test("200 with the same folio", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().dispute_folio).to.equal(bru.getVar("approvedFolio"));
+  });
+}

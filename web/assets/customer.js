@@ -5,8 +5,9 @@
 import { createClient } from "./api.js";
 import { day, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, canSend, clarificationLines, codeStep, createConversation, errorText,
-  movementDetail, reviewLine, statusTone, turnModel,
+  buttonMessage, canSend, clarificationLines, closedNote, codeStep, createConversation, deadlineKind,
+  errorText,
+  infoRequestViews, movementDetail, openQuestions, reviewLine, statusTone, turnModel,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -210,6 +211,16 @@ function failure(target, e) {
     e?.traceId ? el("p", { class: "muted small mono", text: `trace_id ${e.traceId}` }) : null));
 }
 
+// The dot on "Mis aclaraciones": questions of an analyst waiting for an answer (TRZ-28).
+function markQuestions(items) {
+  const n = openQuestions(items);
+  const dot = $("questions-dot");
+  dot.hidden = n === 0;
+  dot.textContent = String(n);
+  dot.title = t("pendingQuestions", { n });
+  return n;
+}
+
 function amountCell(item) {
   const main = el("span", { text: money(state.lang, item.amount, item.currency) });
   const approx = item.converted_amount != null
@@ -227,6 +238,7 @@ async function renderHome() {
     const [products, clarifications] = await Promise.all([
       api.call("/me/products"), api.call("/me/clarifications"),
     ]);
+    const questions = markQuestions(clarifications);
     const name = state.me.first_name;
     const cards = products.length
       ? el("div", { class: "grid" }, products.map((p) => el("div", { class: "card" },
@@ -247,7 +259,10 @@ async function renderHome() {
         el("div", { class: "row" },
           el("a", { class: "btn primary", href: "#/aclarar", text: t("navChat") }),
           el("a", { class: "btn", href: "#/movimientos", text: t("navMovements") }),
-          el("a", { class: "btn", href: "#/aclaraciones", text: `${t("navClarifications")} (${clarifications.length})` }))),
+          el("a", { class: "btn", href: "#/aclaraciones", text: `${t("navClarifications")} (${clarifications.length})` })),
+        questions
+          ? el("p", { class: "notice" }, el("a", { href: "#/aclaraciones", text: t("pendingQuestions", { n: questions }) }))
+          : null),
       el("div", { class: "card" }, el("h2", { text: t("products") }), cards),
     );
   } catch (e) {
@@ -311,14 +326,18 @@ async function renderClarifications() {
   const target = $("view-clarifications");
   try {
     const items = await api.call("/me/clarifications");
+    markQuestions(items);
     const list = items.length
       ? items.map((c) => {
         const { title, ref } = clarificationLines(t, state.lang, c);
         const review = reviewLine(t, c);
-        const due = review
+        const kind = deadlineKind(c);
+        const due = kind === "answer" || kind === "closed"
+          ? null
+          : kind === "review"
           ? el("span", { class: "sim-label" }, el("span", { class: "pill warn", text: review.text }), " ",
             el("span", { class: "badge sim", text: "simulado" }), ` ${review.label}`)
-          : c.due_date
+          : kind === "due"
           ? el("span", {
             class: `pill${c.overdue ? " bad" : ""}`,
             text: c.overdue ? t("overdueSince", { date: day(state.lang, c.due_date) }) : t("dueBy", { date: day(state.lang, c.due_date) }),
@@ -331,7 +350,13 @@ async function renderClarifications() {
           el("div", { class: "row small" },
             c.opened_on ? el("span", { class: "muted", text: t("openedOn", { date: day(state.lang, c.opened_on) }) }) : null,
             due),
-          el("div", { class: "muted small mono", text: ref }));
+          el("div", { class: "muted small mono", text: ref }),
+          infoBlock(c),
+          closedNote(t, c)
+            ? el("div", { class: "info-request" },
+              el("p", { class: "small", text: closedNote(t, c) }),
+              el("a", { class: "btn", href: "#/aclarar", text: t("navChat") }))
+            : null);
       })
       : [el("div", { class: "card" }, el("p", { class: "muted", text: t("noClarifications") }))];
     target.replaceChildren(
@@ -341,6 +366,49 @@ async function renderClarifications() {
   } catch (e) {
     failure(target, e);
   }
+}
+
+// The analyst's question and the form to answer it, on the clarification it belongs to.
+function infoBlock(item) {
+  const views = infoRequestViews(t, state.lang, item);
+  if (!views.length) return null;
+  return el("div", { class: "info-request" }, views.map((info) => infoEntry(item, info)));
+}
+
+function infoEntry(item, info) {
+  const head = [
+    el("div", { class: "small muted", text: t("infoTitle") }),
+    el("p", { class: "question", text: info.question }),
+  ];
+  if (!info.canAnswer) {
+    return el("div", { class: "info-entry" }, head,
+      info.answer
+        ? [el("div", { class: "small muted", text: t("yourAnswer") }), el("p", { class: "answer", text: info.answer })]
+        : null,
+      info.answered ? el("p", { class: "small muted", text: info.answered }) : null);
+  }
+  const answer = el("textarea", { maxlength: "2000", placeholder: t("answerPlaceholder"), "aria-label": t("answerPlaceholder") });
+  const button = el("button", { type: "submit", class: "btn primary", text: t("sendAnswer"), disabled: true });
+  const error = el("p", { class: "error", hidden: true });
+  answer.addEventListener("input", () => { button.disabled = !canSend(answer.value); });
+  const form = el("form", { class: "stack" }, answer, el("div", { class: "row" }, button), error);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!canSend(answer.value)) return;
+    button.disabled = true;
+    try {
+      await api.call(`/me/clarifications/${encodeURIComponent(item.case_id)}/reply`, {
+        method: "POST", body: { text: answer.value.trim() },
+      });
+      renderClarifications();
+    } catch (e) {
+      error.textContent = errorText(t, e);
+      error.hidden = false;
+      button.disabled = false;
+    }
+  });
+  return el("div", { class: "info-entry" }, head,
+    el("span", { class: `pill${info.overdue ? " bad" : " warn"}`, text: info.due }), form);
 }
 
 // ---- chat ---------------------------------------------------------------------------------

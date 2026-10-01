@@ -80,6 +80,14 @@ def _seed_operational_rows(admin_url: str) -> None:
                 ),
                 params,
             )
+            conn.execute(
+                text(
+                    "INSERT INTO info_requests (case_id, customer_id, question, asked_by, "
+                    "asked_on, due_on, status_before) VALUES (:k, :c, '¿Hiciste la compra?', "
+                    "'analista.demo', :d, :d, 'escalated')"
+                ),
+                {**params, "d": AT.date()},
+            )
     engine.dispose()
 
 
@@ -131,6 +139,7 @@ def test_every_customer_table_is_covered(two_customers: SchemaUrls) -> None:
         "complaints",
         "customers",
         "disputes",
+        "info_requests",
         "products",
         "transactions",
     ]

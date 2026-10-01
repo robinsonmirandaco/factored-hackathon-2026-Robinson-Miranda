@@ -1,0 +1,23 @@
+meta {
+  name: TRZ-28 CA4 the case is back in the queue marked updated
+  type: http
+  seq: 31
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("listed and updated", function() {
+    expect(res.getStatus()).to.equal(200);
+    const item = res.getBody().items.find((i) => i.case_id === bru.getVar("infoCase"));
+    expect(item.updated).to.equal(true);
+  });
+}

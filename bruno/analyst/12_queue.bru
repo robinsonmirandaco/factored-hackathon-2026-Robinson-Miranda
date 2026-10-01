@@ -1,0 +1,34 @@
+meta {
+  name: TRZ-27 CA1 CA2 the queue lists the case with a person and counts every filter
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("200 with the escalated case and its fields", function() {
+    const body = res.getBody();
+    expect(res.getStatus()).to.equal(200);
+    const item = body.items.find((i) => i.case_id === bru.getVar("dossierCase"));
+    expect(item).to.be.an("object");
+    for (const k of ["customer_id", "kind", "amount_usd", "language", "reason", "priority", "sla_due_at"]) {
+      expect(item).to.have.property(k);
+    }
+    expect(item.can_approve).to.equal(false);
+  });
+  test("every counter is set and all counts every row", function() {
+    const body = res.getBody();
+    expect(Object.keys(body.counts).sort()).to.eql(
+      ["all", "audit", "high_priority", "no_match", "over_1000_usd", "verification_failed"]);
+    expect(body.counts.all).to.equal(body.items.length);
+  });
+}

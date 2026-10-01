@@ -358,6 +358,7 @@ def register_dispute(
     case_id: str,
     transaction_id: str,
     dispute_type: str,
+    reason: str = "customer confirmed",
 ) -> ToolResult:
     """Registers a dispute on a transaction of the session customer (TRZ-18 CA1).
 
@@ -386,6 +387,7 @@ def register_dispute(
         case_id: Case that owns the action.
         transaction_id: Disputed transaction.
         dispute_type: Kind of dispute, the case intent.
+        reason: Who asked for it: the customer's confirmation, or an analyst's approval.
 
     Returns:
         The dispute, or the stored result on a replay.
@@ -431,7 +433,7 @@ def register_dispute(
                 case_id=case_id,
                 transaction_id=transaction_id,
                 dispute_type=dispute_type,
-                reason="customer confirmed",
+                reason=reason,
                 amount=tx.amount,
                 currency=tx.currency,
                 business_at=business_at,
