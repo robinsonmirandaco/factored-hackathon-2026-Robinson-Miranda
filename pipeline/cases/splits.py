@@ -31,6 +31,7 @@ from pipeline.cases.schema import CaseRecord, Split
 
 Part = Literal["dev", "calibration", "test_generated", "test_handwritten"]
 TEST_BLOCKS: tuple[Part, ...] = ("test_generated", "test_handwritten")
+CASE_CUSTOMERS = "case_customers.txt"
 
 
 class SplitMismatch(RuntimeError):
@@ -97,6 +98,33 @@ def check_separation(splits: dict[str, list[CaseRecord]]) -> None:
     for earlier, later in zip(order, order[1:], strict=False):
         if max(moments(splits[earlier])) >= min(moments(splits[later])):
             raise ValueError(f"{later} is not entirely after {earlier}")
+
+
+def write_case_customers(folder: Path, parts: dict[Part, list[CaseRecord]]) -> dict[str, Any]:
+    """Writes the customers that appear in any case, for the demo seed to leave out (TRZ-38).
+
+    The file holds ids only, one per line and sorted, and stays under DATA_DIR/eval with the
+    splits: the demo reads it instead of the split files, so it never opens a test case. A
+    customer counts when a case belongs to it or asks about it (`scenario.other_customer_id`).
+
+    Args:
+        folder: DATA_DIR/eval.
+        parts: Cases of every block.
+
+    Returns:
+        The manifest entry: file, count and SHA-256, without ids.
+    """
+    ids = {c.customer_id for cases in parts.values() for c in cases}
+    ids |= {
+        c.scenario.other_customer_id
+        for cases in parts.values()
+        for c in cases
+        if c.scenario.other_customer_id
+    }
+    data = "".join(f"{i}\n" for i in sorted(ids)).encode("utf-8")
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / CASE_CUSTOMERS).write_bytes(data)
+    return {"file": f"DATA_DIR/eval/{CASE_CUSTOMERS}", "count": len(ids), "sha256": sha256(data)}
 
 
 def summary(cases: list[CaseRecord]) -> dict[str, Any]:

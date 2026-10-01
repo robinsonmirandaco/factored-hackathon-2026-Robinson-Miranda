@@ -57,6 +57,7 @@ from pipeline.cases.splits import (
     check_separation,
     load_split,
     sha256,
+    write_case_customers,
     write_split,
 )
 from tests.cases_data import CONFIG, ROOT, SMALL_MIX, UNUSED_MERCHANT, EchoLLM, make_context
@@ -377,6 +378,24 @@ def _cases(ctx: Context) -> list[CaseRecord]:
     gen = Generator.load("b", ROOT, 1.0)
     bases = sample_split(ctx, "test", {"normal": 2}, "generator_b").bases
     return [c for b in bases for c in render_base(b, gen, para, 42, ctx.merchants, {})]
+
+
+def test_case_customers_lists_every_customer_of_a_case_and_nothing_else(
+    ctx: Context, tmp_path: Path
+) -> None:
+    cases = _cases(ctx)
+    asked = cases[0].model_copy(
+        update={"scenario": cases[0].scenario.model_copy(update={"other_customer_id": "C9"})}
+    )
+    entry = write_case_customers(tmp_path, {"dev": cases, "test_generated": [asked]})
+    data = (tmp_path / "case_customers.txt").read_bytes()
+    expected = sorted({c.customer_id for c in cases} | {"C9"})
+    assert data.decode().splitlines() == expected
+    assert entry == {
+        "file": "DATA_DIR/eval/case_customers.txt",
+        "count": len(expected),
+        "sha256": sha256(data),
+    }
 
 
 def test_a_changed_test_block_is_refused_unless_refrozen(ctx: Context, tmp_path: Path) -> None:

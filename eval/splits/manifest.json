@@ -1,4 +1,9 @@
 {
+ "case_customers": {
+  "count": 351,
+  "file": "DATA_DIR/eval/case_customers.txt",
+  "sha256": "6353860171ddb2f3bfe9ee9492e5df250fc70e5cb1cb68d986c81d219da267c4"
+ },
  "config_version": "1",
  "presence_rates": {
   "amount": 0.3318,
