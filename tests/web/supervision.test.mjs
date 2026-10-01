@@ -1,10 +1,11 @@
 // Supervision on the screens (TRZ-29, TRZ-32, TRZ-35): the audit label, the decision panel of an
 // audit sample, the review status, the reason of a rejection, the avatar counter and the switch.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
-  auditLabel, automationView, caseHeading, decisionDone, decisionPanel, queueRow, reasonLabel,
+  auditLabel, automationView, caseHeading, dialogKey, decisionDone, decisionPanel, queueRow, reasonLabel,
 } from "../../web/assets/analyst-view.js";
 import { translator } from "../../web/assets/i18n.js";
 import { closedNote, statusKey, statusTone, unreadBadge } from "../../web/assets/view.js";
@@ -73,4 +74,30 @@ test("the switch says its state and asks before it changes", () => {
   const off = automationView({ all_to_human: true });
   assert.equal(off.text, "Todo a humano");
   assert.equal(off.tone, "bad");
+});
+
+test("both directions of the switch ask in Spanish, with the action as the button", () => {
+  const on = automationView({ all_to_human: false });
+  assert.deepEqual([on.title, on.confirmLabel, on.cancelLabel], ["¿Mandar todo a humano?", "Mandar todo a humano", "Cancelar"]);
+  const off = automationView({ all_to_human: true });
+  assert.deepEqual([off.title, off.confirmLabel, off.cancelLabel], ["¿Reactivar la automatización?", "Reactivar la automatización", "Cancelar"]);
+});
+
+test("in the dialog Escape cancels and Tab stays on its two buttons", () => {
+  assert.deepEqual(dialogKey("Escape", false, 0, 2), { cancel: true });
+  assert.deepEqual(dialogKey("Tab", false, 0, 2), { focus: 1 });
+  assert.deepEqual(dialogKey("Tab", false, 1, 2), { focus: 0 });
+  assert.deepEqual(dialogKey("Tab", true, 0, 2), { focus: 1 });
+  assert.deepEqual(dialogKey("Tab", false, -1, 2), { focus: 0 });
+  assert.equal(dialogKey("Enter", false, 0, 2), null);
+});
+
+test("the console asks with the system's dialog, never the browser's own window", () => {
+  // The browser's window has no style and says Cancel and OK in English (QA of TRZ-35).
+  const js = readFileSync(new URL("../../web/assets/analyst.js", import.meta.url), "utf8");
+  assert.doesNotMatch(js, /window\.(confirm|alert|prompt)\(/);
+  const html = readFileSync(new URL("../../web/analista/index.html", import.meta.url), "utf8");
+  const dialog = html.slice(html.indexOf('id="switch-dialog"'));
+  assert.match(html, /<div class="backdrop" id="switch-dialog" hidden>/);
+  assert.match(dialog, /class="card modal" role="dialog" aria-modal="true" aria-labelledby="switch-title"/);
 });

@@ -324,15 +324,28 @@ export function caseHeading(kind, status, caseId) {
   return [...parts.filter(Boolean), caseId].join(" · ");
 }
 
-// The global automation switch (TRZ-35), as the header says it and as the confirmation asks it.
+// The global automation switch (TRZ-35), as the header says it and as its dialog asks it. Both
+// directions ask before they change.
 export function automationView(state) {
   const off = Boolean(state?.all_to_human);
+  const action = off ? "Reactivar la automatización" : "Mandar todo a humano";
   return {
     text: off ? "Todo a humano" : "Automatización activa",
     tone: off ? "bad" : "ok",
-    action: off ? "Reactivar la automatización" : "Mandar todo a humano",
+    action,
+    title: `¿${action}?`,
     confirm: off
-      ? "¿Reactivar la automatización? Los casos vuelven a registrarse solos según la política."
-      : "¿Mandar todo a humano? Ninguna aclaración se registrará sola: todas irán a la cola con el motivo «Automatización desactivada».",
+      ? "Los casos vuelven a registrarse solos según la política."
+      : "Ninguna aclaración se registrará sola: todas irán a la cola con el motivo «Automatización desactivada».",
+    confirmLabel: action,
+    cancelLabel: "Cancelar",
   };
+}
+
+// What a key does while the dialog is open: Escape cancels, Tab stays between its buttons.
+export function dialogKey(key, shift, focusedIndex, count) {
+  if (key === "Escape") return { cancel: true };
+  if (key !== "Tab" || count === 0) return null;
+  const next = shift ? (focusedIndex - 1 + count) % count : (focusedIndex + 1) % count;
+  return { focus: focusedIndex < 0 ? (shift ? count - 1 : 0) : next };
 }

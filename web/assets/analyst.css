@@ -53,6 +53,9 @@
 /* Global automation switch in the header (TRZ-35) */
 .pill.switch { border: 0; cursor: pointer; font: 600 12px/1 var(--sans); padding: 7px 12px; }
 
+/* The switch dialog: the buttons at the end, as the prototype's dialogs. */
+.dialog-buttons { justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
 /* Decision */
 .decision .soft-body { font-size: 15px; line-height: 1.5; color: var(--ink-2); }
 .decision-buttons { gap: 10px; }

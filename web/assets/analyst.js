@@ -5,7 +5,7 @@
 import { createClient } from "./api.js";
 import {
   REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, candidateCards,
-  caseHeading, clueChips, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
+  caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
@@ -82,17 +82,52 @@ async function loadAutomation() {
   drawAutomation();
 }
 
-$("automation").addEventListener("click", async () => {
+// The dialog of the switch, with the markup and style of the customer's expired session dialog:
+// the focus goes into it, Tab stays on its buttons, Escape or Cancelar closes it unchanged, and
+// the focus goes back to the switch.
+function openSwitchDialog() {
   const view = automationView(automation);
-  if (!window.confirm(view.confirm)) return;
+  $("switch-title").textContent = view.title;
+  $("switch-text").textContent = view.confirm;
+  $("switch-cancel").textContent = view.cancelLabel;
+  $("switch-confirm").textContent = view.confirmLabel;
+  $("switch-confirm").disabled = false;
+  $("switch-error").hidden = true;
+  $("switch-dialog").hidden = false;
+  $("switch-cancel").focus();
+}
+
+function closeSwitchDialog() {
+  $("switch-dialog").hidden = true;
+  $("automation").focus();
+}
+
+$("automation").addEventListener("click", openSwitchDialog);
+$("switch-cancel").addEventListener("click", closeSwitchDialog);
+
+$("switch-confirm").addEventListener("click", async () => {
+  const button = $("switch-confirm");
+  button.disabled = true;
   try {
     automation = await api.call("/automation", {
       method: "PUT", body: { all_to_human: !automation.all_to_human },
     });
     drawAutomation();
+    closeSwitchDialog();
   } catch (e) {
-    window.alert(errorText(e));
+    $("switch-error").textContent = errorText(e);
+    $("switch-error").hidden = false;
+    button.disabled = false;
   }
+});
+
+$("switch-dialog").addEventListener("keydown", (event) => {
+  const buttons = [$("switch-cancel"), $("switch-confirm")].filter((b) => !b.disabled);
+  const step = dialogKey(event.key, event.shiftKey, buttons.indexOf(document.activeElement), buttons.length);
+  if (!step) return;
+  event.preventDefault();
+  if (step.cancel) closeSwitchDialog();
+  else buttons[step.focus].focus();
 });
 
 $("login-form").addEventListener("submit", async (event) => {
