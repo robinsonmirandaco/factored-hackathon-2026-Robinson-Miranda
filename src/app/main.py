@@ -20,6 +20,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.middleware import install_trace_middleware
 from app.domain.business_days import load_calendars
 from app.domain.clock import SimulatedClock
+from app.domain.demo import load_demo
 from app.domain.identification import MAX_OPTIONS, Params, load_params
 from app.domain.policy import PolicyEngine, PolicyError, initial_autonomy
 from app.domain.policy_passages import load_passages
@@ -75,10 +76,14 @@ def build_runtime(settings: Settings) -> Runtime:
 
     Raises:
         PolicyError: If config/policy.yaml is invalid or does not fit the identification.
+        pydantic.ValidationError: In demo mode, if config/demo.yaml is invalid.
         ValueError: If JWT_SECRET is missing or too short, or DOCUMENT_HASH_KEY is empty.
     """
     check_secrets(settings)
     policy = PolicyEngine.from_file(settings.policy_path)
+    demo = load_demo(settings.demo_config_path) if settings.demo_mode else None
+    if demo is not None:
+        demo.check_reasons(policy.config.autonomy.reversal_reasons)
     return Runtime(
         settings=settings,
         db=Database(settings.database_url),
@@ -94,6 +99,7 @@ def build_runtime(settings: Settings) -> Runtime:
             calendars=load_calendars(settings.holidays_path),
             fact_check=settings.fact_check_enabled,
         ),
+        demo=demo,
     )
 
 
