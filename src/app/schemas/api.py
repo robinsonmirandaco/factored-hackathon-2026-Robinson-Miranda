@@ -296,6 +296,8 @@ class CaseOut(BaseModel):
     summary: str | None
     trace_id: str
     created_at: str | None
+    # Created by the demo state, not by a customer (TRZ-38).
+    simulated: bool = False
 
 
 class TraceEventOut(BaseModel):
@@ -357,6 +359,7 @@ class QueueItemOut(BaseModel):
         can_approve: Approving has something to do: run the recommended registration, or
             close a security event.
         created_at: When the row entered the queue.
+        simulated: The demo state created the case, not a customer (TRZ-38).
     """
 
     queue_id: int
@@ -375,6 +378,7 @@ class QueueItemOut(BaseModel):
     recommended_action: str | None
     can_approve: bool
     created_at: datetime
+    simulated: bool = False
 
 
 class QueueOut(BaseModel):

@@ -201,3 +201,5 @@ class Dossier(_Strict):
     later_messages: list[LaterMessage]
     info_exchanges: list[InfoExchange]
     audit_draw: AuditDraw | None = None
+    # Created by the demo state, not by a customer (TRZ-38).
+    simulated: bool = False

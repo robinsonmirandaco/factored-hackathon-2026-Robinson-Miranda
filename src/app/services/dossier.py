@@ -168,6 +168,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             recommended_action=None,
             later_messages=[],
             info_exchanges=[],
+            simulated=case.simulated,
         )
     read = [r for r in rows if (r.actor, r.action) == ("agent", "comprehend")]
     original = (read[0].payload or {}).get("redacted_text") if read else None
@@ -186,6 +187,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         case_id=case.id,
         trace_id=case.trace_id,
         case_kind="audit_sample" if sampled else "escalation",
+        simulated=case.simulated,
         language=case.language,
         original_message=original,
         machine_translation=(

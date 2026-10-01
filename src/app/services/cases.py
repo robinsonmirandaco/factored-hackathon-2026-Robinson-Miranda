@@ -226,6 +226,7 @@ def _queue_item(session: Session, q: QueueItem, c: Case, now: datetime) -> Queue
         # Approving a security event closes it; any other case needs a registration to run.
         can_approve=security or approvable(c),
         created_at=q.created_at,
+        simulated=c.simulated,
     )
 
 
@@ -296,4 +297,5 @@ def _to_out(c: Case) -> CaseOut:
         summary=c.summary,
         trace_id=c.trace_id,
         created_at=c.created_at.isoformat() if c.created_at else None,
+        simulated=c.simulated,
     )

@@ -111,6 +111,8 @@ class Case(Base):
     human_decision: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
     trace_id: Mapped[str] = mapped_column(Text)
+    # Created by the demo state, not by a customer (TRZ-38).
+    simulated: Mapped[bool] = mapped_column(Boolean, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
