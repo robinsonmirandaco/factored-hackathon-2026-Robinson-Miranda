@@ -72,13 +72,15 @@ class Database:
 
     @contextmanager
     def session(
-        self, customer_id: str | None = None, role: Role | None = None
+        self, customer_id: str | None = None, role: Role | None = None, keep: bool = True
     ) -> Iterator[Session]:
         """Opens a session that commits on success and rolls back on any error.
 
         Args:
             customer_id: Customer whose rows the session may see.
             role: "analyst" to see every customer's rows.
+            keep: False rolls the work back on success too, to try something without keeping
+                it. Sequences still advance: nextval is not transactional.
 
         Yields:
             An open SQLAlchemy session.
@@ -86,7 +88,10 @@ class Database:
         session = self._sessions(info={"customer_id": customer_id, "role": role})
         try:
             yield session
-            session.commit()
+            if keep:
+                session.commit()
+            else:
+                session.rollback()
         except Exception:
             session.rollback()
             raise

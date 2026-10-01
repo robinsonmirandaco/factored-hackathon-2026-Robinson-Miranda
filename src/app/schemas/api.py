@@ -669,3 +669,31 @@ class AutomationOut(BaseModel):
     all_to_human: bool
     changed_by: str | None = None
     changed_at: datetime | None = None
+
+
+class DemoStateOut(BaseModel):
+    """Whether the demo can be reset here (TRZ-38).
+
+    Attributes:
+        seeded: `make seed-demo` prepared this database.
+        demo_version: Version of config/demo.yaml.
+    """
+
+    seeded: bool
+    demo_version: str
+
+
+class DemoResetOut(BaseModel):
+    """What a demo reset created (TRZ-38).
+
+    Attributes:
+        cases_created: Simulated cases the reset created through the agent.
+        reviews: Analyst reviews in the PT-BR cell.
+        reversals: Reviews among them that reverse the system.
+        demo_version: Version of config/demo.yaml.
+    """
+
+    cases_created: int
+    reviews: int
+    reversals: int
+    demo_version: str

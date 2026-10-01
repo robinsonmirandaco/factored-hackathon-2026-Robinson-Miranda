@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     # Test credentials of the demo analyst; an empty password lets no analyst in.
     analyst_demo_user: str = "analista.demo"
     analyst_demo_password: str = ""
+    # Who the demo people are and which cases a reset creates (TRZ-38); read only in demo_mode.
+    demo_config_path: Path = Path("config/demo.yaml")
 
     policy_path: str = "config/policy.yaml"
     # Demo policy passages and bank holidays: the response deadline of a dispute (TRZ-21).
