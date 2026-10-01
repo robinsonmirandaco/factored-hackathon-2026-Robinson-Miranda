@@ -726,6 +726,11 @@ _REPLIES: dict[str, dict[str, str]] = {
             "cargo cuando quieras."
         ),
         "block_declined": "De acuerdo, tu tarjeta sigue activa. Tu aclaración sigue registrada.",
+        "block_not_run": (
+            "En este momento no podemos bloquear tu tarjeta desde aquí. Bloquéala de inmediato "
+            "con la opción de bloqueo de la app de tu banco o llamando a la línea de bloqueo que "
+            "aparece en el sitio oficial del banco. Tu aclaración sigue registrada."
+        ),
     },
     "pt": {
         "registered_verified": (
@@ -848,6 +853,11 @@ _REPLIES: dict[str, dict[str, str]] = {
         "block_declined": (
             "Tudo bem, o seu cartão continua ativo. A sua contestação continua registrada."
         ),
+        "block_not_run": (
+            "Neste momento não podemos bloquear o seu cartão por aqui. Bloqueie-o agora mesmo "
+            "pela opção de bloqueio do app do seu banco ou ligando para a central de bloqueio "
+            "indicada no site oficial do banco. A sua contestação continua registrada."
+        ),
     },
 }
 
@@ -856,6 +866,9 @@ _REPLIES: dict[str, dict[str, str]] = {
 # threshold or system name. Prefixed to the handoff reply by code.
 HANDOFF_REASONS: dict[str, dict[str, str]] = {
     "es": {
+        "escalate.automation_disabled": (
+            "En este momento, cada aclaración la revisa una persona antes de registrarse."
+        ),
         "escalate.comprehension_unavailable": "No pudimos procesar tu mensaje en este momento.",
         "escalate.clarifications_exhausted": "No logramos identificar el cargo con certeza.",
         "escalate.amount_above_human_review": "Por el monto de este cargo, lo revisa una persona.",
@@ -878,6 +891,9 @@ HANDOFF_REASONS: dict[str, dict[str, str]] = {
         ),
     },
     "pt": {
+        "escalate.automation_disabled": (
+            "Neste momento, cada contestação é revisada por uma pessoa antes do registro."
+        ),
         "escalate.comprehension_unavailable": "Não conseguimos processar a sua mensagem agora.",
         "escalate.clarifications_exhausted": (
             "Não conseguimos identificar a cobrança com certeza."
@@ -954,6 +970,7 @@ def reply_key(facts: dict[str, Any]) -> str:
         "card_not_blocked": "card_not_blocked",
         "declined": "declined",
         "block_declined": "block_declined",
+        "block_not_run": "block_not_run",
     }.get(str(outcome), "escalated")
 
 

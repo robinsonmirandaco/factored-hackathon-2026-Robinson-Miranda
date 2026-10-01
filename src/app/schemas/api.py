@@ -383,10 +383,12 @@ class QueueOut(BaseModel):
     Attributes:
         items: Open rows of the filter asked for, most urgent first.
         counts: Rows of each filter, and "all"; each one is the length of that filter's items.
+        audit_sample_rate: rho of the policy, which labels an audit sample (TRZ-29 CA3).
     """
 
     items: list[QueueItemOut]
     counts: dict[str, int]
+    audit_sample_rate: float
 
 
 class HumanDecisionIn(BaseModel):
@@ -567,8 +569,8 @@ class ClarificationOut(BaseModel):
     Attributes:
         id: Folio of a dispute, case id of a case, or complaint id of the bank's records.
         source: disputes, cases or complaints.
-        status: registered for a dispute; the case status for a case; received, in_review or
-            answered for a claim.
+        status: registered for a dispute, or in_review once an analyst reversed its audit
+            sample; the case status for a case; received, in_review or answered for a claim.
         case_id: The TRAZO case of a dispute or case.
         intent: What it is about: the dispute type, or the case's intent.
         folio: Folio of the registered dispute.
@@ -585,6 +587,8 @@ class ClarificationOut(BaseModel):
         info_request: The analyst's latest question on the case, if any (TRZ-28).
         info_requests: Every question of the analyst on the case with its answer, oldest
             first.
+        reason: For a rejected case, the reason of the closed list the analyst chose; the web
+            tells it in plain words (TRZ-32 CA3).
     """
 
     id: str
@@ -604,3 +608,60 @@ class ClarificationOut(BaseModel):
     review_hours: float | None = None
     info_request: InfoRequestOut | None = None
     info_requests: list[InfoRequestOut] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class NotificationOut(BaseModel):
+    """One notification of a decision on the customer's clarification (TRZ-32).
+
+    Attributes:
+        id: The notification.
+        case_id: The case it is about.
+        kind: approved, rejected, info_requested or audit_reversed.
+        text: What the customer is told, written by code and checked by the fact checker.
+        created_at: When it was written.
+        read: The customer opened it.
+    """
+
+    id: int
+    case_id: str
+    kind: Literal["approved", "rejected", "info_requested", "audit_reversed"]
+    text: str
+    created_at: datetime
+    read: bool
+
+
+class NotificationsOut(BaseModel):
+    """The customer's notifications, newest first.
+
+    Attributes:
+        items: The notifications.
+        unread: How many are not read yet; the avatar shows it.
+    """
+
+    items: list[NotificationOut]
+    unread: int
+
+
+class AutomationIn(BaseModel):
+    """The analyst turns the global automation switch on or off (TRZ-35).
+
+    Attributes:
+        all_to_human: True sends every dispute to a person; false gives automation back.
+    """
+
+    all_to_human: bool
+
+
+class AutomationOut(BaseModel):
+    """State of the global automation switch.
+
+    Attributes:
+        all_to_human: Every dispute goes to a person.
+        changed_by: Analyst of the last change; None if it never changed.
+        changed_at: When it last changed, UTC.
+    """
+
+    all_to_human: bool
+    changed_by: str | None = None
+    changed_at: datetime | None = None

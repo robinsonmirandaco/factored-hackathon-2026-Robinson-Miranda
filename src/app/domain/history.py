@@ -258,6 +258,8 @@ def _decline(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
 
 
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if p.get("kind") == "audit_sample":
+        return _audit_decision(lang, p, r)
     decision = _label(_DECISIONS, lang, p.get("decision"))
     who = r.get("analyst") or "?"
     es = lang == "es"
@@ -294,6 +296,91 @@ def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
             else f". O cliente pode responder até {_day(lang, r['due_on'])}"
         )
     return line + "."
+
+
+def _audit_decision(lang: Lang, p: Fields, r: Fields) -> str:
+    who = r.get("analyst") or "?"
+    if p.get("decision") != "reject":
+        if lang == "es":
+            return (
+                f"La analista {who} confirmó la muestra de auditoría: nada cambia para el cliente."
+            )
+        return f"A analista {who} confirmou a amostra de auditoria: nada muda para o cliente."
+    reason = REVERSAL_REASONS[lang].get(str(p.get("reason")), "?")
+    if lang == "es":
+        return (
+            f"La analista {who} revirtió la muestra de auditoría: {reason}. La aclaración pasó a "
+            "revisión por una analista; la disputa registrada no se anula."
+        )
+    return (
+        f"A analista {who} reverteu a amostra de auditoria: {reason}. A contestação passou para "
+        "revisão por uma analista; a contestação registrada não é anulada."
+    )
+
+
+def _audit_draw(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    rho = f"{p.get('rho', 0):.2f}".replace(".", ",")
+    draw = (
+        f"n = {p.get('n')}, semilla {p.get('seed')}"
+        if lang == "es"
+        else (f"n = {p.get('n')}, semente {p.get('seed')}")
+    )
+    if r.get("selected"):
+        if lang == "es":
+            return f"Sorteo de auditoría ({draw}): el caso salió en la muestra (ρ = {rho})."
+        return f"Sorteio de auditoria ({draw}): o caso saiu na amostra (ρ = {rho})."
+    if lang == "es":
+        return f"Sorteo de auditoría ({draw}): el caso no salió en la muestra (ρ = {rho})."
+    return f"Sorteio de auditoria ({draw}): o caso não saiu na amostra (ρ = {rho})."
+
+
+_NOTICES: dict[Lang, dict[str, str]] = {
+    "es": {
+        "approved": "la aprobación con su folio",
+        "rejected": "el rechazo con su motivo",
+        "info_requested": "la pregunta de la analista con su plazo",
+        "audit_reversed": "que su aclaración está en revisión",
+    },
+    "pt": {
+        "approved": "a aprovação com o protocolo",
+        "rejected": "a rejeição com o motivo",
+        "info_requested": "a pergunta da analista com o prazo",
+        "audit_reversed": "que a contestação está em revisão",
+    },
+}
+
+
+def _notify(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    what = _label(_NOTICES, lang, p.get("kind"))
+    passed = r.get("fact_check_passed")
+    if lang == "es":
+        check = "verificado" if passed else "sin respaldo, se envió el texto sin cifras"
+        return f"Se notificó al cliente en la app {what} (texto {check})."
+    check = "verificado" if passed else "sem respaldo, foi enviado o texto sem números"
+    return f"O cliente foi notificado no app sobre {what} (texto {check})."
+
+
+def _automation_disabled(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return (
+            "La automatización estaba desactivada: el bloqueo ofrecido no se ejecutó y se indicó "
+            "al cliente bloquear la tarjeta por el canal del banco."
+        )
+    return (
+        "A automação estava desativada: o bloqueio oferecido não foi executado e o cliente foi "
+        "orientado a bloquear o cartão pelo canal do banco."
+    )
+
+
+def _automation_switch(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    who = r.get("analyst") or "?"
+    if r.get("after"):
+        if lang == "es":
+            return f"La analista {who} mandó todo a humano: la automatización quedó desactivada."
+        return f"A analista {who} mandou tudo para humanos: a automação ficou desativada."
+    if lang == "es":
+        return f"La analista {who} reactivó la automatización."
+    return f"A analista {who} reativou a automação."
 
 
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -619,6 +706,10 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,
     ("human", "decision"): _human_decision,
+    ("policy", "audit_draw"): _audit_draw,
+    ("system", "notify"): _notify,
+    ("agent", "automation_disabled"): _automation_disabled,
+    ("human", "automation_switch"): _automation_switch,
     ("customer", "info_reply"): _info_reply,
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,

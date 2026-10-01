@@ -33,6 +33,7 @@ from app.core.errors import AppError
 from app.domain.history import Lang, intent_label
 from app.schemas.dossier import (
     ActionTaken,
+    AuditDraw,
     Clue,
     Dossier,
     Fact,
@@ -49,8 +50,9 @@ from app.services.cases import DISPUTE_INTENTS, HANDOFF_STATUSES
 from app.services.clues import CLUE_FIELDS, last_clues
 
 # A dossier opens while the case is with a person, waits for the customer's answer, or was
-# decided by an analyst, who reads there what the decision did.
-DOSSIER_STATUSES = (*HANDOFF_STATUSES, "awaiting_customer", "approved", "rejected")
+# decided by an analyst, who reads there what the decision did; also for a case the audit sample
+# selected (TRZ-29), and for one whose audit an analyst reversed.
+DOSSIER_STATUSES = (*HANDOFF_STATUSES, "awaiting_customer", "approved", "rejected", "in_review")
 
 # The closed list of what the system could not confirm, in the analyst's language.
 _QUESTIONS: dict[Lang, dict[str, str]] = {
@@ -125,13 +127,16 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
     case = session.get(Case, case_id)
     if case is None:
         raise AppError("case_not_found", f"Case {case_id} not found.", 404)
-    if case.status not in DOSSIER_STATUSES:
-        raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
     rows = list(
         session.execute(
             select(AuditRecord).where(AuditRecord.case_id == case.id).order_by(AuditRecord.id)
         ).scalars()
     )
+    drawn = _last(rows, "policy", "audit_draw")
+    sampled = drawn is not None and bool((drawn.result or {}).get("selected"))
+    # A case the audit sample selected is with a person although the system resolved it.
+    if case.status not in DOSSIER_STATUSES and not sampled:
+        raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
     decide = _last(rows, "policy", "decide")
     rule = (
         RuleTriggered(
@@ -180,7 +185,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
     return Dossier(
         case_id=case.id,
         trace_id=case.trace_id,
-        case_kind="escalation",
+        case_kind="audit_sample" if sampled else "escalation",
         language=case.language,
         original_message=original,
         machine_translation=(
@@ -206,6 +211,17 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             if (r.actor, r.action) == ("agent", "customer_note")
         ],
         info_exchanges=_info_exchanges(session, case),
+        audit_draw=(
+            AuditDraw(
+                seed=drawn.payload["seed"],
+                n=drawn.payload["n"],
+                rho=drawn.payload["rho"],
+                u=drawn.result["u"],
+                source=Source(table="audit_log", id=str(drawn.id)),
+            )
+            if sampled and drawn is not None and drawn.payload and drawn.result
+            else None
+        ),
     )
 
 

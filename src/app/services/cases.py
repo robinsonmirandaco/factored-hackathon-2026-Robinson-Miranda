@@ -141,7 +141,10 @@ def get_history(session: Session, case_id: str, lang: Lang) -> list[HistoryEntry
 
 
 def list_queue(
-    session: Session, human_review_above: float, only: QueueFilter | None = None
+    session: Session,
+    human_review_above: float,
+    only: QueueFilter | None = None,
+    audit_sample_rate: float = 0.0,
 ) -> QueueOut:
     """Lists the open rows of the queue a person must decide, most urgent first (TRZ-27).
 
@@ -152,6 +155,7 @@ def list_queue(
         session: Open session with the analyst role.
         human_review_above: USD amount above which a case is a large one, from the policy.
         only: Filter to apply; None lists every open row.
+        audit_sample_rate: rho of the policy, returned so the console labels an audit sample.
 
     Returns:
         The rows of the filter and the counter of every filter over the same open rows.
@@ -178,7 +182,11 @@ def list_queue(
         "audit": lambda i: i.kind == "audit_sample",
     }
     counts = {"all": len(items)} | {k: sum(map(f, items)) for k, f in tests.items()}
-    return QueueOut(items=[i for i in items if only is None or tests[only](i)], counts=counts)
+    return QueueOut(
+        items=[i for i in items if only is None or tests[only](i)],
+        counts=counts,
+        audit_sample_rate=audit_sample_rate,
+    )
 
 
 def approvable(case: Case) -> bool:

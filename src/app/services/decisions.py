@@ -7,9 +7,18 @@ analyst comes from the session, never from the body.
 Approving runs the recommended registration with its read-back, the same tool and key the agent
 uses. It does not block the card: a block needs the customer's explicit confirmation (design
 3.2), so a recommendation that includes one leaves the block not executed.
+
+An audit sample (TRZ-29) is a case the system already resolved: the analyst confirms it, which
+changes nothing for the customer, or reverses it with a reason of the closed list. A reversal
+puts the clarification in review by an analyst and notifies the customer; the registered dispute
+is not annulled, since no tool annuls one (design 3.2). Its audit row says it is a review of an
+automatic action, whether it is a reversal, the reason and the intent x language cell, which is
+what the Wilson rule of TRZ-30 counts.
+
+Every decision the customer must hear about writes a notification (TRZ-32).
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -31,6 +40,7 @@ from app.services.cases import (
     VERIFICATION_FAILED_REASON,
     approvable,
 )
+from app.services.notifications import notify
 from app.services.verification import verify_dispute
 
 
@@ -74,11 +84,15 @@ def _record(
         .where(QueueItem.case_id == case_id, QueueItem.resolved_at.is_(None))
         .with_for_update()
     ).scalar_one_or_none()
+    if row is not None and row.kind == "audit_sample":
+        return _audit(session, deps, analyst, case, row, body)
     if row is None or case.status not in HANDOFF_STATUSES:
         if (stored := _replay(session, case_id, body.decision)) is not None:
             return stored
         raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
     _validate(deps, case, body)
+    # A security event is not a clarification of the customer: it is never told (TRZ-27 CA8).
+    security = case.status == "security_blocked"
     result: dict[str, Any] = {"analyst": analyst, "system_recommended": case.recommended_action}
     question: str | None = None
     if body.decision == "approve":
@@ -111,7 +125,77 @@ def _record(
         idempotency_key=f"decision:{row.id}",
         customer_id=case.customer_id,
     )
+    if not security:
+        _notify(session, case, body, result, f"decision:{row.id}")
     return _out(case_id, body.decision, result)
+
+
+def _notify(
+    session: Session, case: Case, body: HumanDecisionIn, result: dict[str, Any], key: str
+) -> None:
+    """Tells the customer what was decided. An approval whose read-back failed is back with a
+    person and is not told yet."""
+    if case.status == "approved" and result.get("folio"):
+        notify(session, case, "approved", key, folio=str(result["folio"]))
+    elif case.status == "rejected":
+        notify(session, case, "rejected", key, reason=body.reason)
+    elif case.status == "awaiting_customer":
+        notify(session, case, "info_requested", key, due=date.fromisoformat(result["due_on"]))
+
+
+def _audit(
+    session: Session,
+    deps: AgentDeps,
+    analyst: str,
+    case: Case,
+    row: QueueItem,
+    body: HumanDecisionIn,
+) -> DecisionOut:
+    """Confirms or reverses an audit sample (TRZ-29 CA5)."""
+    if body.decision == "need_info":
+        raise AppError(
+            "decision_not_allowed", "An audit sample can only be confirmed or reversed.", 409
+        )
+    _validate(deps, case, body)
+    reversal = body.decision == "reject"
+    result: dict[str, Any] = {
+        "analyst": analyst,
+        "system_recommended": case.recommended_action,
+        # What TRZ-30 counts: one review of an action the system ran on its own, in its cell.
+        "review": {
+            "of": "audit_sample",
+            "system_action": case.recommended_action,
+            "reversal": reversal,
+            "reason": body.reason if reversal else None,
+            "cell": {"intent": case.intent, "language": case.language},
+        },
+        # The dispute stays registered: no tool annuls one.
+        "dispute_annulled": False,
+    }
+    if reversal:
+        case.status = "in_review"
+        case.human_decision = body.decision
+    row.resolved_at = utcnow()
+    result["status"] = case.status
+    write_audit(
+        session,
+        "human",
+        "decision",
+        case.id,
+        {
+            "decision": body.decision,
+            "reason": body.reason,
+            "note": redact(body.note)[0] if body.note else None,
+            "queue_id": row.id,
+            "kind": "audit_sample",
+        },
+        result,
+        idempotency_key=f"decision:{row.id}",
+        customer_id=case.customer_id,
+    )
+    if reversal:
+        notify(session, case, "audit_reversed", f"decision:{row.id}")
+    return _out(case.id, body.decision, result)
 
 
 def _validate(deps: AgentDeps, case: Case, body: HumanDecisionIn) -> None:

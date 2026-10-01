@@ -154,7 +154,7 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
     }
     for r in rows:
         assert r.actor and r.action and r.result is not None, r.action
-        assert r.policy_version == "2026.09.3", r.action
+        assert r.policy_version == "2026.09.4", r.action
         # Only the read-back after acting says whether an action was verified (TRZ-19).
         assert r.verified is (True if r.action == "verify_action" else None), r.action
         if by_llm(r):
@@ -295,7 +295,7 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
     said = next(e for e in pt.json() if e["action"] == "recognize")
     assert said["text"] == "O cliente disse: «Continuo sem reconhecer»."
     decide = next(e for e in es.json() if e["action"] == "decide")
-    assert decide["text"].startswith("La política v2026.09.3")
+    assert decide["text"].startswith("La política v2026.09.4")
     assert all(e["text"] != p["text"] for e, p in zip(es.json(), pt.json(), strict=True))
     # Only the sentences: timestamps and trace ids can contain "100" by chance.
     texts = " ".join(e["text"] for e in es.json())

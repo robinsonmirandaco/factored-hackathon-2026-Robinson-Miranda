@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import select, text, tuple_
 from sqlalchemy.orm import Session
 
-from app.adapters.db.models import Case, Customer, Dispute, Product, Transaction
+from app.adapters.db.models import AuditRecord, Case, Customer, Dispute, Product, Transaction
 from app.adapters.db.rates import rates_between
 from app.core.errors import AppError
 from app.domain.business_days import HolidayCalendar
@@ -232,11 +232,14 @@ def list_clarifications(
     for d in disputes:
         with_dispute.add(d.case_id)
         tx = session.get(Transaction, d.transaction_id)
+        case = session.get(Case, d.case_id)
+        # An audit an analyst reversed puts the registered dispute in review (TRZ-29 CA5).
+        reviewed = case is not None and case.status == "in_review"
         out.append(
             ClarificationOut(
                 id=str(d.folio),
                 source="disputes",
-                status="registered",
+                status="in_review" if reviewed else "registered",
                 case_id=d.case_id,
                 intent=d.dispute_type,
                 folio=d.folio,
@@ -275,6 +278,7 @@ def list_clarifications(
                 charge_at=tx.transaction_date if tx else None,
                 info_request=latest_request(session, clock, c.id),
                 info_requests=all_requests(session, clock, c.id),
+                reason=_rejection_reason(session, c) if c.status == "rejected" else None,
             )
         )
     out += [
@@ -285,6 +289,22 @@ def list_clarifications(
         if c["source"] == "complaints"
     ]
     return out
+
+
+def _rejection_reason(session: Session, case: Case) -> str | None:
+    """The reason of the closed list of the analyst's rejection, from its audit row."""
+    row = session.execute(
+        select(AuditRecord)
+        .where(
+            AuditRecord.case_id == case.id,
+            AuditRecord.actor == "human",
+            AuditRecord.action == "decision",
+        )
+        .order_by(AuditRecord.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    reason = (row.payload or {}).get("reason") if row is not None else None
+    return str(reason) if reason else None
 
 
 def _deadline_fields(claim: dict[str, Any] | None) -> dict[str, Any]:

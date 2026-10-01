@@ -162,12 +162,30 @@ class RuleTriggered(_Strict):
     autonomy_level: str | None
 
 
+class AuditDraw(_Strict):
+    """The draw that put a case the system resolved on its own in the audit sample (TRZ-29).
+
+    Attributes:
+        seed: Seed of the policy.
+        n: Number of the draw; with the seed, enough to recompute it.
+        rho: Sample rate of the policy.
+        u: The number drawn; the case was selected because u < rho.
+        source: The audit row of the draw.
+    """
+
+    seed: int
+    n: int
+    rho: float
+    u: float
+    source: Source
+
+
 class Dossier(_Strict):
     """Everything the analyst needs to decide without asking again (design 12)."""
 
     case_id: str
     trace_id: str
-    case_kind: Literal["escalation", "security_event"]
+    case_kind: Literal["escalation", "security_event", "audit_sample"]
     language: str | None
     original_message: str | None
     machine_translation: Translation | None
@@ -182,3 +200,4 @@ class Dossier(_Strict):
     recommended_action: str | None
     later_messages: list[LaterMessage]
     info_exchanges: list[InfoExchange]
+    audit_draw: AuditDraw | None = None
