@@ -1,0 +1,26 @@
+meta {
+  name: log in as the analyst
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/auth/analyst/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {"username": "{{analystUser}}", "password": "{{analystPassword}}"}
+}
+
+script:post-response {
+  bru.setVar("analystToken", res.getBody().access_token);
+}
+
+tests {
+  test("200 analyst session", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().role).to.equal("analyst");
+  });
+}

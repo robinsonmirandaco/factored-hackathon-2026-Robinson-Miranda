@@ -231,8 +231,25 @@ export function deadlineKind(item) {
   return "none";
 }
 
-// What a closed clarification tells the customer: a rejection says it did not proceed and what
-// to do next, never the analyst's internal reason (QA of TRZ-27/28).
+// What a closed clarification tells the customer: a rejection says it did not proceed, why in
+// plain words from the closed list of reasons (TRZ-32 CA3), and what to do next. The analyst's
+// note is never shown (QA of TRZ-27/28).
 export function closedNote(t, item) {
-  return item.status === "rejected" ? t("rejectedNote") : null;
+  if (item.status !== "rejected") return null;
+  const why = item.reason ? label(t, "reason", item.reason) : null;
+  return why && why !== item.reason
+    ? `${t("rejectedWhy", { reason: why })} ${t("rejectedNote")}`
+    : t("rejectedNote");
+}
+
+// The status key of a clarification: a registered dispute whose audit an analyst reversed is in
+// review by an analyst (TRZ-29 CA5), not "in review" as a bank claim says.
+export function statusKey(item) {
+  return item.source === "disputes" && item.status === "in_review" ? "under_review" : item.status;
+}
+
+// The counter on the avatar: notifications not read yet (TRZ-32 CA2).
+export function unreadBadge(t, unread) {
+  const n = Number(unread) || 0;
+  return { hidden: n === 0, text: n > 9 ? "9+" : String(n), title: t("notificationsUnread", { n }) };
 }

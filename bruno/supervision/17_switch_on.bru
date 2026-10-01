@@ -1,0 +1,27 @@
+meta {
+  name: TRZ-35 CA1 CA3 the analyst sends everything to a person
+  type: http
+  seq: 17
+}
+
+put {
+  url: {{baseUrl}}/automation
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"all_to_human": true}
+}
+
+tests {
+  test("all_to_human true, by the analyst", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().all_to_human).to.equal(true);
+    expect(res.getBody().changed_by).to.equal(bru.getEnvVar("analystUser"));
+  });
+}

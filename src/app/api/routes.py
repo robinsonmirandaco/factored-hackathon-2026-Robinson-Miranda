@@ -18,6 +18,8 @@ from app.domain.history import Lang
 from app.domain.recognition import ChargeDetail
 from app.schemas.api import (
     AnalystLoginIn,
+    AutomationIn,
+    AutomationOut,
     CaseOut,
     ChargeOut,
     ChatIn,
@@ -33,6 +35,8 @@ from app.schemas.api import (
     MeOut,
     MetricsOut,
     MovementsOut,
+    NotificationOut,
+    NotificationsOut,
     OtpRequestIn,
     OtpRequestOut,
     OtpVerifyIn,
@@ -43,7 +47,16 @@ from app.schemas.api import (
     TraceEventOut,
 )
 from app.schemas.dossier import Dossier
-from app.services import auth, cases, decisions, dossier, info_requests, me
+from app.services import (
+    auth,
+    automation,
+    cases,
+    decisions,
+    dossier,
+    info_requests,
+    me,
+    notifications,
+)
 from app.services.agent import handle_message, pending_detail
 
 router = APIRouter()
@@ -261,6 +274,28 @@ def get_clarifications(
     )
 
 
+@router.get(
+    "/me/notifications",
+    response_model=NotificationsOut,
+    responses={**_AUTH, 503: _ERRORS[503]},
+)
+def get_notifications(customer: CustomerDep, session: CustomerSessionDep) -> NotificationsOut:
+    """Returns the session customer's notifications, newest first, with the unread count."""
+    return notifications.list_notifications(session, customer.subject)
+
+
+@router.post(
+    "/me/notifications/{notification_id}/read",
+    response_model=NotificationOut,
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def read_notification(
+    notification_id: int, customer: CustomerDep, session: CustomerSessionDep
+) -> NotificationOut:
+    """Marks one of the session customer's notifications as read; idempotent."""
+    return notifications.mark_read(session, customer.subject, notification_id)
+
+
 @router.get("/cases/{case_id}", response_model=CaseOut, responses={**_AUTH, 404: _ERRORS[404]})
 def get_case(case_id: str, session: AnalystSessionDep) -> CaseOut:
     """Returns one case."""
@@ -311,8 +346,10 @@ def queue(
     filter: Annotated[QueueFilter | None, Query()] = None,
 ) -> QueueOut:
     """Returns the open rows of case_queue, most urgent first, with a counter per filter."""
-    bands = runtime.agent.policy.config.amount_usd
-    return cases.list_queue(session, bands.human_review_above, filter)
+    policy = runtime.agent.policy.config
+    return cases.list_queue(
+        session, policy.amount_usd.human_review_above, filter, policy.autonomy.audit_sample_rate
+    )
 
 
 @router.post(
@@ -353,6 +390,24 @@ def reply_to_analyst(
     """Stores the customer's answer to the analyst's question and puts the case back in queue."""
     sla = runtime.agent.policy.config.queue.sla_hours
     return info_requests.reply(session, customer.subject, case_id, body.text, dict(sla))
+
+
+@router.get("/automation", response_model=AutomationOut, responses={**_AUTH, 503: _ERRORS[503]})
+def get_automation(session: AnalystSessionDep) -> AutomationOut:
+    """Returns the global automation switch."""
+    return automation.get_switch(session)
+
+
+@router.put(
+    "/automation",
+    response_model=AutomationOut,
+    responses={**_AUTH, 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def put_automation(
+    body: AutomationIn, analyst: AnalystDep, session: AnalystSessionDep
+) -> AutomationOut:
+    """Turns the global automation switch on or off; sending the current value changes nothing."""
+    return automation.set_switch(session, analyst.subject, body.all_to_human)
 
 
 @router.get("/metrics", response_model=MetricsOut, responses=_AUTH)

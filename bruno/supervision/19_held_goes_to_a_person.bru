@@ -1,0 +1,27 @@
+meta {
+  name: TRZ-35 CA2 with the switch on the case goes to the queue
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{supervisionToken}}
+}
+
+body:json {
+  {"message": "Sigo sin reconocerlo", "case_id": "{{heldCase}}", "recognition": "not_recognized"}
+}
+
+tests {
+  test("escalated, nothing registered", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("escalated");
+    expect(res.getBody().actions_taken).to.eql([]);
+  });
+}

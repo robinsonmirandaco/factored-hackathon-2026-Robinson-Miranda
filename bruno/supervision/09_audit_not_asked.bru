@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-29 CA5 an audit cannot be asked about
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/cases/{{auditCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "need_info", "question": "¿Reconoces la compra?"}
+}
+
+tests {
+  test("409 decision_not_allowed", function() {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getBody().error_code).to.equal("decision_not_allowed");
+  });
+}

@@ -434,8 +434,10 @@ def test_a_rejection_writes_analyst_time_and_reason_to_audit_and_history(
     )
     assert (payload["decision"], payload["reason"]) == ("reject", "insufficient_data")
     assert result["analyst"] == "analista.demo" and at is not None
-    line = client.get(f"/cases/{case_id}/history").json()[-1]
+    *_, line, notified = client.get(f"/cases/{case_id}/history").json()
     assert line["text"] == "La analista analista.demo decidió rechazar: datos insuficientes."
+    # The customer is told the decision right after it (TRZ-32).
+    assert notified["action"] == "notify"
     assert line["at"] == at.isoformat()
 
 
@@ -465,8 +467,10 @@ def test_asking_for_information_leaves_the_case_waiting_for_the_customer(
     assert "ana.perez" not in question and "[EMAIL]" in question
     assert (due.isoformat(), before, status) == ("2026-06-24", "escalated", "open")
     assert case_id not in {i["case_id"] for i in client.get("/queue").json()["items"]}
-    line = client.get(f"/cases/{case_id}/history").json()[-1]["text"]
+    *_, decided, notified = client.get(f"/cases/{case_id}/history").json()
+    line = decided["text"]
     assert line.endswith("El cliente puede responder hasta el 24 jun 2026.")
+    assert notified["action"] == "notify"
     # The history tells the question as it was stored, redacted.
     assert "[EMAIL]" in line and "ana.perez" not in line
 

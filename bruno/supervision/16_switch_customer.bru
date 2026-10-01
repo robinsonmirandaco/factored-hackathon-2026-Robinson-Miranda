@@ -1,0 +1,25 @@
+meta {
+  name: TRZ-35 a customer cannot turn it
+  type: http
+  seq: 16
+}
+
+put {
+  url: {{baseUrl}}/automation
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{supervisionToken}}
+}
+
+body:json {
+  {"all_to_human": true}
+}
+
+tests {
+  test("403", function() {
+    expect(res.getStatus()).to.equal(403);
+  });
+}

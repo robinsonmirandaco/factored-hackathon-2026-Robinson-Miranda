@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-35 CA3 the analyst gives automation back
+  type: http
+  seq: 21
+}
+
+put {
+  url: {{baseUrl}}/automation
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"all_to_human": false}
+}
+
+tests {
+  test("all_to_human false", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().all_to_human).to.equal(false);
+  });
+}

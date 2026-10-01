@@ -1,0 +1,31 @@
+meta {
+  name: TRZ-29 CA1 the confirmed registration is drawn
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{supervisionToken}}
+}
+
+body:json {
+  {"message": "sí", "case_id": "{{auditCase}}", "confirm_action_id": "{{auditAction}}"}
+}
+
+script:post-response {
+  bru.setVar("auditFolio", res.getBody().dispute_folio);
+}
+
+tests {
+  test("registered and verified with a folio", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("registered_verified");
+    expect(res.getBody().dispute_folio).to.match(/^DSP-2026-\d{5}$/);
+  });
+}

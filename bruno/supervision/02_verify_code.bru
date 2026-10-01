@@ -1,0 +1,26 @@
+meta {
+  name: log in as the customer
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "Pasaporte", "document_number": "SYN0000007", "code": "{{demoCode}}"}
+}
+
+script:post-response {
+  bru.setVar("supervisionToken", res.getBody().access_token);
+}
+
+tests {
+  test("200 customer session", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().role).to.equal("customer");
+  });
+}

@@ -21,6 +21,7 @@
         <a href="#/cola" data-view="queue">Cola de casos</a>
       </nav>
       <div class="appbar-end">
+        <button type="button" class="pill switch" id="automation" hidden></button>
         <span class="sim">DEMO</span>
         <span class="segmented lang" role="group" aria-label="Idioma" title="Consola disponible solo en español">
           <button type="button" aria-pressed="true">ES</button>
@@ -69,6 +70,18 @@
     <section id="view-queue" hidden></section>
     <section id="view-case" hidden></section>
   </main>
+
+  <div class="backdrop" id="switch-dialog" hidden>
+    <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="switch-title" aria-describedby="switch-text">
+      <h2 id="switch-title"></h2>
+      <p class="muted" id="switch-text"></p>
+      <p class="error" id="switch-error" role="alert" hidden></p>
+      <div class="row dialog-buttons">
+        <button type="button" class="btn" id="switch-cancel"></button>
+        <button type="button" class="btn primary" id="switch-confirm"></button>
+      </div>
+    </div>
+  </div>
 
   <footer>TRAZO · La IA propone · las reglas deciden · el humano corrige</footer>
 </body>

@@ -15,10 +15,11 @@ auth:bearer {
 }
 
 tests {
-  test("the last line names the analyst and the reason", function() {
+  test("the decision names the analyst and the reason, then the customer is told", function() {
     const lines = res.getBody();
     expect(res.getStatus()).to.equal(200);
-    expect(lines[lines.length - 1].text).to.equal(
+    expect(lines[lines.length - 2].text).to.equal(
       "La analista " + bru.getEnvVar("analystUser") + " decidió rechazar: datos insuficientes.");
+    expect(lines[lines.length - 1].action).to.equal("notify");
   });
 }

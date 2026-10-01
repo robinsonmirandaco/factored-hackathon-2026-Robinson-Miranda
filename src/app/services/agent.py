@@ -62,6 +62,8 @@ from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, pol
 from app.domain.recognition import Choice, choices, recognition_text
 from app.schemas.comprehension import Comprehension, ComprehensionContext, evidence_is_faithful
 from app.services import tools as T
+from app.services.audit_sample import sample
+from app.services.automation import all_to_human
 from app.services.cases import HANDOFF_STATUSES, VERIFICATION_FAILED_REASON
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
 from app.services.identification import (
@@ -81,6 +83,9 @@ from app.services.replies import (
 from app.services.verification import verify_block, verify_dispute
 
 Facts = dict[str, Any]
+
+# Rule id of a case the global automation switch sent to a person (TRZ-35).
+AUTOMATION_DISABLED_RULE = "escalate.automation_disabled"
 
 # Intent of a new case stopped for security before its message was read.
 UNREAD_INTENT = "unread"
@@ -103,6 +108,8 @@ FINAL_STATUSES = (
     # Waiting for the customer's answer to an analyst: it is answered from Mis aclaraciones,
     # never from the chat (TRZ-28).
     "awaiting_customer",
+    # An audit sample an analyst reversed (TRZ-29): its dispute stays, a person reviews it.
+    "in_review",
 )
 # A case in one of these statuses holds its charge: another case on the same charge would be a
 # second clarification of one charge, so the customer is taken back to it instead.
@@ -114,6 +121,7 @@ HOLDS_CHARGE = (
     "failed",
     "registered_verified",
     "awaiting_customer",
+    "in_review",
 )
 # Outcomes answered with a fixed reply instead of the LLM's: a security stop must not send the
 # text of the turn to the LLM, and a failed read-back confirms nothing.
@@ -129,6 +137,7 @@ CODE_WRITTEN_OUTCOMES = (
     "card_blocked",
     "declined",
     "block_declined",
+    "block_not_run",
     "escalated",
     "pending_analyst_approval",
 )
@@ -724,6 +733,7 @@ def _decide_on_charge(
         ),
         duplicate_twin=twin,
         clarifications_exhausted=clarifications_exhausted,
+        automation_disabled=all_to_human(session),
     )
     decision = deps.policy.decide(ctx, deps.autonomy)
     _audit_decision(session, case, {**asdict(ctx), **(note or {})}, decision)
@@ -1210,6 +1220,8 @@ def _confirm(
             "outcome": "no_pending_action",
             "actions_taken": [],
         }
+    if row.status == "pending" and all_to_human(session):
+        return _automation_off(session, deps, case, row)
     if row.action == "block":
         return _confirm_block(session, deps, case, language, row, said)
     facts: Facts = {"intent": case.intent, "action": row.action, "actions_taken": []}
@@ -1302,11 +1314,42 @@ def _confirm(
         )
     if first_run:
         case.status = "registered_verified"
+        sample(session, deps.policy.config, case)
     if row.action == "register_and_offer_block":
         offer = T.offer_action(session, case, "block") if first_run else _pending_row(session, case)
         if offer is not None and offer.action == "block":
             facts["pending_action"] = {"action_id": offer.id, "action": "block"}
     facts["outcome"] = "registered_verified"
+    return facts
+
+
+def _automation_off(session: Session, deps: AgentDeps, case: Case, row: CaseAction) -> Facts:
+    """A confirmation that arrives with the automation switch on runs nothing (TRZ-35).
+
+    The pending action is cancelled. A registration goes to a person with the action it would
+    have run as the recommendation. The block offered after a registration is not run either:
+    the dispute stays registered and the customer is sent to the bank's card block channel.
+    """
+    row.status, row.resolved_at = "canceled", utcnow()
+    facts: Facts = {"intent": case.intent, "action": row.action, "actions_taken": []}
+    if row.action == "block":
+        write_audit(
+            session,
+            "agent",
+            "automation_disabled",
+            case.id,
+            {"action_id": row.id, "pending_action": row.action},
+            {"executed": False, "redirect": "card_block"},
+        )
+        facts["redirect"] = "card_block"
+        facts["outcome"] = "block_not_run"
+        return facts
+    case.autonomy_level = deps.policy.config.action_level["escalate"]
+    T.escalate_to_human(
+        session, case.id, AUTOMATION_DISABLED_RULE, _sla(deps, "normal"), row.action
+    )
+    facts["outcome"] = "escalated"
+    facts["handoff_reason"], facts["review_hours"] = AUTOMATION_DISABLED_RULE, _sla(deps, "normal")
     return facts
 
 

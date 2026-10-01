@@ -1,12 +1,12 @@
-// Analyst console (TRZ-27, TRZ-28): login, the queue with its filters, the dossier of a case and
-// the three decisions. Every figure is read from the API; text reaches the page only through
+// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-35): login, the queue with its filters, the
+// dossier of a case, the decisions, and the global automation switch in the header. Every figure is read from the API; text reaches the page only through
 // textContent, never as HTML.
 
 import { createClient } from "./api.js";
 import {
-  REVERSAL_REASONS, actionLabel, actionStateLabel, candidateCards, caseHeading, clueChips,
-  decisionDone, decisionPanel, decisionProblem, factRows, filterChips, identificationLabel,
-  infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
+  REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, candidateCards,
+  caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
+  identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
 const api = createClient("analyst");
@@ -37,7 +37,7 @@ const ERRORS = {
   case_not_escalated: "El caso ya no está en la cola.",
   nothing_to_approve: "No hay acción que ejecutar: pide información o rechaza.",
   charge_already_disputed: "El cargo ya tiene una aclaración abierta.",
-  decision_not_allowed: "Un evento de seguridad solo se puede cerrar.",
+  decision_not_allowed: "Esta decisión no está disponible para este caso.",
   reason_required: "Elige un motivo de la lista.",
   reason_not_allowed: "El motivo no está en la lista.",
   question_required: "Escribe la pregunta para el cliente.",
@@ -57,7 +57,78 @@ const pill = (p) => el("span", { class: `pill${p.tone ? ` ${p.tone}` : ""}`, tex
 
 function showChrome(loggedIn) {
   $("appbar").hidden = !loggedIn;
+  if (loggedIn) loadAutomation();
 }
+
+// ---- global automation switch (TRZ-35) ----------------------------------------------------
+
+let automation = null;
+
+function drawAutomation() {
+  const button = $("automation");
+  const view = automationView(automation);
+  button.textContent = view.text;
+  button.className = `pill switch ${view.tone}`;
+  button.title = view.action;
+  button.hidden = automation === null;
+}
+
+async function loadAutomation() {
+  try {
+    automation = await api.call("/automation");
+  } catch {
+    automation = null;
+  }
+  drawAutomation();
+}
+
+// The dialog of the switch, with the markup and style of the customer's expired session dialog:
+// the focus goes into it, Tab stays on its buttons, Escape or Cancelar closes it unchanged, and
+// the focus goes back to the switch.
+function openSwitchDialog() {
+  const view = automationView(automation);
+  $("switch-title").textContent = view.title;
+  $("switch-text").textContent = view.confirm;
+  $("switch-cancel").textContent = view.cancelLabel;
+  $("switch-confirm").textContent = view.confirmLabel;
+  $("switch-confirm").disabled = false;
+  $("switch-error").hidden = true;
+  $("switch-dialog").hidden = false;
+  $("switch-cancel").focus();
+}
+
+function closeSwitchDialog() {
+  $("switch-dialog").hidden = true;
+  $("automation").focus();
+}
+
+$("automation").addEventListener("click", openSwitchDialog);
+$("switch-cancel").addEventListener("click", closeSwitchDialog);
+
+$("switch-confirm").addEventListener("click", async () => {
+  const button = $("switch-confirm");
+  button.disabled = true;
+  try {
+    automation = await api.call("/automation", {
+      method: "PUT", body: { all_to_human: !automation.all_to_human },
+    });
+    drawAutomation();
+    closeSwitchDialog();
+  } catch (e) {
+    $("switch-error").textContent = errorText(e);
+    $("switch-error").hidden = false;
+    button.disabled = false;
+  }
+});
+
+$("switch-dialog").addEventListener("keydown", (event) => {
+  const buttons = [$("switch-cancel"), $("switch-confirm")].filter((b) => !b.disabled);
+  const step = dialogKey(event.key, event.shiftKey, buttons.indexOf(document.activeElement), buttons.length);
+  if (!step) return;
+  event.preventDefault();
+  if (step.cancel) closeSwitchDialog();
+  else buttons[step.focus].focus();
+});
 
 $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -129,6 +200,7 @@ async function renderQueue() {
     const params = filter === "all" ? "" : `?filter=${encodeURIComponent(filter)}`;
     const queue = await api.call(`/queue${params}`);
     const now = Date.now();
+    const rho = queue.audit_sample_rate;
     const chips = filterChips(queue.counts, filter).map((c) => el("button", {
       type: "button",
       class: "pick",
@@ -136,7 +208,7 @@ async function renderQueue() {
       onclick: () => { filter = c.key; renderQueue(); },
     }, el("span", { text: c.label }), el("span", { class: "count", text: String(c.count) })));
     const rows = queue.items.map((item) => {
-      const r = queueRow(item, now);
+      const r = queueRow(item, now, rho);
       return el("a", { class: "trow", href: r.href },
         el("span", { class: "cell-stack" },
           el("span", { class: "mono small", text: r.caseId }),
@@ -181,7 +253,7 @@ async function renderCase(caseId) {
       api.call("/queue"),
     ]);
     const item = queue.items.find((i) => i.case_id === caseId) || null;
-    const row = item ? queueRow(item, Date.now()) : null;
+    const row = item ? queueRow(item, Date.now(), queue.audit_sample_rate) : null;
     const header = el("section", { class: "card" },
       el("div", { class: "card-head start" },
         el("div", { class: "stack tight-stack" },
@@ -217,6 +289,7 @@ function field(k, v, cls) {
 
 function dossierCards(d, history) {
   const cards = [];
+  if (d.audit_draw) cards.push(auditCard(d.audit_draw));
   if (d.original_message) {
     cards.push(el("section", { class: "card tight" },
       el("h2", { text: "Mensaje original" }),
@@ -276,6 +349,18 @@ function dossierCards(d, history) {
   return cards;
 }
 
+// Why the case is here although the system resolved it: the draw, which anyone can recompute
+// from its seed and its number (TRZ-29).
+function auditCard(draw) {
+  const u = Number(draw.u).toFixed(4).replace(".", ",");
+  return el("section", { class: "card tight" },
+    el("div", { class: "card-head" },
+      el("h2", { text: auditLabel(draw.rho) }),
+      pill({ text: "Resuelto por el sistema", tone: "info" })),
+    el("p", { class: "small", text: `El sistema registró y verificó esta aclaración sin una persona. Salió en el sorteo n.º ${draw.n} con u = ${u} < ρ.` }),
+    el("span", { class: "tiny muted mono", text: `semilla ${draw.seed} · ${draw.source.table} · ${draw.source.id}` }));
+}
+
 function factCard(title, rows) {
   return el("section", { class: "card tight" },
     el("h2", { text: title }),
@@ -327,7 +412,7 @@ function ruleCard(d) {
   const rule = d.policy_rule_triggered;
   if (!rule) return null;
   return el("section", { class: "card tight" },
-    el("h2", { text: "Regla que escaló" }),
+    el("h2", { text: d.case_kind === "audit_sample" ? "Regla que decidió" : "Regla que escaló" }),
     el("span", { class: "rule mono", text: rule.rule }),
     el("span", { text: reasonLabel(rule.rule) }),
     el("span", { class: "tiny muted mono", text: `política ${rule.version} · nivel ${rule.level}${rule.autonomy_level ? ` · celda ${rule.autonomy_level}` : ""}` }));
@@ -387,12 +472,12 @@ function decisionCard(d, item, status) {
 
   const approve = el("button", { type: "button", class: "btn primary", disabled: !panel.canApprove, text: panel.approveLabel });
   approve.addEventListener("click", () => send("approve", approve));
-  const reject = el("button", { type: "button", class: "btn", text: "Rechazar", onclick: () => toggle(rejectPanel) });
+  const reject = el("button", { type: "button", class: "btn", text: panel.rejectLabel, onclick: () => toggle(rejectPanel) });
   const ask = panel.canAsk
     ? el("button", { type: "button", class: "btn", text: "Pedir información", onclick: () => toggle(askPanel) })
     : null;
 
-  const confirmReject = el("button", { type: "button", class: "btn primary medium", disabled: true, text: "Confirmar rechazo" });
+  const confirmReject = el("button", { type: "button", class: "btn primary medium", disabled: true, text: panel.confirmRejectLabel });
   confirmReject.addEventListener("click", () => send("reject", confirmReject));
   const reasons = REVERSAL_REASONS.map(([code, text]) => el("button", {
     type: "button", class: "pick", "aria-pressed": "false", text,
@@ -403,7 +488,7 @@ function decisionCard(d, item, status) {
     },
   }));
   rejectPanel.append(
-    el("span", { class: "small muted strong", text: "Motivo del rechazo" }),
+    el("span", { class: "small muted strong", text: panel.reasonTitle }),
     el("div", { class: "pills" }, reasons),
     el("div", {}, confirmReject));
 

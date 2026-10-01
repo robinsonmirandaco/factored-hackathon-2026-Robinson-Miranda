@@ -1,0 +1,25 @@
+meta {
+  name: TRZ-35 an invalid body is 422
+  type: http
+  seq: 15
+}
+
+put {
+  url: {{baseUrl}}/automation
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"all_to_human": "maybe"}
+}
+
+tests {
+  test("422", function() {
+    expect(res.getStatus()).to.equal(422);
+  });
+}

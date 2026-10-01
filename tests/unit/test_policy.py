@@ -24,7 +24,7 @@ from app.main import build_runtime
 from app.schemas.comprehension import ComprehensionContext, Intent
 
 POLICY = Path(__file__).resolve().parents[2] / "config" / "policy.yaml"
-VERSION = "2026.09.3"
+VERSION = "2026.09.4"
 
 
 @pytest.fixture(scope="module")
@@ -251,6 +251,7 @@ RULES = [
         "L3",
     ),
     ({}, "A2", "escalate", "escalate.autonomy_a2", "L3"),
+    ({"automation_disabled": True}, "A0", "escalate", "escalate.automation_disabled", "L3"),
     ({}, "A1", "analyst_approval", "approval.autonomy_a1", "L3"),
     (
         {"amount_usd": 750.0},
@@ -396,6 +397,31 @@ def test_escalation_comes_before_approval(engine: PolicyEngine) -> None:
 def test_escalation_follows_the_order_of_the_policy_file(engine: PolicyEngine) -> None:
     both = ctx(amount_usd=5000.0, open_dispute_last_90d=True, verification_failed=True)
     assert engine.decide(both, A0).rule == "escalate.amount_above_human_review"
+
+
+def test_the_automation_switch_sends_every_dispute_to_a_person(engine: PolicyEngine) -> None:
+    # TRZ-35 CA2: nothing registers on its own, whatever the route, amount or cell would do.
+    for changes in (
+        {},
+        {"card_in_possession": False},
+        {"amount_usd": 750.0},
+        {"intent": "billing_error_duplicate", "duplicate_twin": "one_pending"},
+        {"intent": "billing_error_amount"},
+    ):
+        d = engine.decide(ctx(automation_disabled=True, **changes), _fixed("A1"))
+        assert (d.action, d.rule) == ("escalate", "escalate.automation_disabled"), changes
+
+
+def test_the_automation_switch_comes_after_security(engine: PolicyEngine) -> None:
+    d = engine.decide(ctx(automation_disabled=True, security_event=True), A0)
+    assert d.rule == "security.security_event"
+
+
+def test_the_automation_switch_leaves_answers_that_do_not_act(engine: PolicyEngine) -> None:
+    # Claim status and out of scope register nothing: they still answer (decision D5).
+    for intent in ("out_of_scope", "claim_status"):
+        d = engine.decide(ctx(intent=intent, automation_disabled=True), A0)
+        assert d.action in ("abstain_and_redirect", "report_claim_status"), intent
 
 
 def test_approval_comes_before_routing(engine: PolicyEngine) -> None:

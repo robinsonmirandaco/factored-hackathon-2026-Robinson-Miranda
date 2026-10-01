@@ -1,0 +1,25 @@
+meta {
+  name: TRZ-29 CA2 the dossier shows the draw
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/cases/{{auditCase}}/dossier
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("audit_sample with seed, n and u", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.case_kind).to.equal("audit_sample");
+    expect(body.audit_draw.seed).to.equal(20260934);
+    expect(body.audit_draw.u).to.be.below(body.audit_draw.rho);
+  });
+}
