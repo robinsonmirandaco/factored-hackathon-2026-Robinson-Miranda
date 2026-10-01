@@ -553,3 +553,39 @@ def test_asking_for_information_and_a_security_event_are_not_reviews(
     assert stopped["outcome"] == "security_blocked"
     assert _decide(client, analyst, stopped["case_id"], decision="approve").status_code == 200
     assert "review" not in _decision_result(schema, stopped["case_id"])
+
+
+def test_a_case_no_charge_matched_is_not_a_review(client: TestClient, schema: SchemaUrls) -> None:
+    # The system never identified a charge, so it would never have acted: rejecting it says
+    # nothing of the autonomy of its cell.
+    c1, analyst = customer_headers(client, "C1"), analyst_headers(client)
+    first = client.post(
+        "/chat", json={"message": "No reconozco un cargo en Coppel"}, headers=c1
+    ).json()
+    body = first
+    if first["outcome"] == "identifying":
+        body = client.post(
+            "/chat",
+            json={"message": "Ninguno es", "case_id": first["case_id"], "option": "none"},
+            headers=c1,
+        ).json()
+    assert body["outcome"] == "escalated", body
+    item = _queue_item(client, analyst, body["case_id"])
+    assert item is not None and item["reason"] == "escalate.conformal_set_empty"
+
+    r = _decide(client, analyst, body["case_id"], decision="reject", reason="insufficient_data")
+    assert r.status_code == 200
+    assert "review" not in _decision_result(schema, body["case_id"])
+
+
+def test_an_identified_charge_escalated_by_its_amount_is_a_review(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    c2, analyst = customer_headers(client, "C2"), analyst_headers(client)
+    large = _pending(client, c2, SEARS)
+    item = _queue_item(client, analyst, large["case_id"])
+    assert item is not None and item["reason"] == "escalate.amount_above_human_review"
+    r = _decide(client, analyst, large["case_id"], decision="reject", reason="wrong_charge")
+    assert r.status_code == 200
+    review = _decision_result(schema, large["case_id"])["review"]
+    assert (review["reversal"], review["reason"]) == (True, "wrong_charge")

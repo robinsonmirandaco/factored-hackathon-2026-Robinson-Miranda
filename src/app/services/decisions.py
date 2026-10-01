@@ -14,8 +14,9 @@ puts the clarification in review by an analyst and notifies the customer; the re
 is not annulled, since no tool annuls one (design 3.2). Its audit row says it is a review of an
 automatic action, whether it is a reversal, the reason and the intent x language cell, which is
 what the Wilson rule of TRZ-30 counts. An approval or a rejection of a case the system handed
-over with a recommended action carries the same block: approving agrees with the system,
-rejecting reverses it (design 6.7).
+over with a registration recommended on an identified charge carries the same block: approving
+agrees with the system, rejecting reverses it (design 6.7). A case with no charge identified,
+such as one no charge matched, is not a review whatever the analyst decides.
 
 Every decision the customer must hear about writes a notification (TRZ-32).
 """
@@ -96,7 +97,9 @@ def _record(
     # A security event is not a clarification of the customer: it is never told (TRZ-27 CA8).
     security = case.status == "security_blocked"
     result: dict[str, Any] = {"analyst": analyst, "system_recommended": case.recommended_action}
-    if case.recommended_action and body.decision in ("approve", "reject"):
+    # Only a registration recommended on an identified charge is a review: without a charge the
+    # system would never have acted, so a rejection says nothing of its autonomy.
+    if approvable(case) and body.decision in ("approve", "reject"):
         result["review"] = _review("recommended_action", case, body)
     question: str | None = None
     if body.decision == "approve":
