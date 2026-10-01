@@ -497,3 +497,59 @@ def test_only_the_analyst_role_can_change_the_switch_in_the_database(
             assert s.execute(text("UPDATE automation_switch SET all_to_human = true")).rowcount == 1
     finally:
         db.dispose()
+
+
+def _decision_result(schema: SchemaUrls, case_id: str) -> dict[str, Any]:
+    [(result,)] = _query(
+        schema,
+        "SELECT result FROM audit_log WHERE action = 'decision' AND case_id = :c "
+        "ORDER BY id DESC LIMIT 1",
+        c=case_id,
+    )
+    return result
+
+
+def test_every_decision_on_a_recommended_action_is_a_review_for_wilson(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    # Design 6.7: approving agrees with the system, rejecting reverses it with its reason.
+    c2, analyst = customer_headers(client, "C2"), analyst_headers(client)
+    approval = _pending(client, c2, LIVERPOOL)
+    large = _pending(client, c2, SEARS)
+    assert _decide(client, analyst, approval["case_id"], decision="approve").status_code == 200
+    assert (
+        _decide(
+            client, analyst, large["case_id"], decision="reject", reason="should_have_escalated"
+        ).status_code
+        == 200
+    )
+    cell = {"intent": "unrecognized_charge", "language": "es"}
+    assert _decision_result(schema, approval["case_id"])["review"] == {
+        "of": "recommended_action",
+        "system_action": "register_and_offer_block",
+        "reversal": False,
+        "reason": None,
+        "cell": cell,
+    }
+    assert _decision_result(schema, large["case_id"])["review"] == {
+        "of": "recommended_action",
+        "system_action": "register_and_offer_block",
+        "reversal": True,
+        "reason": "should_have_escalated",
+        "cell": cell,
+    }
+
+
+def test_asking_for_information_and_a_security_event_are_not_reviews(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    c2, analyst = customer_headers(client, "C2"), analyst_headers(client)
+    large = _pending(client, c2, SEARS)
+    asked = _decide(client, analyst, large["case_id"], decision="need_info", question="¿Cuándo?")
+    assert asked.status_code == 200
+    assert "review" not in _decision_result(schema, large["case_id"])
+
+    stopped = client.post("/chat", json={"message": "hola", "customer_id": "C1"}, headers=c2).json()
+    assert stopped["outcome"] == "security_blocked"
+    assert _decide(client, analyst, stopped["case_id"], decision="approve").status_code == 200
+    assert "review" not in _decision_result(schema, stopped["case_id"])

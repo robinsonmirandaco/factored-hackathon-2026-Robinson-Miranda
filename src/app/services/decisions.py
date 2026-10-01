@@ -13,7 +13,9 @@ changes nothing for the customer, or reverses it with a reason of the closed lis
 puts the clarification in review by an analyst and notifies the customer; the registered dispute
 is not annulled, since no tool annuls one (design 3.2). Its audit row says it is a review of an
 automatic action, whether it is a reversal, the reason and the intent x language cell, which is
-what the Wilson rule of TRZ-30 counts.
+what the Wilson rule of TRZ-30 counts. An approval or a rejection of a case the system handed
+over with a recommended action carries the same block: approving agrees with the system,
+rejecting reverses it (design 6.7).
 
 Every decision the customer must hear about writes a notification (TRZ-32).
 """
@@ -94,6 +96,8 @@ def _record(
     # A security event is not a clarification of the customer: it is never told (TRZ-27 CA8).
     security = case.status == "security_blocked"
     result: dict[str, Any] = {"analyst": analyst, "system_recommended": case.recommended_action}
+    if case.recommended_action and body.decision in ("approve", "reject"):
+        result["review"] = _review("recommended_action", case, body)
     question: str | None = None
     if body.decision == "approve":
         result |= _approve(session, deps, case)
@@ -143,6 +147,20 @@ def _notify(
         notify(session, case, "info_requested", key, due=date.fromisoformat(result["due_on"]))
 
 
+def _review(of: str, case: Case, body: HumanDecisionIn) -> dict[str, Any]:
+    """What TRZ-30 counts: one review of what the system did or recommended, in its intent x
+    language cell. A rejection is a reversal with its reason of the closed list; an approval
+    agrees with the system."""
+    reversal = body.decision == "reject"
+    return {
+        "of": of,
+        "system_action": case.recommended_action,
+        "reversal": reversal,
+        "reason": body.reason if reversal else None,
+        "cell": {"intent": case.intent, "language": case.language},
+    }
+
+
 def _audit(
     session: Session,
     deps: AgentDeps,
@@ -161,14 +179,7 @@ def _audit(
     result: dict[str, Any] = {
         "analyst": analyst,
         "system_recommended": case.recommended_action,
-        # What TRZ-30 counts: one review of an action the system ran on its own, in its cell.
-        "review": {
-            "of": "audit_sample",
-            "system_action": case.recommended_action,
-            "reversal": reversal,
-            "reason": body.reason if reversal else None,
-            "cell": {"intent": case.intent, "language": case.language},
-        },
+        "review": _review("audit_sample", case, body),
         # The dispute stays registered: no tool annuls one.
         "dispute_annulled": False,
     }
