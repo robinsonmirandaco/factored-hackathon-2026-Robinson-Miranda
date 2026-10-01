@@ -3,70 +3,100 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TRAZO</title>
-  <link rel="stylesheet" href="/assets/trazo.css">
+  <title>LATAM Bank · TRAZO</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/customer.css">
   <script type="module" src="/assets/customer.js"></script>
 </head>
 <body>
-  <header class="top">
-    <div class="top-inner">
-      <span class="brand">TRAZO</span>
-      <span class="tagline" data-t="tagline"></span>
-      <span class="badge">DEMO</span>
-      <span class="spacer"></span>
-      <span class="clock" id="clock" hidden></span>
-      <span class="lang" role="group" aria-label="Idioma / Idioma">
-        <button type="button" data-lang="es" aria-pressed="true">ES</button>
-        <button type="button" data-lang="pt" aria-pressed="false">PT</button>
-      </span>
-      <button type="button" class="linkish" id="logout" data-t="logout" hidden></button>
-    </div>
-    <div class="top-inner">
-      <nav class="tabs" id="tabs" hidden>
+  <header class="appbar" id="appbar" hidden>
+    <div class="appbar-inner">
+      <a class="brand" href="#/inicio">
+        <span class="logo">L</span>
+        <span class="brand-name"><strong>LATAM Bank</strong><span id="clock" hidden></span></span>
+        <span class="app-tag">TRAZO</span>
+      </a>
+      <nav class="navpills" id="tabs">
         <a href="#/inicio" data-view="home" data-t="navHome"></a>
         <a href="#/movimientos" data-view="movements" data-t="navMovements"></a>
+        <a href="#/aclaraciones" data-view="clarifications"><span data-t="navClarifications"></span><span class="dot" id="questions-dot" hidden></span></a>
         <a href="#/aclarar" data-view="chat" data-t="navChat"></a>
-        <a href="#/aclaraciones" data-view="clarifications" data-t="navClarifications"></a>
-        <span class="dot" id="questions-dot" hidden></span>
       </nav>
+      <div class="appbar-end">
+        <span class="segmented lang" role="group" aria-label="Idioma / Idioma">
+          <button type="button" data-lang="es" aria-pressed="true">ES</button>
+          <button type="button" data-lang="pt" aria-pressed="false">PT</button>
+        </span>
+        <span class="avatar" id="avatar" aria-hidden="true"></span>
+        <button type="button" class="btn small" id="logout" data-t="logout"></button>
+      </div>
     </div>
   </header>
 
-  <main>
-    <div class="wrap">
-      <section id="view-login" hidden>
-        <div class="card narrow">
-          <h2 data-t="loginTitle"></h2>
-          <form id="login-form" class="stack" novalidate></form>
+  <main class="page">
+    <section id="view-login" class="login-wrap" hidden>
+      <div class="card narrow">
+        <div class="row">
+          <span class="logo">L</span>
+          <strong class="login-brand">LATAM Bank</strong>
+          <span class="app-tag">TRAZO</span>
+          <span class="spacer"></span>
+          <span class="segmented lang" role="group" aria-label="Idioma / Idioma">
+            <button type="button" data-lang="es" aria-pressed="true">ES</button>
+            <button type="button" data-lang="pt" aria-pressed="false">PT</button>
+          </span>
         </div>
-      </section>
+        <h1 class="login-title" data-t="loginTitle"></h1>
+        <nav class="segmented" aria-label="Tipo de acceso">
+          <a href="#/inicio" aria-current="page" data-t="accessCustomer"></a>
+          <a href="/analista/" data-t="accessAnalyst"></a>
+        </nav>
+        <form id="login-form" class="stack login-form" novalidate></form>
+      </div>
+    </section>
 
-      <section id="view-home" hidden></section>
-      <section id="view-movements" hidden></section>
+    <section id="view-home" hidden></section>
+    <section id="view-movements" hidden></section>
 
-      <section id="view-chat" hidden>
-        <div class="card chat">
-          <div class="row">
-            <h2 class="flush" data-t="chatTitle"></h2>
-            <span class="spacer"></span>
+    <section id="view-chat" hidden>
+      <div class="page-head">
+        <a class="back" href="#/inicio" data-t="backHome"></a>
+        <h1 data-t="chatTitle"></h1>
+      </div>
+      <div class="chat-layout">
+        <div class="chat-panel">
+          <div class="chat-head">
+            <span class="bot-mark big">L<span class="online"></span></span>
+            <span class="chat-who">
+              <strong data-t="assistant"></strong>
+              <span class="tiny muted" data-t="sessionVerified"></span>
+            </span>
             <button type="button" class="btn small" id="new-case" data-t="newCase"></button>
           </div>
-          <div class="log" id="log" aria-live="polite"></div>
-          <form class="composer" id="composer">
-            <input id="message" autocomplete="off" maxlength="4000">
-            <button class="btn primary" type="submit" id="send" data-t="send" disabled></button>
-          </form>
+          <div class="chat-body">
+            <div class="log" id="log" aria-live="polite"></div>
+            <form class="composer" id="composer">
+              <input id="message" autocomplete="off" maxlength="4000">
+              <button class="btn primary" type="submit" id="send" disabled><span data-t="send"></span> <span aria-hidden="true">→</span></button>
+            </form>
+          </div>
         </div>
-        <div class="card" id="audit" hidden>
-          <h2 data-t="auditView"></h2>
-          <p class="muted small" data-t="auditNote"></p>
-          <p class="small"><span data-t="lastTrace"></span>: <span class="mono" id="last-trace">-</span></p>
-          <button type="button" class="btn small" id="cross-access" data-t="crossAccess"></button>
-        </div>
-      </section>
+        <aside class="card trace" id="audit" hidden>
+          <div class="card-head">
+            <h2 data-t="auditView"></h2>
+            <span class="sim">demo</span>
+          </div>
+          <p class="small muted" data-t="auditNote"></p>
+          <div class="detail">
+            <div><span class="k" data-t="lastTrace"></span><span class="v mono small" id="last-trace">-</span></div>
+          </div>
+          <button type="button" class="btn small outline" id="cross-access" data-t="crossAccess"></button>
+        </aside>
+      </div>
+    </section>
 
-      <section id="view-clarifications" hidden></section>
-    </div>
+    <section id="view-clarifications" hidden></section>
   </main>
 
   <div class="backdrop" id="expired" hidden>

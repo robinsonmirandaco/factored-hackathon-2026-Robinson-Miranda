@@ -19,15 +19,26 @@ const item = {
 test("a queue row shows case, customer, language, reason, amount, priority and SLA", () => {
   const r = queueRow(item, NOW);
   assert.equal(r.href, "#/caso/CASE-1");
-  assert.equal(r.title, "Cargo no reconocido · Monto entre 500 y 1000 USD");
-  assert.equal(r.sub, "CASE-1 · Cliente C1 · ES · Escalado");
+  assert.equal(r.caseId, "CASE-1");
+  assert.equal(r.customer, "Cliente C1");
+  assert.equal(r.kind, "Escalado");
+  assert.equal(r.type, "Cargo no reconocido");
+  assert.equal(r.reason, "Monto entre 500 y 1000 USD");
+  assert.equal(r.language, "ES");
   assert.match(r.amount, /^USD\s800\.00$/);
-  assert.deepEqual(r.pills.map((p) => p.text), ["Prioridad Normal", "SLA en 3 h 30 min"]);
+  assert.deepEqual(r.priority, { text: "Normal", tone: "" });
+  assert.equal(r.sla.text, "SLA en 3 h 30 min");
+  assert.deepEqual(r.tags, []);
 });
 
 test("a case that came back with the customer's answer is marked updated", () => {
   const r = queueRow({ ...item, updated: true }, NOW);
-  assert.equal(r.pills.at(-1).text, "Actualizado");
+  assert.deepEqual(r.tags.map((x) => x.text), ["Actualizado"]);
+});
+
+test("an audit sample and a case waiting for the customer are tagged", () => {
+  const r = queueRow({ ...item, kind: "audit_sample", status: "awaiting_customer" }, NOW);
+  assert.deepEqual(r.tags.map((x) => x.text), ["Auditoría", "Esperando al cliente"]);
 });
 
 test("a security event row says it has no customer data", () => {
@@ -36,10 +47,11 @@ test("a security event row says it has no customer data", () => {
     reason: "security.security_event", priority: "urgent",
   };
   const r = queueRow(security, NOW);
-  assert.equal(r.title, "Evento de seguridad");
-  assert.equal(r.sub, "CASE-1 · Sin datos del cliente · ES · Intento de ver datos de otro cliente");
+  assert.equal(r.type, "Evento de seguridad");
+  assert.equal(r.customer, "Sin datos del cliente");
+  assert.equal(r.reason, "Intento de ver datos de otro cliente");
   assert.equal(r.amount, null);
-  assert.equal(r.initial, "S");
+  assert.deepEqual(r.priority, { text: "Urgente", tone: "bad" });
 });
 
 test("the SLA is told as time left, or as overdue, never as a date", () => {

@@ -134,13 +134,13 @@ function chargeRows(t, lang, c) {
     ? `≈ ${money(lang, c.converted_amount, c.converted_currency)} (${t("approx")})`
     : null;
   return [
-    { label: t("field_merchant"), value: c.merchant || label(t, "type", c.transaction_type) },
-    { label: t("field_amount"), value: amount, approx },
-    { label: t("field_at"), value: dayTime(lang, c.at) },
-    { label: t("field_city"), value: c.city },
-    { label: t("field_channel"), value: label(t, "channel", c.channel) },
-    { label: t("field_product"), value: `${label(t, "product", c.product_type)}${c.last4 ? ` •••• ${c.last4}` : ""}` },
-    { label: t("field_status"), value: label(t, "tx", c.status) },
+    { key: "merchant", label: t("field_merchant"), value: c.merchant || label(t, "type", c.transaction_type) },
+    { key: "amount", label: t("field_amount"), value: amount, approx },
+    { key: "at", label: t("field_at"), value: dayTime(lang, c.at) },
+    { key: "city", label: t("field_city"), value: c.city },
+    { key: "channel", label: t("field_channel"), value: label(t, "channel", c.channel) },
+    { key: "product", label: t("field_product"), value: `${label(t, "product", c.product_type)}${c.last4 ? ` •••• ${c.last4}` : ""}` },
+    { key: "status", label: t("field_status"), value: label(t, "tx", c.status) },
   ].filter((row) => row.value);
 }
 

@@ -1,23 +1,62 @@
-/* Analyst console layout, on top of base.css. */
-.login-title { margin: 20px 0 18px; font-size: 1.6rem; }
-.login-form { margin-top: 20px; }
-.queue-filters { margin-bottom: 16px; }
-.back { display: inline-block; margin-bottom: 12px; color: var(--ink-2); text-decoration: none; }
-.case-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-.case-main .card + .card, .case-side .card + .card { margin-top: 16px; }
-.case-side { position: sticky; top: 16px; }
-.quote { margin: 0 0 8px; padding: 10px 14px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 6px; white-space: pre-wrap; }
-.candidates { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-.candidate { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-.candidate.in-set { border: 2px solid var(--primary); }
-.probability { font-size: 1.4rem; font-weight: 700; margin: 4px 0; }
-.action-row { padding: 10px 0; }
-.decision .stack > label { margin-top: 4px; }
+/* Analyst console layout, on top of base.css: the queue table, the dossier and the decision. */
+.login-wrap { display: flex; align-items: center; justify-content: center; padding: 48px 0; }
+.login-brand { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+.login-title { font-size: 26px; }
+.login-wrap .sim { align-self: flex-start; }
 
-@media (max-width: 900px) {
-  .case-grid { grid-template-columns: 1fr; }
-  .case-side { position: static; }
+.strong { font-weight: 500; }
+.cell-stack { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+/* Queue */
+.queue-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.queue-head .page-head { margin: 0; }
+.stats { display: flex; gap: 28px; flex-wrap: wrap; }
+.stats > div { display: flex; flex-direction: column; gap: 2px; }
+.stat { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.queue-filters { margin-bottom: 14px; }
+.queue.card { padding: 0; }
+.queue .table { min-width: 980px; }
+.queue .trow { grid-template-columns: 150px 1.3fr 1fr 110px 70px 1.5fr 90px 120px; }
+.queue .trow:last-child { border-bottom: 0; }
+.queue .reason { color: var(--ink-2); line-height: 1.4; }
+.queue .pill { justify-self: start; }
+.sla.bad { color: var(--bad); }
+.sla.warn { color: var(--warn); }
+.note-below { margin-top: 12px; }
+
+/* Dossier */
+.case { display: flex; flex-direction: column; gap: 16px; max-width: 1000px; }
+.card-head.start { align-items: flex-start; }
+.tight-stack { gap: 4px; }
+.case-title { font-size: clamp(24px, 3vw, 30px); }
+.message {
+  display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: var(--radius-md);
+  border: 1px solid var(--line);
 }
-.exchanges { margin: 0; padding-left: 20px; }
-.exchanges > li + li { margin-top: 16px; }
-.exchanges .question { font-weight: 600; margin: 0; }
+.message .original { font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.translation { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.translation .sim { align-self: flex-start; }
+.translation p { font-size: 14px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; }
+.exchanges { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.exchanges .question { font-weight: 600; }
+.exchanges .answer { white-space: pre-wrap; color: var(--ink-2); }
+.boxed { border: 1px solid var(--line); border-radius: var(--radius-md); }
+.boxed .table { min-width: 560px; }
+.boxed .trow { padding: 12px 16px; font-variant-numeric: tabular-nums; }
+.boxed .trow:last-child { border-bottom: 0; }
+.trow.in-set { background: var(--primary-soft); }
+.pair { gap: 16px; }
+.action-row { padding: 10px 0; }
+.list > li.action-row + li.action-row { border-top: 1px solid var(--line-soft); }
+.rule { font-size: 14px; color: var(--bad); overflow-wrap: anywhere; }
+
+/* Decision */
+.decision .soft-body { font-size: 15px; line-height: 1.5; color: var(--ink-2); }
+.decision-buttons { gap: 10px; }
+.inner { background: var(--surface); border-radius: var(--radius-md); padding: 16px; }
+.decision textarea { background: var(--surface); }
+
+@media (max-width: 640px) {
+  /* PT is not available in the console yet; the login keeps the switch. */
+  .appbar .segmented.lang { display: none; }
+}

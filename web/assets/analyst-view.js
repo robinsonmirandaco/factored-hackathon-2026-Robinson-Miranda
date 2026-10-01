@@ -168,32 +168,26 @@ export function filterChips(counts, active) {
   }));
 }
 
-// One row of the queue. A security event shows no customer data (TRZ-27 CA8): the API sends
-// none, and the row says so instead of leaving blanks.
+// One row of the queue, a value per column. A security event shows no customer data (TRZ-27
+// CA8): the API sends none, and the row says so instead of leaving blanks.
 export function queueRow(item, nowMs) {
   const security = item.kind === "security_event";
-  const title = security
-    ? kindLabel(item.kind)
-    : [intentLabel(item.intent), reasonLabel(item.reason)].filter(Boolean).join(" · ");
-  const sub = [
-    item.case_id,
-    security ? "Sin datos del cliente" : `Cliente ${item.customer_id}`,
-    item.language ? item.language.toUpperCase() : null,
-    security ? reasonLabel(item.reason) : kindLabel(item.kind),
-  ].filter(Boolean).join(" · ");
-  const sla = slaText(item.sla_due_at, nowMs);
-  const pills = [
-    { text: `Prioridad ${PRIORITY[item.priority] || item.priority}`, tone: item.priority === "normal" ? "" : "bad" },
-    { text: sla.text, tone: sla.tone },
-  ];
-  if (item.updated) pills.push({ text: "Actualizado", tone: "info" });
+  const tags = [];
+  if (item.kind === "audit_sample") tags.push({ text: "Auditoría", tone: "info" });
+  if (item.status === "awaiting_customer") tags.push({ text: "Esperando al cliente", tone: "warn" });
+  if (item.updated) tags.push({ text: "Actualizado", tone: "new" });
   return {
     href: `#/caso/${encodeURIComponent(item.case_id)}`,
-    initial: security ? "S" : item.kind === "audit_sample" ? "A" : "E",
-    title,
-    sub,
+    caseId: item.case_id,
+    tags,
+    customer: security ? "Sin datos del cliente" : `Cliente ${item.customer_id}`,
+    kind: kindLabel(item.kind),
+    type: security ? kindLabel(item.kind) : intentLabel(item.intent),
     amount: security ? null : item.amount_usd == null ? "Sin monto en USD" : usd(item.amount_usd),
-    pills,
+    language: item.language ? item.language.toUpperCase() : "",
+    reason: reasonLabel(item.reason),
+    priority: { text: PRIORITY[item.priority] || item.priority, tone: item.priority === "normal" ? "" : "bad" },
+    sla: slaText(item.sla_due_at, nowMs),
   };
 }
 
@@ -289,6 +283,7 @@ export function candidateCards(identification) {
     probability: percent(c.probability),
     inSet: chosen.has(c.transaction_id),
     parts: Object.entries(c.components).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" · "),
+    scores: Object.entries(c.components).map(([k, v]) => [k, Number(v).toFixed(2)]),
   }));
 }
 
