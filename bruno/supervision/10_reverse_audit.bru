@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-29 CA5 reversing an audit puts it in review
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/cases/{{auditCase}}/decision
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+body:json {
+  {"decision": "reject", "reason": "wrong_charge"}
+}
+
+tests {
+  test("200 in_review", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().status).to.equal("in_review");
+  });
+}

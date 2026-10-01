@@ -1,0 +1,21 @@
+meta {
+  name: notifications are the customer's: 403 for the analyst
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/me/notifications
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("403", function() {
+    expect(res.getStatus()).to.equal(403);
+  });
+}

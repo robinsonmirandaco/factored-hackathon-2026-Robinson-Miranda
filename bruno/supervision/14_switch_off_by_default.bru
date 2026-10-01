@@ -1,0 +1,22 @@
+meta {
+  name: TRZ-35 CA1 the switch starts with automation on
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{baseUrl}}/automation
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("all_to_human false", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().all_to_human).to.equal(false);
+  });
+}

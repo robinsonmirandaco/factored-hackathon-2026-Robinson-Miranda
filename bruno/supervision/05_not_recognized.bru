@@ -1,0 +1,30 @@
+meta {
+  name: still not recognized: the action waits for the confirmation
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/chat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{supervisionToken}}
+}
+
+body:json {
+  {"message": "Sigo sin reconocerlo", "case_id": "{{auditCase}}", "recognition": "not_recognized"}
+}
+
+script:post-response {
+  bru.setVar("auditAction", res.getBody().pending_action.action_id);
+}
+
+tests {
+  test("awaiting_confirmation", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().outcome).to.equal("awaiting_confirmation");
+  });
+}

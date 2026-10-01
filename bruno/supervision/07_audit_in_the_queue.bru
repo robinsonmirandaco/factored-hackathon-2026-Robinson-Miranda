@@ -1,0 +1,28 @@
+meta {
+  name: TRZ-29 CA2 CA3 the case is in the queue as an audit sample
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/queue?filter=audit
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("audit_sample with rho 0.10", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    const item = body.items.find((i) => i.case_id === bru.getVar("auditCase"));
+    expect(item.kind).to.equal("audit_sample");
+    expect(item.reason).to.equal("audit.sample");
+    expect(item.status).to.equal("registered_verified");
+    expect(body.audit_sample_rate).to.equal(0.1);
+    expect(body.counts.audit).to.equal(body.items.length);
+  });
+}

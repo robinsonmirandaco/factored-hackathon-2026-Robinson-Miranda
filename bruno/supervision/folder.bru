@@ -1,0 +1,19 @@
+meta {
+  name: supervision
+}
+
+docs {
+  TRZ-29, TRZ-32 and TRZ-35 against a running API with the synthetic fixture and
+  DEMO_MODE=true, on a freshly seeded database, with ANALYST_DEMO_PASSWORD in bruno/.env.
+  The customer is Pasaporte SYN0000007 (Mexico), who has no clarification in the other folders.
+  With the seed of the policy (20260934) draws 1 and 2 are selected, so the first registration
+  of the stack, and the second, are audit samples: run this folder before any other folder that
+  registers more than one dispute.
+  01 to 03: customer and analyst sessions.
+  04 to 08: the customer registers a charge with its button; the case is drawn and enters the
+  queue as an audit sample with rho 0.10, and the dossier shows the draw (TRZ-29).
+  09 to 13: an audit cannot be asked about (409); a reversal moves the clarification to review,
+  and the customer gets one unread notification, read once; an analyst has none (TRZ-32).
+  14 to 21: the switch starts off; an invalid body is 422 and a customer gets 403; with it on,
+  the next charge goes to the queue with escalate.automation_disabled; it goes back off (TRZ-35).
+}

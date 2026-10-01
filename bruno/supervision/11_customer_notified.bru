@@ -1,0 +1,29 @@
+meta {
+  name: TRZ-32 CA1 CA2 the customer has one unread notification
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{baseUrl}}/me/notifications
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{supervisionToken}}
+}
+
+script:post-response {
+  bru.setVar("noteId", res.getBody().items[0].id);
+}
+
+tests {
+  test("audit_reversed, unread", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.unread).to.equal(1);
+    expect(body.items[0].kind).to.equal("audit_reversed");
+    expect(body.items[0].text).to.equal("Tu aclaración está en revisión por una analista.");
+  });
+}

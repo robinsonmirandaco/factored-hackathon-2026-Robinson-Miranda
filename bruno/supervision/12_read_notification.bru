@@ -1,0 +1,22 @@
+meta {
+  name: TRZ-32 CA2 opening it marks it read
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/me/notifications/{{noteId}}/read
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{supervisionToken}}
+}
+
+tests {
+  test("200 read", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().read).to.equal(true);
+  });
+}
