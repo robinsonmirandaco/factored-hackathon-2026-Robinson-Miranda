@@ -202,6 +202,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); }
 .tag.info { background: var(--primary-soft); color: var(--primary); }
 .tag.warn { background: var(--warn-soft); color: var(--warn); }
 .tag.new { background: var(--lime); color: var(--ink); }
+.tag.sim { background: var(--surface-2); color: var(--muted); }
 /* Demo content is labeled (design 10.2, rule 5). */
 .sim {
   display: inline-block; font-size: 11px; padding: 3px 8px; border-radius: 999px;

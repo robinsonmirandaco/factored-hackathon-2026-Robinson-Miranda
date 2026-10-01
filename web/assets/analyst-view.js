@@ -183,6 +183,8 @@ export function queueRow(item, nowMs, rho) {
   if (item.kind === "audit_sample") tags.push({ text: "Auditoría", tone: "info" });
   if (item.status === "awaiting_customer") tags.push({ text: "Esperando al cliente", tone: "warn" });
   if (item.updated) tags.push({ text: "Actualizado", tone: "new" });
+  // Created by the demo state, not by a customer (TRZ-38, design 10.2 rule 5).
+  if (item.simulated) tags.push({ text: "[simulado]", tone: "sim" });
   return {
     href: `#/caso/${encodeURIComponent(item.case_id)}`,
     caseId: item.case_id,
@@ -338,6 +340,18 @@ export function automationView(state) {
       ? "Los casos vuelven a registrarse solos según la política."
       : "Ninguna aclaración se registrará sola: todas irán a la cola con el motivo «Automatización desactivada».",
     confirmLabel: action,
+    cancelLabel: "Cancelar",
+  };
+}
+
+// The demo reset (TRZ-38), as its header button says it and as the dialog asks it.
+export function demoResetView() {
+  return {
+    title: "¿Reiniciar el demo?",
+    confirm: "Se borran los casos, la cola, las disputas, los bloqueos, las notificaciones y el "
+      + "audit log del demo, las tarjetas bloqueadas vuelven a su estado y se crean de nuevo los "
+      + "casos [simulado] de la cola. Las sesiones de los clientes se cierran.",
+    confirmLabel: "Reiniciar demo",
     cancelLabel: "Cancelar",
   };
 }

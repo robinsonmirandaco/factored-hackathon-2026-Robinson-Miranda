@@ -1,10 +1,12 @@
-// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-35): login, the queue with its filters, the
-// dossier of a case, the decisions, and the global automation switch in the header. Every figure is read from the API; text reaches the page only through
-// textContent, never as HTML.
+// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-35, TRZ-38): login, the queue with its filters,
+// the dossier of a case, the decisions, and the automation switch and demo reset in the header.
+// Every figure is read from the API; text reaches the page only through textContent, never as
+// HTML.
 
 import { createClient } from "./api.js";
 import {
   REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, candidateCards,
+  demoResetView,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
@@ -42,6 +44,8 @@ const ERRORS = {
   reason_not_allowed: "El motivo no está en la lista.",
   question_required: "Escribe la pregunta para el cliente.",
   db_unavailable: "La base de datos no responde. Intenta de nuevo.",
+  demo_not_seeded: "Esta base no tiene el estado del demo: corre make seed-demo.",
+  demo_script_diverged: "Un caso sembrado no terminó como espera config/demo.yaml; nada cambió.",
 };
 const errorText = (e) => ERRORS[e?.code] || "Algo falló. Intenta de nuevo.";
 
@@ -57,7 +61,10 @@ const pill = (p) => el("span", { class: `pill${p.tone ? ` ${p.tone}` : ""}`, tex
 
 function showChrome(loggedIn) {
   $("appbar").hidden = !loggedIn;
-  if (loggedIn) loadAutomation();
+  if (loggedIn) {
+    loadAutomation();
+    loadDemo();
+  }
 }
 
 // ---- global automation switch (TRZ-35) ----------------------------------------------------
@@ -82,11 +89,14 @@ async function loadAutomation() {
   drawAutomation();
 }
 
-// The dialog of the switch, with the markup and style of the customer's expired session dialog:
-// the focus goes into it, Tab stays on its buttons, Escape or Cancelar closes it unchanged, and
-// the focus goes back to the switch.
-function openSwitchDialog() {
-  const view = automationView(automation);
+// The header's dialog, with the markup and style of the customer's expired session dialog: the
+// automation switch and the demo reset ask through it. The focus goes into it, Tab stays on its
+// buttons, Escape or Cancelar closes it unchanged, and the focus goes back to the button that
+// opened it.
+let dialog = null;
+
+function openDialog(view, run, opener) {
+  dialog = { run, opener };
   $("switch-title").textContent = view.title;
   $("switch-text").textContent = view.confirm;
   $("switch-cancel").textContent = view.cancelLabel;
@@ -97,23 +107,51 @@ function openSwitchDialog() {
   $("switch-cancel").focus();
 }
 
-function closeSwitchDialog() {
+function closeDialog() {
   $("switch-dialog").hidden = true;
-  $("automation").focus();
+  dialog?.opener.focus();
+  dialog = null;
 }
 
-$("automation").addEventListener("click", openSwitchDialog);
-$("switch-cancel").addEventListener("click", closeSwitchDialog);
+$("automation").addEventListener("click", () => openDialog(automationView(automation), async () => {
+  automation = await api.call("/automation", {
+    method: "PUT", body: { all_to_human: !automation.all_to_human },
+  });
+  drawAutomation();
+}, $("automation")));
+
+// ---- demo reset (TRZ-38) ------------------------------------------------------------------
+
+async function loadDemo() {
+  try {
+    const state = await api.call("/demo");
+    $("demo-reset").hidden = !state.seeded;
+  } catch {
+    // Outside demo mode the route does not exist.
+    $("demo-reset").hidden = true;
+  }
+}
+
+$("demo-reset").addEventListener("click", () => {
+  // One key per dialog: a second click on the same dialog does not reset twice.
+  const key = crypto.randomUUID();
+  openDialog(demoResetView(), async () => {
+    await api.call("/demo/reset", { method: "POST", headers: { "idempotency-key": key } });
+    filter = "all";
+    await loadAutomation();
+    location.hash = "#/cola";
+    route();
+  }, $("demo-reset"));
+});
+
+$("switch-cancel").addEventListener("click", closeDialog);
 
 $("switch-confirm").addEventListener("click", async () => {
   const button = $("switch-confirm");
   button.disabled = true;
   try {
-    automation = await api.call("/automation", {
-      method: "PUT", body: { all_to_human: !automation.all_to_human },
-    });
-    drawAutomation();
-    closeSwitchDialog();
+    await dialog.run();
+    closeDialog();
   } catch (e) {
     $("switch-error").textContent = errorText(e);
     $("switch-error").hidden = false;
@@ -126,7 +164,7 @@ $("switch-dialog").addEventListener("keydown", (event) => {
   const step = dialogKey(event.key, event.shiftKey, buttons.indexOf(document.activeElement), buttons.length);
   if (!step) return;
   event.preventDefault();
-  if (step.cancel) closeSwitchDialog();
+  if (step.cancel) closeDialog();
   else buttons[step.focus].focus();
 });
 
@@ -260,6 +298,7 @@ async function renderCase(caseId) {
           el("span", { class: "mono small muted", text: caseHeading(dossier.case_kind, one.status, dossier.case_id) }),
           el("h1", { class: "case-title", text: dossier.request_summary })),
         el("div", { class: "row" },
+          dossier.simulated ? el("span", { class: "sim", text: "[simulado]" }) : null,
           row ? pill({ text: `Prioridad ${row.priority.text}`, tone: row.priority.tone }) : null,
           pill({ text: statusLabel(one.status), tone: STATUS_TONE[one.status] || "" }))),
       el("div", { class: "detail ruled-top" },
