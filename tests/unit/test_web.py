@@ -5,7 +5,9 @@ from pathlib import Path
 
 import pytest
 
-PAGES = sorted(Path("web").glob("*.html"))
+PAGES = sorted(Path("web").rglob("*.html"))
+STYLES = sorted(Path("web/assets").glob("*.css"))
+FONTS = Path("web/assets/fonts")
 I18N = Path("web/assets/i18n.js")
 SRC = Path("src")
 # An inline handler such as onclick="..." would need 'unsafe-inline' to run.
@@ -17,7 +19,7 @@ def test_there_is_a_page() -> None:
     assert PAGES
 
 
-@pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
+@pytest.mark.parametrize("page", PAGES, ids=str)
 def test_a_page_has_no_inline_script_handler_or_style(page: Path) -> None:
     html = page.read_text(encoding="utf-8")
     assert not INLINE_SCRIPT.search(html)
@@ -25,10 +27,30 @@ def test_a_page_has_no_inline_script_handler_or_style(page: Path) -> None:
     assert "style=" not in html and "<style" not in html
 
 
-@pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
+@pytest.mark.parametrize("page", PAGES, ids=str)
 def test_a_page_loads_nothing_from_another_origin(page: Path) -> None:
     html = page.read_text(encoding="utf-8")
     assert not re.search(r"(src|href)=\"(https?:)?//", html)
+
+
+def test_the_customer_web_and_the_console_share_the_base_styles() -> None:
+    for page in PAGES:
+        assert 'href="/assets/base.css"' in page.read_text(encoding="utf-8"), page
+
+
+@pytest.mark.parametrize("sheet", STYLES, ids=lambda p: p.name)
+def test_a_stylesheet_loads_its_files_from_this_origin(sheet: Path) -> None:
+    css = sheet.read_text(encoding="utf-8")
+    assert "@import" not in css
+    for url in re.findall(r"url\(\"?([^\")]+)\"?\)", css):
+        assert not re.match(r"([a-z]+:)?//", url), url
+        assert (sheet.parent / url).is_file(), url
+
+
+def test_the_fonts_travel_with_their_license() -> None:
+    fonts = sorted(f.name for f in FONTS.glob("*.woff2"))
+    assert fonts == ["Geist-Variable.woff2", "GeistMono-Variable.woff2"]
+    assert "SIL Open Font License" in (FONTS / "OFL.txt").read_text(encoding="utf-8")
 
 
 def _error_codes() -> set[str]:

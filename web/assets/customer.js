@@ -71,28 +71,30 @@ function setLang(lang) {
 }
 
 function showChrome(loggedIn) {
-  $("tabs").hidden = !loggedIn;
-  $("logout").hidden = !loggedIn;
+  $("appbar").hidden = !loggedIn;
   $("clock").hidden = !loggedIn || !state.me;
+  $("avatar").textContent = (state.me?.first_name || "").slice(0, 1).toUpperCase();
 }
 
 // ---- login (also used by the expired session dialog) --------------------------------------
 
 function loginForm(form, onDone) {
   form.replaceChildren();
-  const type = el("select", { id: `${form.id}-type`, required: true },
+  const type = el("select", { id: `${form.id}-type`, required: true, "aria-label": t("documentType") },
     DOCUMENT_TYPES.map((d) => el("option", { value: d, text: d })));
-  const number = el("input", { id: `${form.id}-number`, autocomplete: "off", maxlength: 32, required: true });
+  const number = el("input", {
+    id: `${form.id}-number`, autocomplete: "off", maxlength: 32, required: true, placeholder: t("documentNumber"),
+  });
   const code = el("input", {
-    id: `${form.id}-code`, inputmode: "numeric", autocomplete: "one-time-code",
-    maxlength: 6, pattern: "\\d{6}",
+    id: `${form.id}-code`, class: "code-input", inputmode: "numeric", autocomplete: "one-time-code",
+    maxlength: 6, pattern: "\\d{6}", placeholder: "000000",
   });
   const codeRow = el("div", { hidden: true },
     el("label", { for: code.id, text: t("code") }), code);
   const info = el("p", { class: "muted small", "aria-live": "polite" });
   const error = el("p", { class: "error", role: "alert" });
-  const askButton = el("button", { type: "button", class: "btn", text: t("requestCode") });
-  const enterButton = el("button", { type: "submit", class: "btn primary", text: t("verify"), hidden: true });
+  const askButton = el("button", { type: "button", class: "btn primary block", text: t("requestCode") });
+  const enterButton = el("button", { type: "submit", class: "btn primary block", text: t("verify"), hidden: true });
   const doc = () => ({ document_type: type.value, document_number: number.value.trim() });
   let requestedFor = null;
   // A code belongs to the document it was asked for: changing the document hides the field.
@@ -100,6 +102,7 @@ function loginForm(form, onDone) {
     const { showCode } = codeStep(requestedFor, { type: type.value, number: number.value.trim() });
     codeRow.hidden = !showCode;
     enterButton.hidden = !showCode;
+    askButton.className = showCode ? "btn block" : "btn primary block";
     code.disabled = !showCode;
     if (!showCode) code.value = "";
     info.textContent = showCode ? info.textContent : t("codeFirst");
@@ -127,6 +130,7 @@ function loginForm(form, onDone) {
   form.onsubmit = async (event) => {
     event.preventDefault();
     error.textContent = "";
+    code.removeAttribute("aria-invalid");
     if (codeRow.hidden) return askButton.click();
     enterButton.disabled = true;
     try {
@@ -137,20 +141,23 @@ function loginForm(form, onDone) {
       await onDone();
     } catch (e) {
       error.textContent = errorText(t, e);
+      code.setAttribute("aria-invalid", "true");
     } finally {
       enterButton.disabled = false;
     }
   };
 
   form.append(
-    el("p", { class: "muted", text: t("loginIntro") }),
-    el("div", {}, el("label", { for: type.id, text: t("documentType") }), type),
-    el("div", {}, el("label", { for: number.id, text: t("documentNumber") }), number),
+    el("p", { class: "muted small", text: t("loginIntro") }),
+    el("div", {},
+      el("label", { for: number.id, text: `${t("documentType")} · ${t("documentNumber")}` }),
+      el("div", { class: "doc-field" }, type, number)),
     codeRow,
-    el("div", { class: "row" }, askButton, enterButton),
+    enterButton,
+    askButton,
     info,
     error,
-    el("p", { class: "note", text: t("identityNote") }),
+    el("p", { class: "notice", text: t("identityNote") }),
   );
   sync();
 }
@@ -222,7 +229,7 @@ function markQuestions(items) {
 }
 
 function amountCell(item) {
-  const main = el("span", { text: money(state.lang, item.amount, item.currency) });
+  const main = el("span", { class: "amount", text: money(state.lang, item.amount, item.currency) });
   const approx = item.converted_amount != null
     ? el("span", {
       class: "approx",
@@ -230,6 +237,12 @@ function amountCell(item) {
     })
     : null;
   return [main, approx];
+}
+
+const initialOf = (text) => String(text || "?").trim().slice(0, 1).toUpperCase();
+
+function statusPill(c) {
+  return el("span", { class: `pill ${statusTone(c.status)}`, text: label(t, "status", c.status) });
 }
 
 async function renderHome() {
@@ -240,30 +253,51 @@ async function renderHome() {
     ]);
     const questions = markQuestions(clarifications);
     const name = state.me.first_name;
-    const cards = products.length
-      ? el("div", { class: "grid" }, products.map((p) => el("div", { class: "card" },
-        el("div", { class: "muted small", text: label(t, "product", p.product_type) }),
-        el("div", { class: "mono", text: p.last4 ? `•••• ${p.last4}` : "" }),
+    const productRows = products.length
+      ? products.map((p) => el("div", { class: "product" },
+        el("div", { class: "row" },
+          el("strong", { text: label(t, "product", p.product_type) }),
+          p.last4 ? el("span", { class: "mono small muted", text: `•••• ${p.last4}` }) : null,
+          el("span", { class: "spacer" }),
+          el("span", {
+            class: `pill ${p.status === "Active" ? "ok" : p.status === "Blocked" ? "bad" : ""}`,
+            text: label(t, "pstatus", p.status),
+          })),
         p.current_balance != null
-          ? el("div", {}, `${t("balance")}: `, el("strong", { text: money(state.lang, p.current_balance, p.currency) }))
+          ? [el("span", { class: "small muted", text: t("balance") }),
+            el("span", { class: "figure", text: money(state.lang, p.current_balance, p.currency) })]
           : null,
         p.credit_limit != null
-          ? el("div", { class: "small muted", text: `${t("limit")}: ${money(state.lang, p.credit_limit, p.currency)}` })
-          : null,
-        el("div", { class: "small muted", text: label(t, "pstatus", p.status) }))))
-      : el("p", { class: "muted", text: t("noProducts") });
+          ? el("span", { class: "small muted", text: `${t("limit")}: ${money(state.lang, p.credit_limit, p.currency)}` })
+          : null))
+      : [el("p", { class: "muted", text: t("noProducts") })];
+    const recent = clarifications.slice(0, 3).map((c) => {
+      const { title, ref } = clarificationLines(t, state.lang, c);
+      return el("div", { class: "claim-mini" },
+        el("div", {},
+          el("span", { class: "small", text: title }),
+          ref ? el("span", { class: "tiny muted mono", text: ref }) : null),
+        statusPill(c));
+    });
     target.replaceChildren(
-      el("div", { class: "card" },
-        el("h2", { text: name ? t("hello", { name }) : t("helloAnon") }),
-        el("p", { class: "muted", text: t("homeActions") }),
-        el("div", { class: "row" },
-          el("a", { class: "btn primary", href: "#/aclarar", text: t("navChat") }),
-          el("a", { class: "btn", href: "#/movimientos", text: t("navMovements") }),
-          el("a", { class: "btn", href: "#/aclaraciones", text: `${t("navClarifications")} (${clarifications.length})` })),
-        questions
-          ? el("p", { class: "notice" }, el("a", { href: "#/aclaraciones", text: t("pendingQuestions", { n: questions }) }))
-          : null),
-      el("div", { class: "card" }, el("h2", { text: t("products") }), cards),
+      el("div", { class: "page-head" },
+        el("span", { class: "eyebrow", text: day(state.lang, state.me.now) }),
+        el("h1", { text: name ? t("hello", { name }) : t("helloAnon") })),
+      el("div", { class: "grid-2" },
+        el("section", { class: "card tight" }, el("h2", { text: t("products") }), el("div", {}, productRows)),
+        el("div", { class: "stack-gap" },
+          el("section", { class: "card soft" },
+            el("h2", { class: "soft-title", text: t("reviewChargeTitle") }),
+            el("p", { class: "soft-body", text: t("reviewChargeBody") }),
+            el("div", {}, el("a", { class: "btn primary medium", href: "#/aclarar", text: t("reviewChargeCta") }))),
+          questions
+            ? el("p", { class: "notice bad" }, el("a", { href: "#/aclaraciones", text: t("pendingQuestions", { n: questions }) }))
+            : null,
+          el("section", { class: "card tight" },
+            el("div", { class: "card-head" },
+              el("h2", { text: t("navClarifications") }),
+              el("a", { class: "link", href: "#/aclaraciones", text: t("see") })),
+            recent.length ? el("div", {}, recent) : el("p", { class: "muted small", text: t("noClarifications") })))),
     );
   } catch (e) {
     failure(target, e);
@@ -274,15 +308,10 @@ async function renderMovements(reset) {
   const target = $("view-movements");
   if (reset) {
     state.nextBefore = null;
-    target.replaceChildren(el("div", { class: "card" },
-      el("h2", { text: t("movements") }),
-      el("table", { class: "table" },
-        el("thead", {}, el("tr", {},
-          el("th", { text: t("date") }), el("th", { text: t("detail") }),
-          el("th", { class: "amount", text: t("amount") }),
-          el("th", { class: "hide-sm", text: t("status") }), el("th", {}))),
-        el("tbody", { id: "movements-body" })),
-      el("div", { class: "row", id: "movements-more" })));
+    target.replaceChildren(
+      el("div", { class: "page-head" }, el("h1", { text: t("movements") })),
+      el("section", { class: "card flush" }, el("ul", { class: "list", id: "movements-body" })),
+      el("div", { class: "row more", id: "movements-more" }));
   }
   const body = $("movements-body");
   const more = $("movements-more");
@@ -291,31 +320,30 @@ async function renderMovements(reset) {
     if (state.nextBefore) query.set("before", state.nextBefore);
     const page = await api.call(`/me/transactions?${query}`);
     if (reset && !page.items.length) {
-      body.append(el("tr", {}, el("td", { colspan: 5, class: "muted", text: t("noMovements") })));
+      body.append(el("li", { class: "empty", text: t("noMovements") }));
     }
     for (const m of page.items) {
       const pending = m.status === "Pending";
+      const what = m.merchant || label(t, "type", m.transaction_type);
       const action = m.disputable
         ? el("button", {
-          type: "button", class: `btn small${pending ? "" : " primary"}`,
+          type: "button", class: "btn small outline",
           text: pending ? t("whatIsThis") : t("notRecognized"),
           onclick: () => openByButton(m.transaction_id, buttonMessage(t, state.lang, m)),
         })
         : null;
-      body.append(el("tr", {},
-        el("td", { text: dayTime(state.lang, m.at) }),
-        el("td", {},
-          el("div", { text: m.merchant || label(t, "type", m.transaction_type) }),
-          el("div", { class: "muted small", text: movementDetail(t, m) })),
-        el("td", { class: "amount" }, amountCell(m)),
-        el("td", { class: "hide-sm" }, el("span", {
-          class: `pill${pending ? " warn" : ""}`, text: label(t, "tx", m.status),
-        })),
-        el("td", {}, action)));
+      body.append(el("li", { class: "list-row" },
+        el("span", { class: "initial", text: initialOf(what) }),
+        el("span", { class: "main" },
+          el("span", { class: "title", text: what }),
+          el("span", { class: "sub", text: [dayTime(state.lang, m.at), movementDetail(t, m)].filter(Boolean).join(" · ") })),
+        el("span", { class: `pill${pending ? " warn" : ""}`, text: label(t, "tx", m.status) }),
+        el("span", { class: "end" }, amountCell(m)),
+        action));
     }
     state.nextBefore = page.next_before;
     more.replaceChildren(page.next_before
-      ? el("button", { type: "button", class: "btn", text: t("loadMore"), onclick: () => renderMovements(false) })
+      ? el("button", { type: "button", class: "btn medium", text: t("loadMore"), onclick: () => renderMovements(false) })
       : "");
   } catch (e) {
     failure(target, e);
@@ -335,34 +363,36 @@ async function renderClarifications() {
         const due = kind === "answer" || kind === "closed"
           ? null
           : kind === "review"
-          ? el("span", { class: "sim-label" }, el("span", { class: "pill warn", text: review.text }), " ",
-            el("span", { class: "badge sim", text: "simulado" }), ` ${review.label}`)
+          ? el("span", { class: "sim-label" }, el("span", { class: "pill warn", text: review.text }),
+            el("span", { class: "sim", text: "simulado" }), review.label)
           : kind === "due"
           ? el("span", {
             class: `pill${c.overdue ? " bad" : ""}`,
             text: c.overdue ? t("overdueSince", { date: day(state.lang, c.due_date) }) : t("dueBy", { date: day(state.lang, c.due_date) }),
           })
-          : el("span", { class: "muted small", text: t("noDeadline") });
-        return el("div", { class: "card" },
-          el("div", { class: "row" },
-            el("strong", { text: title }), el("span", { class: "spacer" }),
-            el("span", { class: `pill tone-${statusTone(c.status)}`, text: label(t, "status", c.status) })),
-          el("div", { class: "row small" },
-            c.opened_on ? el("span", { class: "muted", text: t("openedOn", { date: day(state.lang, c.opened_on) }) }) : null,
-            due),
-          el("div", { class: "muted small mono", text: ref }),
+          : el("span", { class: "small muted", text: t("noDeadline") });
+        return el("section", { class: "card" },
+          el("div", { class: "claim-head" },
+            el("div", {},
+              ref ? el("span", { class: "tiny muted mono", text: ref }) : null,
+              el("span", { class: "title", text: title }),
+              c.opened_on ? el("span", { class: "small muted", text: t("openedOn", { date: day(state.lang, c.opened_on) }) }) : null),
+            statusPill(c)),
+          due,
           infoBlock(c),
           closedNote(t, c)
             ? el("div", { class: "info-request" },
               el("p", { class: "small", text: closedNote(t, c) }),
-              el("a", { class: "btn", href: "#/aclarar", text: t("navChat") }))
+              el("div", {}, el("a", { class: "btn medium", href: "#/aclarar", text: t("navChat") })))
             : null);
       })
-      : [el("div", { class: "card" }, el("p", { class: "muted", text: t("noClarifications") }))];
+      : [el("section", { class: "card" }, el("p", { class: "muted", text: t("noClarifications") }))];
     target.replaceChildren(
-      el("h2", { text: t("clarificationsTitle") }),
-      ...list,
-      el("p", { class: "note", text: t("deadlineNote") }));
+      el("div", { class: "page-head" },
+        el("span", { class: "eyebrow", text: t("followUp") }),
+        el("h1", { text: t("clarificationsTitle") })),
+      el("div", { class: "claims" }, list),
+      el("p", { class: "page-note", text: t("deadlineNote") }));
   } catch (e) {
     failure(target, e);
   }
@@ -377,18 +407,18 @@ function infoBlock(item) {
 
 function infoEntry(item, info) {
   const head = [
-    el("div", { class: "small muted", text: t("infoTitle") }),
+    el("span", { class: "small muted", text: t("infoTitle") }),
     el("p", { class: "question", text: info.question }),
   ];
   if (!info.canAnswer) {
     return el("div", { class: "info-entry" }, head,
       info.answer
-        ? [el("div", { class: "small muted", text: t("yourAnswer") }), el("p", { class: "answer", text: info.answer })]
+        ? [el("span", { class: "small muted", text: t("yourAnswer") }), el("p", { class: "answer", text: info.answer })]
         : null,
       info.answered ? el("p", { class: "small muted", text: info.answered }) : null);
   }
   const answer = el("textarea", { maxlength: "2000", placeholder: t("answerPlaceholder"), "aria-label": t("answerPlaceholder") });
-  const button = el("button", { type: "submit", class: "btn primary", text: t("sendAnswer"), disabled: true });
+  const button = el("button", { type: "submit", class: "btn primary medium", text: t("sendAnswer"), disabled: true });
   const error = el("p", { class: "error", hidden: true });
   answer.addEventListener("input", () => { button.disabled = !canSend(answer.value); });
   const form = el("form", { class: "stack" }, answer, el("div", { class: "row" }, button), error);
@@ -413,16 +443,43 @@ function infoEntry(item, info) {
 
 // ---- chat ---------------------------------------------------------------------------------
 
+// A message of the customer is one blue bubble; a message of the assistant is a column next to
+// its mark, which returns so a turn can be redrawn in place.
 function bubble(who, ...children) {
-  const node = el("div", { class: `msg ${who}` }, ...children);
+  if (who === "me") {
+    const node = el("div", { class: "msg me" }, el("div", { class: "bubble" }, ...children));
+    $("log").append(node);
+    node.scrollIntoView({ block: "end", behavior: "smooth" });
+    return node;
+  }
+  const turn = el("div", { class: "turn" }, ...children);
+  const node = el("div", { class: "msg bot" }, el("span", { class: "bot-mark", "aria-hidden": "true", text: "T" }), turn);
   $("log").append(node);
   node.scrollIntoView({ block: "end", behavior: "smooth" });
-  return node;
+  return turn;
 }
 
 function greet() {
   $("log").replaceChildren();
-  bubble("bot", t("chatIntro"));
+  bubble("bot", el("div", { class: "bubble", text: t("chatIntro") }));
+}
+
+function chargeCard(rows) {
+  const by = Object.fromEntries(rows.map((row) => [row.key, row]));
+  const rest = rows.filter((row) => row.key !== "merchant" && row.key !== "amount");
+  return el("div", { class: "charge" },
+    el("div", { class: "charge-top" },
+      el("div", {},
+        el("span", { class: "small muted", text: t("chargeDetail") }),
+        by.merchant ? el("span", { class: "merchant", text: by.merchant.value }) : null),
+      by.amount
+        ? el("div", {},
+          el("span", { class: "figure", text: by.amount.value }),
+          by.amount.approx ? el("span", { class: "approx", text: by.amount.approx }) : null)
+        : null),
+    el("div", { class: "detail ruled-top" }, rest.map((row) => el("div", {},
+      el("span", { class: "k", text: row.label }),
+      el("span", { class: "v", text: row.value })))));
 }
 
 // The last turn stays live: switching the language redraws its chips, card and buttons.
@@ -431,23 +488,17 @@ function drawTurn(r) {
   const parts = [];
   if (m.chips.length) {
     parts.push(el("div", { class: "chips" },
-      el("span", { class: "muted small", text: `${t("understood")}:` }),
+      el("span", { class: "small muted", text: `${t("understood")}:` }),
       m.chips.map((chip) => el("span", { class: "chip", title: chip.title },
-        el("strong", { text: `${chip.label}: ` }), chip.value,
-        chip.evidence ? el("span", { class: "evidence", text: ` «${chip.evidence}»` }) : null))));
+        el("span", { class: "k", text: chip.label }), el("span", { class: "v", text: chip.value }),
+        chip.evidence ? el("span", { class: "evidence", text: `«${chip.evidence}»` }) : null))));
   }
-  for (const line of m.lines) {
-    parts.push(line.simulated
-      ? el("span", { class: "sim-label" }, el("span", { class: "badge sim", text: "simulado" }), ` ${line.text}`)
-      : el("span", { class: "line", text: line.text }));
-  }
-  if (m.card.length) {
-    parts.push(el("div", { class: "charge" }, el("dl", {}, m.card.flatMap((row) => [
-      el("dt", { text: row.label }),
-      el("dd", {}, row.value, row.approx ? el("span", { class: "approx", text: row.approx }) : null),
-    ]))));
-  }
-  if (m.question) parts.push(el("p", { class: "question", text: m.question }));
+  const text = m.lines.map((line) => (line.simulated
+    ? el("span", { class: "sim-label" }, el("span", { class: "sim", text: "simulado" }), line.text)
+    : el("span", { class: "line", text: line.text })));
+  if (text.length) parts.push(el("div", { class: "bubble" }, text));
+  if (m.card.length) parts.push(chargeCard(m.card));
+  if (m.question) parts.push(el("div", { class: "bubble" }, el("p", { class: "question", text: m.question })));
   if (m.buttons.length) {
     parts.push(el("div", { class: "choices" }, m.buttons.map((b) => el("button", {
       type: "button", class: `btn${b.primary ? " primary" : ""}`, text: b.label,
@@ -455,8 +506,17 @@ function drawTurn(r) {
     }))));
   }
   if (m.folio) {
-    parts.push(el("div", { class: "folio" }, el("span", { class: "pill" },
-      `${t("folio")} `, el("span", { class: "mono", text: m.folio }), ` · ${t("verified")}`)));
+    parts.push(el("div", { class: "receipt" },
+      el("div", { class: "receipt-top" },
+        el("span", { class: "done", text: t("registeredTitle") }),
+        el("div", { class: "stack" },
+          el("span", { class: "k", text: t("folio") }),
+          el("span", { class: "folio", text: m.folio }))),
+      el("div", { class: "receipt-bottom" },
+        el("div", { class: "check" }, el("div", {}, el("span", { class: "title", text: t("verified") }))),
+        el("div", { class: "row" },
+          el("a", { class: "btn primary medium", href: "#/aclaraciones", text: t("seeClarifications") }),
+          el("a", { class: "btn medium", href: "#/inicio", text: t("navHome") })))));
   }
   parts.push(el("span", { class: "meta", text: `${t("caseLabel")} ${r.case_id} · trace_id ${r.trace_id}` }));
   return parts;
@@ -490,7 +550,7 @@ async function send(body, shown) {
   } catch (e) {
     if (!talk.isCurrent(turn)) return;
     if (e.code === "case_not_found") setCase(null);
-    bubble("bot", el("span", { class: "error", text: errorText(t, e) }),
+    bubble("bot", el("div", { class: "bubble" }, el("span", { class: "error", text: errorText(t, e) })),
       e.traceId ? el("span", { class: "meta", text: `trace_id ${e.traceId}` }) : null);
   } finally {
     if (talk.isCurrent(turn)) state.busy = false;

@@ -406,6 +406,15 @@ def test_the_analyst_console_is_served_with_the_same_policy(app_client: TestClie
         assert app_client.get(asset).status_code == 200
 
 
+def test_the_fonts_are_served_from_the_same_origin(app_client: TestClient) -> None:
+    font = app_client.get("/assets/fonts/Geist-Variable.woff2")
+    policy = app_client.get("/").headers["content-security-policy"]
+
+    assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
+    # No font-src of its own: fonts fall under default-src 'self', so only this origin serves them.
+    assert "default-src 'self'" in policy and "font-src" not in policy
+
+
 # ---- the chips of what was read (design 10.1) ------------------------------------------------
 
 READ_NETFLIX = "No reconozco 120 dólares en Netflix, todavía tengo la tarjeta"
@@ -867,7 +876,13 @@ def test_a_case_with_a_person_shows_the_review_time_the_chat_gave(client: TestCl
 def test_the_web_is_revalidated_so_a_new_deploy_is_never_stale(app_client: TestClient) -> None:
     # Without it, a browser may reuse by heuristic an older module of the web after a deploy
     # (seen in QA: a language switch that did not redraw, from an old customer.js).
-    for path in ("/", "/assets/customer.js", "/assets/view.js", "/assets/trazo.css"):
+    for path in (
+        "/",
+        "/assets/customer.js",
+        "/assets/view.js",
+        "/assets/customer.css",
+        "/assets/base.css",
+    ):
         r = app_client.get(path)
         assert r.status_code == 200 and r.headers.get("cache-control") == "no-cache", path
     assert app_client.get("/health").headers.get("cache-control") != "no-cache"

@@ -1,5 +1,6 @@
 """Application factory. Run with: uvicorn app.main:create_app --factory"""
 
+import mimetypes
 import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -138,6 +139,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
     install_trace_middleware(app)
     app.include_router(router)
+    # The slim image has no system table of media types, which would serve the web fonts as
+    # application/octet-stream.
+    mimetypes.add_type("font/woff2", ".woff2")
     # Mounted last, so every API route above takes precedence over a file of the same path.
     app.mount("/", StaticFiles(directory=settings.web_dir, html=True), name="web")
     return app

@@ -6,7 +6,7 @@ import { createClient } from "./api.js";
 import {
   REVERSAL_REASONS, actionLabel, actionStateLabel, candidateCards, caseHeading, clueChips,
   decisionDone, decisionPanel, decisionProblem, factRows, filterChips, identificationLabel,
-  infoExchanges, queueRow, reasonLabel, statusLabel,
+  infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
 const api = createClient("analyst");
@@ -56,9 +56,7 @@ const pill = (p) => el("span", { class: `pill${p.tone ? ` ${p.tone}` : ""}`, tex
 // ---- session ------------------------------------------------------------------------------
 
 function showChrome(loggedIn) {
-  $("nav").hidden = !loggedIn;
-  $("who").hidden = !loggedIn;
-  $("logout").hidden = !loggedIn;
+  $("appbar").hidden = !loggedIn;
 }
 
 $("login-form").addEventListener("submit", async (event) => {
@@ -123,6 +121,8 @@ function route() {
   return renderQueue();
 }
 
+const QUEUE_COLUMNS = ["Caso", "Cliente", "Tipo", "Monto USD", "Idioma", "Motivo", "Prioridad", "SLA"];
+
 async function renderQueue() {
   const target = $("view-queue");
   try {
@@ -131,30 +131,40 @@ async function renderQueue() {
     const now = Date.now();
     const chips = filterChips(queue.counts, filter).map((c) => el("button", {
       type: "button",
-      class: "chip filter",
+      class: "pick",
       "aria-pressed": String(c.pressed),
       onclick: () => { filter = c.key; renderQueue(); },
     }, el("span", { text: c.label }), el("span", { class: "count", text: String(c.count) })));
     const rows = queue.items.map((item) => {
       const r = queueRow(item, now);
-      return el("li", {}, el("a", { class: "list-row", href: r.href },
-        el("span", { class: "initial", text: r.initial }),
-        el("span", { class: "main" },
-          el("div", { class: "title", text: r.title }),
-          el("div", { class: "sub mono", text: r.sub })),
-        el("span", { class: "end" },
-          r.amount ? el("strong", { text: r.amount }) : null,
-          el("span", { class: "row" }, r.pills.map(pill)))));
+      return el("a", { class: "trow", href: r.href },
+        el("span", { class: "cell-stack" },
+          el("span", { class: "mono small", text: r.caseId }),
+          r.tags.map((tag) => el("span", { class: `tag ${tag.tone}`, text: tag.text }))),
+        el("span", { class: "cell-stack" },
+          el("span", { class: "strong", text: r.customer }),
+          el("span", { class: "tiny muted", text: r.kind })),
+        el("span", { text: r.type }),
+        el("span", { class: "r strong", text: r.amount ?? "" }),
+        el("span", { class: "mono tiny", text: r.language }),
+        el("span", { class: "reason", text: r.reason }),
+        pill(r.priority),
+        el("span", { class: `r strong sla ${r.sla.tone}`, text: r.sla.text }));
     });
     target.replaceChildren(
-      el("p", { class: "eyebrow", text: "Operación" }),
-      el("h1", { text: "Cola de casos" }),
-      el("div", { class: "chips queue-filters" }, chips),
-      el("div", { class: "card" },
-        rows.length
-          ? el("ul", { class: "list" }, rows)
-          : el("p", { class: "muted", text: "No hay casos en este filtro." })),
-      el("p", { class: "muted small", text: "El SLA corre en el reloj real, según la prioridad. Los montos en USD son los que comparó la política." }));
+      el("div", { class: "queue-head" },
+        el("div", { class: "page-head" },
+          el("span", { class: "eyebrow", text: "Operación" }),
+          el("h1", { text: "Cola de casos" })),
+        el("div", { class: "stats" },
+          el("div", {}, el("span", { class: "stat", text: String(queue.counts?.all ?? 0) }), el("span", { class: "small muted", text: "En cola" })),
+          el("div", {}, el("span", { class: "stat", text: String(queue.counts?.high_priority ?? 0) }), el("span", { class: "small muted", text: "Alta prioridad" })))),
+      el("div", { class: "pills queue-filters" }, chips),
+      el("section", { class: "card flush table-wrap queue" },
+        el("div", { class: "table" },
+          el("div", { class: "trow head" }, QUEUE_COLUMNS.map((c, i) => el("span", { class: i === 3 || i === 7 ? "r" : null, text: c }))),
+          rows.length ? rows : el("div", { class: "empty", text: "No hay casos en este filtro." }))),
+      el("p", { class: "small muted note-below", text: "El SLA corre en el reloj real, según la prioridad. Los montos en USD son los que comparó la política." }));
   } catch (e) {
     failure(target, e);
   }
@@ -171,35 +181,56 @@ async function renderCase(caseId) {
       api.call("/queue"),
     ]);
     const item = queue.items.find((i) => i.case_id === caseId) || null;
+    const row = item ? queueRow(item, Date.now()) : null;
+    const header = el("section", { class: "card" },
+      el("div", { class: "card-head start" },
+        el("div", { class: "stack tight-stack" },
+          el("span", { class: "mono small muted", text: caseHeading(dossier.case_kind, one.status, dossier.case_id) }),
+          el("h1", { class: "case-title", text: dossier.request_summary })),
+        el("div", { class: "row" },
+          row ? pill({ text: `Prioridad ${row.priority.text}`, tone: row.priority.tone }) : null,
+          pill({ text: statusLabel(one.status), tone: STATUS_TONE[one.status] || "" }))),
+      el("div", { class: "detail ruled-top" },
+        field("Tipo", kindLabel(dossier.case_kind)),
+        field("Idioma", (dossier.language || "?").toUpperCase()),
+        row?.amount ? field("Monto USD", row.amount) : null,
+        row ? field("SLA", row.sla.text) : null,
+        field("trace_id", dossier.trace_id, "mono")));
     target.replaceChildren(
-      el("a", { class: "back", href: "#/cola", text: "← Cola de casos" }),
-      el("p", { class: "eyebrow", text: caseHeading(dossier.case_kind, one.status, dossier.case_id) }),
-      el("h1", { text: dossier.request_summary }),
-      el("div", { class: "case-grid" },
-        el("div", { class: "case-main" }, dossierCards(dossier, history)),
-        el("aside", { class: "case-side" }, decisionCard(dossier, item, one.status), actionsCard(dossier))));
+      el("div", { class: "case" },
+        el("a", { class: "back", href: "#/cola", text: "← Cola de casos" }),
+        header,
+        dossierCards(dossier, history),
+        decisionCard(dossier, item, one.status)));
   } catch (e) {
     failure(target, e);
   }
 }
 
+const STATUS_TONE = {
+  approved: "ok", rejected: "", awaiting_customer: "warn", security_blocked: "bad", failed: "bad",
+};
+
+function field(k, v, cls) {
+  return el("div", {}, el("span", { class: "k", text: k }), el("span", { class: `v${cls ? ` ${cls}` : ""}`, text: v }));
+}
+
 function dossierCards(d, history) {
   const cards = [];
   if (d.original_message) {
-    cards.push(el("div", { class: "card" },
-      el("h2", { text: "Mensaje del cliente" }),
-      el("p", { class: "quote", text: d.original_message }),
-      d.machine_translation
-        ? el("div", { class: "stack" },
-          el("p", { class: "small muted" }, "Traducción ", el("span", { class: "sim", text: "automática" }),
-            d.machine_translation.model ? ` · ${d.machine_translation.model}` : ""),
-          el("p", { class: "quote", text: d.machine_translation.text || "La traducción no está disponible." }))
-        : null,
-      el("p", { class: "small muted", text: `Idioma: ${(d.language || "?").toUpperCase()} · trace_id ${d.trace_id}` })));
+    cards.push(el("section", { class: "card tight" },
+      el("h2", { text: "Mensaje original" }),
+      el("div", { class: "message" },
+        el("p", { class: "original", text: d.original_message }),
+        d.machine_translation
+          ? el("div", { class: "translation" },
+            el("span", { class: "sim", text: `Traducción automática${d.machine_translation.model ? ` · ${d.machine_translation.model}` : ""}` }),
+            el("p", { text: d.machine_translation.text || "La traducción no está disponible." }))
+          : null)));
   }
   const chips = clueChips(d.extraction);
   if (chips.length) {
-    cards.push(el("div", { class: "card" },
+    cards.push(el("section", { class: "card tight" },
       el("h2", { text: "Lo que se entendió" }),
       el("div", { class: "chips" }, chips.map((c) => el("span", { class: "chip", title: c.evidence },
         el("span", { class: "k", text: c.label }), el("span", { class: "v", text: c.value })))),
@@ -208,61 +239,81 @@ function dossierCards(d, history) {
   const facts = factRows(d.verified_facts);
   if (facts.length) cards.push(factCard("Hechos verificados", facts));
   const candidates = candidateCards(d.identification);
-  if (candidates.length) {
-    cards.push(el("div", { class: "card" },
-      el("div", { class: "card-head" },
-        el("h2", { text: "Identificación" }),
-        el("span", { class: "muted small", text: `${d.identification.candidates} candidatos · ${identificationLabel(d.identification.decision)}` })),
-      el("div", { class: "candidates" }, candidates.map((c) => el("div", { class: `candidate${c.inSet ? " in-set" : ""}` },
-        el("div", { class: "row" }, el("span", { class: "mono", text: c.id }), el("span", { class: "spacer" }),
-          c.inSet ? el("span", { class: "pill info", text: "En el conjunto" }) : null),
-        el("div", { class: "probability", text: c.probability }),
-        el("div", { class: "small muted mono", text: c.parts }))))));
-  }
+  if (candidates.length) cards.push(identificationCard(d.identification, candidates));
   const evidence = factRows(d.evidence);
   if (evidence.length) cards.push(factCard("Evidencia", evidence));
   if (d.later_messages.length) {
-    cards.push(el("div", { class: "card" },
+    cards.push(el("section", { class: "card tight" },
       el("h2", { text: "Mensajes después del paso a una persona" }),
-      d.later_messages.map((m) => el("div", { class: "stack" },
-        el("p", { class: "quote", text: m.text }),
-        el("p", { class: "small muted mono", text: `${m.source.table} · ${m.source.id}` })))));
+      d.later_messages.map((m) => el("div", { class: "message" },
+        el("p", { class: "original", text: m.text }),
+        el("span", { class: "tiny muted mono", text: `${m.source.table} · ${m.source.id}` })))));
   }
   const exchanges = infoExchanges(d.info_exchanges);
   if (exchanges.length) {
-    cards.push(el("div", { class: "card" },
+    cards.push(el("section", { class: "card tight" },
       el("h2", { text: "Preguntas al cliente y respuestas" }),
-      el("ol", { class: "exchanges" }, exchanges.map((x) => el("li", { class: "stack" },
-        el("div", { class: "small muted", text: x.meta }),
+      el("ol", { class: "exchanges" }, exchanges.map((x) => el("li", { class: "message" },
+        el("span", { class: "tiny muted", text: x.meta }),
         el("p", { class: "question", text: x.question }),
-        el("p", { class: x.answered ? "quote" : "quote muted", text: x.answer }),
-        el("p", { class: "small muted mono", text: x.source }))))));
+        el("p", { class: x.answered ? "answer" : "answer muted", text: x.answer }),
+        el("span", { class: "tiny muted mono", text: x.source }))))));
   }
+  const side = [actionsCard(d), ruleCard(d)].filter(Boolean);
+  if (side.length) cards.push(el("div", { class: "grid-2 pair" }, side));
   if (d.open_questions.length) {
-    cards.push(el("div", { class: "card" },
+    cards.push(el("section", { class: "card tight" },
       el("h2", { text: "Preguntas abiertas" }),
-      el("div", { class: "stack" }, d.open_questions.map((q) => el("p", { class: "notice", text: q.text })))));
+      d.open_questions.map((q) => el("p", { class: "dotline", text: q.text }))));
   }
-  cards.push(el("div", { class: "card" },
+  cards.push(el("section", { class: "card tight" },
     el("h2", { text: "Historial" }),
     el("ol", { class: "timeline" }, history.map((h) => el("li", {},
-      el("div", { text: h.text }),
-      el("div", { class: "when mono", text: `${h.actor} · ${h.action}` }))))));
+      el("span", { class: "rail" }),
+      el("div", { class: "body" },
+        el("span", { class: "title", text: h.text }),
+        el("span", { class: "when", text: `${h.actor} · ${h.action}` })))))));
   return cards;
 }
 
 function factCard(title, rows) {
-  return el("div", { class: "card" },
+  return el("section", { class: "card tight" },
     el("h2", { text: title }),
-    el("div", { class: "detail" }, rows.map((r) => el("div", {},
-      el("div", { class: "k", text: r.label }),
-      el("div", { class: "v", text: r.value }),
-      el("div", { class: "src", text: r.source })))));
+    el("div", { class: "checks" }, rows.map((r) => el("div", { class: "check" }, el("div", {},
+      el("span", { class: "title", text: `${r.label}: ${r.value}` }),
+      el("span", { class: "src", text: r.source }))))));
+}
+
+// Candidates with the contribution of each part of the score and the probability; percentages
+// are for the analyst only (rule 3).
+function identificationCard(identification, candidates) {
+  const keys = candidates[0].scores.map(([k]) => k);
+  const columns = `minmax(150px, 1.6fr) repeat(${keys.length + 1}, 72px)`;
+  const line = (cells, cls) => {
+    const node = el("div", { class: `trow${cls ? ` ${cls}` : ""}` }, cells);
+    node.style.gridTemplateColumns = columns;
+    return node;
+  };
+  return el("section", { class: "card tight" },
+    el("div", { class: "card-head" },
+      el("h2", { text: "Identificación" }),
+      pill({ text: identificationLabel(identification.decision), tone: "info" })),
+    el("p", { class: "small muted", text: `${identification.candidates} candidatos · el conjunto conformal va marcado` }),
+    el("div", { class: "table-wrap boxed" },
+      el("div", { class: "table" },
+        line([el("span", { text: "Transacción" }), keys.map((k) => el("span", { class: "r", text: k })), el("span", { class: "r", text: "p" })], "head"),
+        candidates.map((c) => line([
+          el("span", { class: "cell-stack" },
+            el("span", { class: "mono small", text: c.id }),
+            c.inSet ? el("span", { class: "tag info", text: "En el conjunto" }) : null),
+          c.scores.map(([, v]) => el("span", { class: "r", text: v })),
+          el("span", { class: "r strong", text: c.probability }),
+        ], c.inSet ? "in-set" : null)))));
 }
 
 function actionsCard(d) {
   if (!d.actions_taken.length) return null;
-  return el("div", { class: "card" },
+  return el("section", { class: "card tight" },
     el("h2", { text: "Acciones del caso" }),
     el("ul", { class: "list" }, d.actions_taken.map((a) => el("li", { class: "row action-row" },
       el("span", { text: actionLabel(a.action) }), el("span", { class: "spacer" }),
@@ -272,75 +323,106 @@ function actionsCard(d) {
       })))));
 }
 
-function decisionCard(d, item, status) {
+function ruleCard(d) {
   const rule = d.policy_rule_triggered;
+  if (!rule) return null;
+  return el("section", { class: "card tight" },
+    el("h2", { text: "Regla que escaló" }),
+    el("span", { class: "rule mono", text: rule.rule }),
+    el("span", { text: reasonLabel(rule.rule) }),
+    el("span", { class: "tiny muted mono", text: `política ${rule.version} · nivel ${rule.level}${rule.autonomy_level ? ` · celda ${rule.autonomy_level}` : ""}` }));
+}
+
+// The decision, as in the prototype: the three buttons, and the panel of a rejection or of a
+// question opens on a click. The API checks the same as before; the form says what is missing.
+function decisionCard(d, item, status) {
   const panel = decisionPanel(item);
-  const head = [
-    el("h2", { text: "Decisión" }),
-    rule
-      ? el("div", { class: "stack small" },
-        el("div", {}, el("span", { class: "muted", text: "Regla: " }), reasonLabel(rule.rule)),
-        el("div", { class: "mono muted", text: `${rule.rule} · política ${rule.version}` }),
-        el("div", {}, el("span", { class: "muted", text: "Nivel: " }), `${rule.level}${rule.autonomy_level ? ` · celda ${rule.autonomy_level}` : ""}`))
-      : null,
-    d.recommended_action
-      ? el("p", { class: "notice small", text: `Sugerencia: ${actionLabel(d.recommended_action)}` })
-      : null,
-  ];
+  const head = el("div", { class: "stack tight-stack" },
+    el("h2", { text: "Acción recomendada" }),
+    el("p", { class: "soft-body", text: d.recommended_action ? actionLabel(d.recommended_action) : "Sin acción recomendada." }));
   if (!panel.open) {
-    return el("div", { class: "card decision" }, head,
-      el("p", { class: "muted", text: `El caso no está en la cola. Estado: ${statusLabel(status)}.` }));
+    return el("section", { class: "card soft" }, head,
+      el("p", { class: "inner muted", text: `El caso no está en la cola. Estado: ${statusLabel(status)}.` }));
   }
-  const message = el("p", { class: "small", role: "status" });
-  const reason = el("select", { id: "reject-reason" },
-    el("option", { value: "", text: "Elige un motivo" }),
-    REVERSAL_REASONS.map(([code, text]) => el("option", { value: code, text })));
+  const message = el("p", { class: "small error", role: "status", hidden: true });
+  const done = el("div", { class: "inner check", hidden: true });
   const note = el("textarea", { id: "decision-note", maxlength: "1000", placeholder: "Nota interna (opcional). Se redacta antes de guardarse." });
   const question = el("textarea", { id: "info-question", maxlength: "1000", placeholder: "Pregunta para el cliente. La verá tal como la escribas." });
+  let reason = "";
 
   async function send(decision, button) {
-    const fields = { reason: reason.value, question: question.value, note: note.value };
+    const fields = { reason, question: question.value, note: note.value };
     const problem = decisionProblem(decision, fields);
-    message.className = "small error";
     if (problem) {
       message.textContent = problem;
+      message.hidden = false;
       return;
     }
+    message.hidden = true;
     button.disabled = true;
     try {
       const body = { decision, note: fields.note.trim() || undefined };
       if (decision === "reject") body.reason = fields.reason;
       if (decision === "need_info") body.question = fields.question.trim();
       const out = await api.call(`/cases/${encodeURIComponent(d.case_id)}/decision`, { method: "POST", body });
-      message.className = "small";
-      message.textContent = decisionDone(out);
+      done.replaceChildren(el("div", {},
+        el("span", { class: "title", text: decisionDone(out) }),
+        el("span", { class: "src", text: `audit_log · trace_id ${d.trace_id}` })));
+      done.hidden = false;
       setTimeout(() => renderCase(d.case_id), 1200);
     } catch (e) {
       message.textContent = errorText(e);
+      message.hidden = false;
       button.disabled = false;
     }
   }
 
-  const approve = el("button", { type: "button", class: "btn primary block", disabled: !panel.canApprove, text: panel.approveLabel });
+  const rejectPanel = el("div", { class: "inner stack", hidden: true });
+  const askPanel = el("div", { class: "inner stack", hidden: true });
+  const toggle = (open) => {
+    rejectPanel.hidden = open !== rejectPanel || !rejectPanel.hidden;
+    askPanel.hidden = open !== askPanel || !askPanel.hidden;
+    message.hidden = true;
+  };
+
+  const approve = el("button", { type: "button", class: "btn primary", disabled: !panel.canApprove, text: panel.approveLabel });
   approve.addEventListener("click", () => send("approve", approve));
-  const reject = el("button", { type: "button", class: "btn block", text: "Rechazar" });
-  reject.addEventListener("click", () => send("reject", reject));
-  const ask = el("button", { type: "button", class: "btn block", text: "Pedir información" });
-  ask.addEventListener("click", () => send("need_info", ask));
-  return el("div", { class: "card decision" }, head,
-    el("div", { class: "stack" },
-      approve,
-      el("p", { class: "small muted", text: panel.approveHint }),
-      el("hr", { class: "divider" }),
-      el("label", { for: "reject-reason", text: "Motivo del rechazo" }), reason, reject,
-      panel.canAsk ? el("hr", { class: "divider" }) : null,
-      panel.canAsk ? el("label", { for: "info-question", text: "Pregunta al cliente" }) : null,
-      panel.canAsk ? question : null,
-      panel.canAsk ? el("p", { class: "small muted", text: "El cliente la ve en Mis aclaraciones y responde dentro del plazo en días hábiles de la política; al enviarla verás la fecha. Se muestra en español aunque el cliente escriba en portugués." }) : null,
-      panel.canAsk ? ask : null,
-      el("hr", { class: "divider" }),
-      el("label", { for: "decision-note", text: "Nota" }), note,
-      message));
+  const reject = el("button", { type: "button", class: "btn", text: "Rechazar", onclick: () => toggle(rejectPanel) });
+  const ask = panel.canAsk
+    ? el("button", { type: "button", class: "btn", text: "Pedir información", onclick: () => toggle(askPanel) })
+    : null;
+
+  const confirmReject = el("button", { type: "button", class: "btn primary medium", disabled: true, text: "Confirmar rechazo" });
+  confirmReject.addEventListener("click", () => send("reject", confirmReject));
+  const reasons = REVERSAL_REASONS.map(([code, text]) => el("button", {
+    type: "button", class: "pick", "aria-pressed": "false", text,
+    onclick: (event) => {
+      reason = code;
+      for (const b of reasons) b.setAttribute("aria-pressed", String(b === event.currentTarget));
+      confirmReject.disabled = false;
+    },
+  }));
+  rejectPanel.append(
+    el("span", { class: "small muted strong", text: "Motivo del rechazo" }),
+    el("div", { class: "pills" }, reasons),
+    el("div", {}, confirmReject));
+
+  const sendQuestion = el("button", { type: "button", class: "btn primary medium", text: "Enviar pregunta" });
+  sendQuestion.addEventListener("click", () => send("need_info", sendQuestion));
+  askPanel.append(
+    el("label", { for: "info-question", text: "Pregunta al cliente" }),
+    question,
+    el("p", { class: "small muted", text: "El cliente la ve en Mis aclaraciones y responde dentro del plazo en días hábiles de la política; al enviarla verás la fecha. Se muestra en español aunque el cliente escriba en portugués." }),
+    el("div", {}, sendQuestion));
+
+  return el("section", { class: "card soft decision" }, head,
+    el("p", { class: "small muted", text: panel.approveHint }),
+    el("div", { class: "row decision-buttons" }, approve, reject, ask),
+    rejectPanel,
+    askPanel,
+    el("div", {}, el("label", { for: "decision-note", text: "Nota" }), note),
+    message,
+    done);
 }
 
 window.addEventListener("hashchange", route);

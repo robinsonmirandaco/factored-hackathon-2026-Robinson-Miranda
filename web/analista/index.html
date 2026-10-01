@@ -9,31 +9,37 @@
   <script type="module" src="/assets/analyst.js"></script>
 </head>
 <body>
-  <header class="appbar">
+  <header class="appbar" id="appbar" hidden>
     <div class="appbar-inner">
-      <a class="brand" href="#/cola"><span class="logo">T</span>TRAZO</a>
-      <nav class="navpills" id="nav" hidden>
+      <a class="brand" href="#/cola">
+        <span class="logo">T</span>
+        <span class="brand-name"><strong>TRAZO</strong><span>Disputas · Consola de la analista</span></span>
+      </a>
+      <nav class="navpills" id="nav">
         <a href="#/cola" data-view="queue">Cola de casos</a>
       </nav>
-      <span class="spacer"></span>
-      <span class="sim">DEMO</span>
-      <span class="avatar" id="who" hidden>Analista</span>
-      <button type="button" class="btn small" id="logout" hidden>Salir</button>
+      <div class="appbar-end">
+        <span class="sim">DEMO</span>
+        <span class="avatar" id="who" title="Analista">A</span>
+        <button type="button" class="btn small" id="logout">Salir</button>
+      </div>
     </div>
   </header>
 
   <main class="page">
-    <section id="view-login" hidden>
+    <section id="view-login" class="login-wrap" hidden>
       <div class="card narrow">
         <div class="row">
-          <span class="brand"><span class="logo">T</span>TRAZO</span>
+          <span class="logo">T</span>
+          <strong class="login-brand">TRAZO</strong>
         </div>
         <h1 class="login-title">Ingresa a la consola</h1>
         <nav class="segmented" aria-label="Tipo de acceso">
           <a href="/">Cliente</a>
           <a href="#/entrar" aria-current="page">Analista</a>
         </nav>
-        <form id="login-form" class="stack login-form" novalidate>
+        <span class="sim">Credenciales de prueba</span>
+        <form id="login-form" class="stack" novalidate>
           <div>
             <label for="username">Usuario</label>
             <input id="username" name="username" autocomplete="username" required>
@@ -42,7 +48,7 @@
             <label for="password">Contraseña</label>
             <input id="password" name="password" type="password" autocomplete="current-password" required>
           </div>
-          <p class="notice small"><span><span class="sim">[simulado]</span> Credenciales de demostración: están en el README.</span></p>
+          <p class="notice"><span><span class="sim">[simulado]</span> Credenciales de demostración: están en el README.</span></p>
           <p class="error" id="login-error" hidden></p>
           <button class="btn primary block" type="submit">Entrar</button>
         </form>
