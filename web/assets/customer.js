@@ -7,7 +7,8 @@ import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   buttonMessage, canSend, clarificationLines, closedNote, codeStep, createConversation, deadlineKind,
   errorText,
-  infoRequestViews, movementDetail, openQuestions, reviewLine, statusTone, turnModel,
+  infoRequestViews, movementDetail, openQuestions, reviewLine, statusKey, statusTone, turnModel,
+  unreadBadge,
 } from "./view.js";
 
 const api = createClient("customer");
@@ -22,6 +23,7 @@ const state = {
   nextBefore: null,
   busy: false,
   lastTurn: null,
+  notes: null,
 };
 let t = translator(state.lang);
 
@@ -73,7 +75,65 @@ function setLang(lang) {
 function showChrome(loggedIn) {
   $("appbar").hidden = !loggedIn;
   $("clock").hidden = !loggedIn || !state.me;
-  $("avatar").textContent = (state.me?.first_name || "").slice(0, 1).toUpperCase();
+  $("avatar-initial").textContent = (state.me?.first_name || "").slice(0, 1).toUpperCase();
+  if (!loggedIn) {
+    state.notes = null;
+    togglePanel(false);
+    $("notif-dot").hidden = true;
+  }
+}
+
+// ---- notifications (TRZ-32) ---------------------------------------------------------------
+
+// The counter on the avatar, read again on every view and when the window gets focus, so a
+// decision of the analyst shows up without asking.
+async function refreshNotifications() {
+  if (!api.hasSession()) return;
+  try {
+    state.notes = await api.call("/me/notifications");
+  } catch {
+    return;
+  }
+  const badge = unreadBadge(t, state.notes.unread);
+  const dot = $("notif-dot");
+  dot.hidden = badge.hidden;
+  dot.textContent = badge.text;
+  $("avatar").setAttribute("aria-label", `${t("notifications")}: ${badge.title}`);
+  $("avatar").title = badge.title;
+  if (!$("notif-panel").hidden) drawNotifications();
+}
+
+function drawNotifications() {
+  const items = state.notes?.items || [];
+  $("notif-panel").replaceChildren(
+    el("h2", { text: t("notifications") }),
+    items.length
+      ? el("ul", { class: "notif-list" }, items.map((n) => el("li", {},
+        el("button", { type: "button", class: `notif${n.read ? "" : " unread"}`, onclick: () => openNotification(n) },
+          el("span", { text: n.text }),
+          n.read ? null : el("span", { class: "tag new", text: t("notificationNew") })))))
+      : el("p", { class: "small muted", text: t("noNotifications") }));
+}
+
+function togglePanel(open) {
+  const panel = $("notif-panel");
+  panel.hidden = !open;
+  $("avatar").setAttribute("aria-expanded", String(open));
+  if (open) drawNotifications();
+}
+
+// Opening a notification marks it read and takes the customer to the clarification it is about.
+async function openNotification(n) {
+  if (!n.read) {
+    try {
+      await api.call(`/me/notifications/${encodeURIComponent(n.id)}/read`, { method: "POST" });
+    } catch {
+      // It stays unread and is offered again; Mis aclaraciones still shows the decision.
+    }
+  }
+  togglePanel(false);
+  if (location.hash === "#/aclaraciones") route();
+  else location.hash = "#/aclaraciones";
 }
 
 // ---- login (also used by the expired session dialog) --------------------------------------
@@ -198,6 +258,7 @@ async function route() {
   }
   const view = VIEWS[location.hash] || "home";
   show(view);
+  refreshNotifications();
   if (view === "home") renderHome();
   if (view === "movements") renderMovements(true);
   if (view === "clarifications") renderClarifications();
@@ -248,7 +309,8 @@ function amountCell(item) {
 const initialOf = (text) => String(text || "?").trim().slice(0, 1).toUpperCase();
 
 function statusPill(c) {
-  return el("span", { class: `pill ${statusTone(c.status)}`, text: label(t, "status", c.status) });
+  const key = statusKey(c);
+  return el("span", { class: `pill ${statusTone(key)}`, text: label(t, "status", key) });
 }
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -689,6 +751,17 @@ window.addEventListener("trazo:session-lost", () => {
     route();
   });
 });
+
+$("avatar").addEventListener("click", (event) => {
+  event.stopPropagation();
+  togglePanel($("notif-panel").hidden);
+});
+$("notif-panel").addEventListener("click", (event) => event.stopPropagation());
+document.addEventListener("click", () => togglePanel(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") togglePanel(false);
+});
+window.addEventListener("focus", refreshNotifications);
 
 window.addEventListener("hashchange", route);
 applyTexts();

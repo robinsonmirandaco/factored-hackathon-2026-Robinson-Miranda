@@ -31,6 +31,7 @@ const INTENT = {
 };
 
 const REASON = {
+  "escalate.automation_disabled": "Automatización desactivada",
   "escalate.comprehension_unavailable": "El LLM no respondió y las reglas no entendieron",
   "escalate.clarifications_exhausted": "Dos aclaraciones sin identificar el cargo",
   "escalate.amount_above_human_review": "Monto mayor a 1000 USD",
@@ -55,6 +56,8 @@ const STATUS = {
   awaiting_customer: "Esperando al cliente",
   approved: "Aprobado",
   rejected: "Rechazado",
+  registered_verified: "Registrado y verificado",
+  in_review: "En revisión por una analista",
 };
 
 const ACTION = {
@@ -117,7 +120,11 @@ const words = (table, code) => (code == null ? "" : table[code] || code);
 
 export const kindLabel = (code) => words(KIND, code);
 export const intentLabel = (code) => words(INTENT, code);
-export const reasonLabel = (code) => words(REASON, code);
+// rho is read from the policy through the API, never written here (TRZ-29 CA3).
+export function auditLabel(rho) {
+  return `Muestra de auditoría (ρ = ${Number(rho).toFixed(2).replace(".", ",")})`;
+}
+export const reasonLabel = (code, rho) => (code === "audit.sample" && rho != null ? auditLabel(rho) : words(REASON, code));
 export const statusLabel = (code) => words(STATUS, code);
 export const actionLabel = (code) => words(ACTION, code);
 export const actionStateLabel = (code) => words(ACTION_STATE, code);
@@ -170,7 +177,7 @@ export function filterChips(counts, active) {
 
 // One row of the queue, a value per column. A security event shows no customer data (TRZ-27
 // CA8): the API sends none, and the row says so instead of leaving blanks.
-export function queueRow(item, nowMs) {
+export function queueRow(item, nowMs, rho) {
   const security = item.kind === "security_event";
   const tags = [];
   if (item.kind === "audit_sample") tags.push({ text: "Auditoría", tone: "info" });
@@ -185,7 +192,7 @@ export function queueRow(item, nowMs) {
     type: security ? kindLabel(item.kind) : intentLabel(item.intent),
     amount: security ? null : item.amount_usd == null ? "Sin monto en USD" : usd(item.amount_usd),
     language: item.language ? item.language.toUpperCase() : "",
-    reason: reasonLabel(item.reason),
+    reason: reasonLabel(item.reason, rho),
     priority: { text: PRIORITY[item.priority] || item.priority, tone: item.priority === "normal" ? "" : "bad" },
     sla: slaText(item.sla_due_at, nowMs),
   };
@@ -194,9 +201,27 @@ export function queueRow(item, nowMs) {
 // What the decision panel offers for a case: only an open queue row can be decided.
 export function decisionPanel(item) {
   if (!item) return { open: false };
+  if (item.kind === "audit_sample") {
+    // An audit sample is confirmed or reversed; nothing is asked of the customer (TRZ-29 CA5).
+    return {
+      open: true,
+      audit: true,
+      canApprove: true,
+      approveLabel: "Confirmar",
+      rejectLabel: "Revertir",
+      reasonTitle: "Motivo de la reversión",
+      confirmRejectLabel: "Confirmar reversión",
+      approveHint: "Confirmar no cambia nada para el cliente. Revertir pasa su aclaración a revisión por una analista y le avisa; la disputa registrada no se anula.",
+      canAsk: false,
+    };
+  }
   const security = item.kind === "security_event";
   return {
     open: true,
+    audit: false,
+    rejectLabel: "Rechazar",
+    reasonTitle: "Motivo del rechazo",
+    confirmRejectLabel: "Confirmar rechazo",
     canApprove: Boolean(item.can_approve),
     approveLabel: security ? "Cerrar el evento" : "Aprobar",
     approveHint: item.can_approve
@@ -217,6 +242,8 @@ export function decisionProblem(decision, fields) {
 
 // What a decision did, in one sentence for the analyst.
 export function decisionDone(out) {
+  if (out.decision === "approve" && out.status === "registered_verified") return "Auditoría confirmada: nada cambia para el cliente.";
+  if (out.decision === "reject" && out.status === "in_review") return "Revertido: la aclaración pasó a revisión y se avisó al cliente. La disputa registrada no se anula.";
   if (out.decision === "approve" && out.dispute_folio) {
     const block = out.block_not_executed ? " El bloqueo de tarjeta no se ejecutó." : "";
     return `Aprobado: se registró ${out.dispute_folio} y se verificó.${block}`;
@@ -290,9 +317,22 @@ export function candidateCards(identification) {
 // The heading of a dossier: the kind of case while it is with a person, its status once an
 // analyst decided it or asked the customer (regression of the queue QA).
 export function caseHeading(kind, status, caseId) {
-  const decided = ["approved", "rejected", "awaiting_customer"].includes(status);
+  const decided = ["approved", "rejected", "awaiting_customer", "in_review"].includes(status);
   const parts = kind === "security_event"
     ? [kindLabel(kind), decided ? statusLabel(status) : null]
     : [decided ? statusLabel(status) : kindLabel(kind)];
   return [...parts.filter(Boolean), caseId].join(" · ");
+}
+
+// The global automation switch (TRZ-35), as the header says it and as the confirmation asks it.
+export function automationView(state) {
+  const off = Boolean(state?.all_to_human);
+  return {
+    text: off ? "Todo a humano" : "Automatización activa",
+    tone: off ? "bad" : "ok",
+    action: off ? "Reactivar la automatización" : "Mandar todo a humano",
+    confirm: off
+      ? "¿Reactivar la automatización? Los casos vuelven a registrarse solos según la política."
+      : "¿Mandar todo a humano? Ninguna aclaración se registrará sola: todas irán a la cola con el motivo «Automatización desactivada».",
+  };
 }

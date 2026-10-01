@@ -28,7 +28,12 @@
           <button type="button" data-lang="es" aria-pressed="true">ES</button>
           <button type="button" data-lang="pt" aria-pressed="false">PT</button>
         </span>
-        <span class="avatar" id="avatar" aria-hidden="true"></span>
+        <span class="notify-wrap">
+          <button type="button" class="avatar notify" id="avatar" aria-haspopup="true" aria-expanded="false" aria-controls="notif-panel">
+            <span id="avatar-initial" aria-hidden="true"></span><span class="dot badge" id="notif-dot" hidden></span>
+          </button>
+          <div class="card notif-panel" id="notif-panel" hidden></div>
+        </span>
         <button type="button" class="btn small" id="logout" data-t="logout"></button>
       </div>
     </div>

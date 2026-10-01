@@ -27,6 +27,28 @@
   text-align: center; vertical-align: 1px;
 }
 
+/* Notifications (TRZ-32): the avatar opens the list, with the red counter on its corner. */
+.notify-wrap { position: relative; display: flex; }
+.avatar.notify { border: 0; padding: 0; cursor: pointer; font: 600 13px/1 var(--sans); }
+.avatar .badge { position: absolute; top: -6px; right: -9px; margin: 0; }
+.notif-panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 20; width: min(360px, calc(100vw - 32px));
+  padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow-panel);
+}
+.notif-panel h2 { font-size: 15px; }
+.notif-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.notif {
+  width: 100%; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+  color: var(--ink-2); font: 400 14px/1.45 var(--sans); text-align: left; cursor: pointer;
+}
+.notif.unread { background: var(--primary-soft); color: var(--ink); }
+.notif .tag { flex: none; }
+@media (max-width: 640px) {
+  /* The avatar carries the counter, so it stays on a phone (decision D8). */
+  .appbar .avatar.notify { display: flex; }
+}
+
 /* Home */
 .figures { display: flex; flex-direction: column; gap: 4px; }
 .figures .figure { font-size: clamp(30px, 4vw, 40px); font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
