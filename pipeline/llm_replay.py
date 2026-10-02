@@ -110,15 +110,20 @@ class Pace:
         self._sent: list[float] = []
         self._lock = threading.Lock()
 
-    def wait(self) -> None:
-        """Blocks until one more request fits in the last minute."""
+    def wait(self) -> float:
+        """Blocks until one more request fits in the last minute.
+
+        Returns:
+            Seconds waited, which the harness leaves out of the system's latency.
+        """
+        start = time.monotonic()
         while True:
             with self._lock:
                 now = time.monotonic()
                 self._sent = [t for t in self._sent if now - t < 60]
                 if len(self._sent) < self._per_minute:
                     self._sent.append(now)
-                    return
+                    return now - start
                 pause = 60 - (now - self._sent[0])
             time.sleep(max(pause, 0.05))
 
@@ -210,6 +215,7 @@ class ReplayTransport(httpx2.BaseTransport):
         self.refused = 0
         self.cost_usd = 0.0
         self.latency_ms = 0
+        self.paced_ms = 0
 
     def handle_request(self, request: httpx2.Request) -> httpx2.Response:
         """Serves one request.
@@ -237,7 +243,7 @@ class ReplayTransport(httpx2.BaseTransport):
             return httpx2.Response(
                 529, json={"type": "error", "error": {"type": "overloaded_error"}}
             )
-        self.pace.wait()
+        self.paced_ms += int(self.pace.wait() * 1000)
         t0 = time.perf_counter()
         response = self.upstream.handle_request(request)
         response.read()

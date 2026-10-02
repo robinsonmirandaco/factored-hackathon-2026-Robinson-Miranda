@@ -104,3 +104,10 @@ def test_cost_is_the_list_price_with_cache_reads_at_a_tenth() -> None:
     # 1000 input + 0.1 * 4000 cache read = 1400 input tokens at 1 USD, 100 output at 5 USD.
     assert cost_of("claude-haiku-4-5-20251001", USAGE) == pytest.approx(0.0019)
     assert cost_of("claude-sonnet-5-5", USAGE) == pytest.approx(0.0038)
+
+
+def test_the_wait_for_the_pace_is_measured() -> None:
+    pace = Pace(1)
+
+    assert pace.wait() < 0.05
+    assert Pace(1000).wait() >= 0

@@ -115,6 +115,8 @@ class CaseRun:
         policy_violations: Policy steps the system skipped that the state does not show, such
             as acting without the customer's confirmation (the free agent; TRAZO's code
             enforces them).
+        paced_ms: Time the case's LLM requests waited for the request pace. It runs inside the
+            systems' LLM timeout, so a run is only valid when it is 0 for every case.
         error: Error that stopped the case, if any.
     """
 
@@ -132,6 +134,7 @@ class CaseRun:
     cost_usd: float = 0.0
     latency_ms: int = 0
     policy_violations: list[str] = field(default_factory=list)
+    paced_ms: int = 0
     error: str | None = None
 
 
@@ -417,7 +420,10 @@ def run_case(
         t = staging.transport
         run.llm_calls, run.llm_cache_hits, run.llm_refused = t.calls, t.hits, t.refused
         run.cost_usd = t.cost_usd
-        run.latency_ms += t.latency_ms if t.hits else 0
+        # The wait for the request pace is the harness's, not the system's; a cached answer
+        # adds the LLM time it took when first paid.
+        run.paced_ms = t.paced_ms
+        run.latency_ms = run.latency_ms - t.paced_ms + (t.latency_ms if t.hits else 0)
     return run
 
 
@@ -738,6 +744,7 @@ def summary(runs: list[CaseRun], cases: list[CaseRecord]) -> dict[str, Any]:
         "llm_calls": sum(r.llm_calls for r in runs),
         "llm_cache_hits": sum(r.llm_cache_hits for r in runs),
         "llm_refused": sum(r.llm_refused for r in runs),
+        "cases_paced": sum(r.paced_ms > 0 for r in runs),
         "cost_usd": round(sum(r.cost_usd for r in runs), 4),
         "cost_per_case_usd": round(sum(r.cost_usd for r in runs) / max(len(runs), 1), 5),
         "latency_p50_ms": latencies[len(latencies) // 2] if latencies else None,
@@ -770,8 +777,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--llm", choices=["on", "off"], default="off")
     parser.add_argument("--budget", type=float, default=0.0, help="most new LLM spend, USD")
     parser.add_argument("--per-minute", type=int, default=45, help="LLM requests per minute")
-    parser.add_argument("--workers", type=int, default=4)
+    # With the LLM on, one case at a time keeps the requests under the account's rate limit:
+    # a wait for the pace would run inside the systems' 5 s LLM timeout.
+    parser.add_argument("--workers", type=int, default=None, help="default 1 with the LLM")
     args = parser.parse_args(argv)
+    workers = args.workers or (1 if args.llm == "on" else 6)
 
     settings = Settings(llm_enabled=args.llm == "on", log_level="WARNING")
     configure_logging(settings.log_level)
@@ -786,7 +796,7 @@ def main(argv: list[str] | None = None) -> int:
     budget = Budget(args.budget)
     llm = (ReplayCache(folder), budget, Pace(args.per_minute)) if args.llm == "on" else None
     for system in args.systems:
-        runs = run_cases(cases, system, args.repetition, settings, data, llm, args.workers)
+        runs = run_cases(cases, system, args.repetition, settings, data, llm, workers)
         tag = datetime.now().strftime("%Y%m%dT%H%M%S")
         write_runs(
             runs, folder / "harness" / f"{tag}-{args.split}-{system}-r{args.repetition}.jsonl"
