@@ -5,6 +5,60 @@
   "sha256": "6353860171ddb2f3bfe9ee9492e5df250fc70e5cb1cb68d986c81d219da267c4"
  },
  "config_version": "1",
+ "handwritten_review": {
+  "fields": {
+   "accion": {
+    "between_reviews": 1.0,
+    "kappa": 1.0,
+    "review_1_vs_labels": 0.8,
+    "review_2_vs_labels": 0.8
+   },
+   "canal": {
+    "between_reviews": 1.0,
+    "kappa": null,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   },
+   "comercio": {
+    "between_reviews": 1.0,
+    "kappa": null,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   },
+   "fecha": {
+    "between_reviews": 1.0,
+    "kappa": null,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   },
+   "intencion": {
+    "between_reviews": 1.0,
+    "kappa": 1.0,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   },
+   "monto": {
+    "between_reviews": 1.0,
+    "kappa": null,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   },
+   "producto": {
+    "between_reviews": 1.0,
+    "kappa": null,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   },
+   "tarjeta": {
+    "between_reviews": 1.0,
+    "kappa": null,
+    "review_1_vs_labels": 1.0,
+    "review_2_vs_labels": 1.0
+   }
+  },
+  "hours_between_reviews": 45.6,
+  "items": 60
+ },
  "presence_rates": {
   "amount": 0.3318,
   "joint": {
