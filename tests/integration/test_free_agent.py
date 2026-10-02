@@ -168,3 +168,19 @@ def test_a_confirmation_of_an_unknown_action_is_returned_to_the_model(tmp_path: 
     sent_back = api.bodies[2]["messages"][-1]["content"][0]
     assert "action must be one of" in sent_back["content"]
     assert [t.outcome for t in run.turns] == ["reply"]
+
+
+def test_a_reply_of_the_free_agent_is_checked_without_being_stopped(tmp_path: Path) -> None:
+    api = ScriptedApi(
+        [
+            _message(
+                [{"type": "text", "text": "Registramos tu aclaración DSP-2026-99999."}], "end_turn"
+            )
+        ]
+    )
+
+    run = run_case(netflix_case(), "free_agent", 1, agent_staging(tmp_path, api), TEMPLATES)
+
+    assert run.replies == ["Registramos tu aclaración DSP-2026-99999."]
+    assert run.final.replies_checked == 1
+    assert run.final.unsupported_sent >= 1

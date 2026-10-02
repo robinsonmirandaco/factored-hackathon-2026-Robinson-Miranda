@@ -43,6 +43,7 @@ from app.main import create_app
 from app.services import auth
 from app.services import tools as T
 from app.services.identification import load_candidates
+from app.services.replies import check_reply, verified_facts
 from pipeline.cases.schema import CaseRecord
 from pipeline.simulated_client import ClientTurn, SystemTurn
 
@@ -260,6 +261,11 @@ class FreeAgentConversation:
         self.confirmed: set[tuple[str, str]] = set()
         self.violations: list[str] = []
         self.asked_in_text = False
+        # What the tools returned in this conversation: the facts a reply may state.
+        self.records: dict[str, dict[str, Any]] = {}
+        self.disputed: str | None = None
+        self.dispute: dict[str, Any] = {}
+        self.actions: list[str] = []
 
     # ---- one customer turn ----------------------------------------------------------------
 
@@ -340,6 +346,7 @@ class FreeAgentConversation:
             uses = [b for b in msg.content if b.type == "tool_use"]
             if not uses:
                 reply = "".join(b.text for b in msg.content if b.type == "text")
+                self._observe(s, customer, reply)
                 # A question in plain text: the client answers with every clue it remembers,
                 # once (a choice that favors the baseline, declared in the report).
                 if "?" in reply and not self.asked_in_text:
@@ -443,11 +450,22 @@ class FreeAgentConversation:
                 transaction_id,
                 tool_input["dispute_type"],
             )
+            if r.ok:
+                self.disputed = tool_input["handle"]
+                self.actions.append("register_dispute")
+                self.dispute = {
+                    "folio": r.data.get("folio"),
+                    "registered_on": clock.today().isoformat(),
+                    "due_date": r.data.get("due_date"),
+                    "passage": r.data.get("due_date_passage"),
+                }
             return {"ok": r.ok, "folio": r.data.get("folio"), "message": r.message}
         if name == "block_card":
             assert transaction_id is not None
             self._check_confirmed("block_card", tool_input["handle"])
             r = T.block_card(s, cid, case_id, transaction_id, tool_input.get("reason", ""))
+            if r.ok:
+                self.actions.append("block_card")
             return {"ok": r.ok, "message": r.message}
         if name == "escalate_to_human":
             return self._handoff(
@@ -470,6 +488,12 @@ class FreeAgentConversation:
             self.handles[handle] = c.transaction_id
             on = c.timestamp.date()
             rates = rates_near(s, on, {(c.currency, "USD"), (c.currency, local)})
+            self.records[handle] = {
+                "transaction_id": c.transaction_id,
+                "amount": c.amount,
+                "date": on.isoformat(),
+                "merchant": c.merchant_name,
+            }
             out.append(
                 {
                     "handle": handle,
@@ -484,6 +508,25 @@ class FreeAgentConversation:
                 }
             )
         return out
+
+    def _observe(self, s: Session, customer: Customer, reply: str) -> None:
+        """Runs TRAZO's fact checker on a reply, as an observer: the reply is sent anyway.
+
+        The free agent has no verifier (CA3); the check only measures its unsupported claims
+        (design 13.3), against the facts its own tools returned in the conversation.
+        """
+        assert self.case_id is not None
+        facts = {
+            "options": [r for h, r in self.records.items() if h != self.disputed],
+            "transaction": self.records.get(self.disputed or ""),
+            "dispute": self.dispute if self.dispute.get("folio") else {},
+            "case_number": self.case_id,
+            "actions_taken": self.actions,
+        }
+        verified = verified_facts(
+            s, customer.customer_id, facts, dict(self.deps.passages), self.deps.clock.today()
+        )
+        check_reply(s, self.case_id, reply, verified, enforce=False)
 
     def _deadline(self, customer: Customer) -> Any:
         """The response deadline of the policy passages, as TRAZO computes it."""
