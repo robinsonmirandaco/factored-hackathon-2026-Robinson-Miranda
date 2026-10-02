@@ -7,6 +7,7 @@ first, operational ones included, so rows of two sources never meet.
 
 import hashlib
 import json
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -83,7 +84,12 @@ def record(session: Session, source: str, detail: dict[str, Any]) -> None:
     )
 
 
-def load_cohort(session: Session, cohort_dir: Path, document_key: str) -> dict[str, Any]:
+def load_cohort(
+    session: Session,
+    cohort_dir: Path,
+    document_key: str,
+    customer_ids: Collection[str] | None = None,
+) -> dict[str, Any]:
     """Copies the cohort Parquet files into their tables.
 
     The files carry the table columns, except that customers bring the plain document number,
@@ -93,6 +99,8 @@ def load_cohort(session: Session, cohort_dir: Path, document_key: str) -> dict[s
         session: Session of the schema owner.
         cohort_dir: `DATA_DIR/gold/cohort`.
         document_key: DOCUMENT_HASH_KEY.
+        customer_ids: Only the rows of these customers (the evaluation harness loads one case
+            at a time); tables without a customer, such as the rates, are loaded whole.
 
     Returns:
         Rows and SHA-256 per file.
@@ -105,13 +113,22 @@ def load_cohort(session: Session, cohort_dir: Path, document_key: str) -> dict[s
         raise ValueError("DOCUMENT_HASH_KEY is not set")
     cursor = session.connection().connection.driver_connection.cursor()
     detail: dict[str, Any] = {"rows": {}, "sha256": {}}
+    # A connection of its own: duckdb's default one is shared by every thread of the process.
+    con = duckdb.connect()
     for table in COHORT_TABLES:
         path = cohort_dir / f"{table}.parquet"
         if not path.exists():
+            con.close()
             raise SeedError(f"{path} is missing; run make data first")
-        rel = duckdb.read_parquet(str(path))
+        rel = con.read_parquet(str(path))
         columns = list(rel.columns)
-        rows = rel.fetchall()
+        if customer_ids is not None and "customer_id" in columns:
+            rows = con.execute(
+                "SELECT * FROM read_parquet(?) WHERE customer_id IN (SELECT unnest(?))",
+                [str(path), sorted(customer_ids)],
+            ).fetchall()
+        else:
+            rows = rel.fetchall()
         if table == "customers":
             columns, rows = _hash_documents(columns, rows, document_key)
         stmt = sql.SQL("COPY {} ({}) FROM STDIN").format(
@@ -122,6 +139,7 @@ def load_cohort(session: Session, cohort_dir: Path, document_key: str) -> dict[s
                 copy.write_row(row)
         detail["rows"][table] = len(rows)
         detail["sha256"][table] = hashlib.sha256(path.read_bytes()).hexdigest()
+    con.close()
     return detail
 
 

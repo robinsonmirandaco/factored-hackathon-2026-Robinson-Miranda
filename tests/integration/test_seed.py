@@ -110,3 +110,22 @@ def test_seed_command_loads_synthetic_once_and_if_empty_skips(
     assert runs == 1
     # The generator's five dirty transactions land in quarantine with their reason.
     assert rejected == 5
+
+
+def test_a_cohort_load_can_keep_only_some_customers(schema: SchemaUrls, cohort_dir: Path) -> None:
+    full = _seed_cohort(schema.admin, cohort_dir, replace=True)
+    db = Database(schema.admin)
+    try:
+        with db.session() as s:
+            seeding.prepare(s, replace=True)
+            detail = seeding.load_cohort(s, cohort_dir, KEY, {"CUS-2"})
+            owners = {
+                t: set(s.execute(text(f"SELECT DISTINCT customer_id FROM {t}")).scalars())
+                for t in ("customers", "products", "transactions")
+            }
+    finally:
+        db.dispose()
+
+    assert owners == {t: {"CUS-2"} for t in owners}
+    # Rates belong to no customer: they are loaded whole.
+    assert detail["rows"]["exchange_rates"] == full["rows"]["exchange_rates"]

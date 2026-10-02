@@ -1,0 +1,96 @@
+# Answers of the simulated client (TRZ-43, design 13.2). Deterministic: no LLM writes them. The
+# client gives each clue with the form and value the noise model drew for the case (amount
+# exact, rounded or "about"; relative or exact date; merchant complete, partial, misspelled or by
+# category), so a follow-up turn carries the same information the first message would have.
+# Written apart from generators A and B. Placeholders: {amount}, {merchant}, {category}, {day},
+# {month}, {weekday}, {clues}. Bump `version` on any change.
+version: 1
+variants:
+  es-MX:
+    number: {thousands: ",", decimal: "."}
+    currency: {USD: dólares, MXN: pesos, COP: pesos colombianos, ARS: pesos argentinos}
+    thousands_word: null
+    weekdays: [lunes, martes, miércoles, jueves, viernes, sábado, domingo]
+    months: [enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, octubre, noviembre, diciembre]
+    amount: {exact: "fueron {amount}", rounded: "fueron {amount}", about: "fueron como {amount}", more_than: "fueron más de {amount}"}
+    date: {exact: "el {day} de {month}", today: hoy, yesterday: ayer, day_before_yesterday: antier, this_week: esta semana, last_week: la semana pasada, two_weeks_ago: hace como dos semanas, last_month: el mes pasado, early_this_month: a principios de mes, last_weekday: "el {weekday} pasado"}
+    merchant: "en {merchant}"
+    category: "en {category}"
+    categories: {Food: un supermercado, Services: un pago de servicios, Entertainment: entretenimiento, Health: una farmacia, Transport: transporte, Other: una tienda}
+    channel: {POS: con terminal, ATM: en un cajero, Web: por internet, App: desde la app, Branch: en sucursal, Transfer: por transferencia}
+    product: {credit_card: con la tarjeta de crédito, debit_card: con la tarjeta de débito, savings_account: de la cuenta de ahorro, checking_account: de la cuenta de cheques}
+    card: {"true": "La tarjeta la tengo yo.", "false": "Ya no tengo la tarjeta."}
+    detail: "{clues}."
+    all_clues: "Esto es lo que recuerdo: {clues}."
+    nothing_more: "No recuerdo más detalles."
+    pick_option: "Es este."
+    no_option: "Ninguno de esos."
+    not_recognized: "Sigo sin reconocerlo."
+    recognized: "Ya lo reconozco."
+    confirm: "Sí, confirmo."
+  es-CO:
+    number: {thousands: ".", decimal: ","}
+    currency: {USD: dólares, MXN: pesos mexicanos, COP: pesos, ARS: pesos argentinos}
+    thousands_word: "{n} mil pesos"
+    weekdays: [lunes, martes, miércoles, jueves, viernes, sábado, domingo]
+    months: [enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, octubre, noviembre, diciembre]
+    amount: {exact: "fueron {amount}", rounded: "fueron {amount}", about: "fueron como {amount}", more_than: "fueron más de {amount}"}
+    date: {exact: "el {day} de {month}", today: hoy, yesterday: ayer, day_before_yesterday: anteayer, this_week: esta semana, last_week: la semana pasada, two_weeks_ago: hace como quince días, last_month: el mes pasado, early_this_month: a principios de mes, last_weekday: "el {weekday} pasado"}
+    merchant: "en {merchant}"
+    category: "en {category}"
+    categories: {Food: un supermercado, Services: un pago de servicios, Entertainment: entretenimiento, Health: una droguería, Transport: transporte, Other: una tienda}
+    channel: {POS: con datáfono, ATM: en un cajero, Web: por internet, App: desde la app, Branch: en una oficina, Transfer: por transferencia}
+    product: {credit_card: con la tarjeta de crédito, debit_card: con la tarjeta débito, savings_account: de la cuenta de ahorros, checking_account: de la cuenta corriente}
+    card: {"true": "La tarjeta la tengo yo.", "false": "Ya no tengo la tarjeta."}
+    detail: "{clues}."
+    all_clues: "Esto es lo que recuerdo: {clues}."
+    nothing_more: "No recuerdo más detalles."
+    pick_option: "Es este."
+    no_option: "Ninguno de esos."
+    not_recognized: "Sigo sin reconocerlo."
+    recognized: "Ya lo reconozco."
+    confirm: "Sí, confirmo."
+  es-AR:
+    number: {thousands: ".", decimal: ","}
+    currency: {USD: dólares, MXN: pesos mexicanos, COP: pesos colombianos, ARS: pesos}
+    thousands_word: "{n} lucas"
+    weekdays: [lunes, martes, miércoles, jueves, viernes, sábado, domingo]
+    months: [enero, febrero, marzo, abril, mayo, junio, julio, agosto, septiembre, octubre, noviembre, diciembre]
+    amount: {exact: "fueron {amount}", rounded: "fueron {amount}", about: "fueron como {amount}", more_than: "fueron más de {amount}"}
+    date: {exact: "el {day} de {month}", today: hoy, yesterday: ayer, day_before_yesterday: anteayer, this_week: esta semana, last_week: la semana pasada, two_weeks_ago: hace como dos semanas, last_month: el mes pasado, early_this_month: a principio de mes, last_weekday: "el {weekday} pasado"}
+    merchant: "en {merchant}"
+    category: "en {category}"
+    categories: {Food: un supermercado, Services: un pago de servicios, Entertainment: entretenimiento, Health: una farmacia, Transport: transporte, Other: un negocio}
+    channel: {POS: con el posnet, ATM: en un cajero, Web: por internet, App: desde la app, Branch: en una sucursal, Transfer: por transferencia}
+    product: {credit_card: con la tarjeta de crédito, debit_card: con la tarjeta de débito, savings_account: de la caja de ahorro, checking_account: de la cuenta corriente}
+    card: {"true": "La tarjeta la tengo yo.", "false": "Ya no tengo la tarjeta."}
+    detail: "{clues}."
+    all_clues: "Esto es lo que me acuerdo: {clues}."
+    nothing_more: "No me acuerdo de más detalles."
+    pick_option: "Es este."
+    no_option: "Ninguno de esos."
+    not_recognized: "Sigo sin reconocerlo."
+    recognized: "Ya lo reconozco."
+    confirm: "Sí, confirmo."
+  pt-BR:
+    number: {thousands: ".", decimal: ","}
+    currency: {USD: dólares, MXN: pesos mexicanos, COP: pesos colombianos, ARS: pesos argentinos}
+    thousands_word: null
+    weekdays: [segunda-feira, terça-feira, quarta-feira, quinta-feira, sexta-feira, sábado, domingo]
+    months: [janeiro, fevereiro, março, abril, maio, junho, julho, agosto, setembro, outubro, novembro, dezembro]
+    amount: {exact: "foram {amount}", rounded: "foram {amount}", about: "foram uns {amount}", more_than: "foram mais de {amount}"}
+    date: {exact: "no dia {day} de {month}", today: hoje, yesterday: ontem, day_before_yesterday: anteontem, this_week: esta semana, last_week: semana passada, two_weeks_ago: há umas duas semanas, last_month: mês passado, early_this_month: no começo do mês, last_weekday: "na {weekday} passada", last_weekend_day: "no {weekday} passado"}
+    merchant: "em {merchant}"
+    category: "em {category}"
+    categories: {Food: um supermercado, Services: um pagamento de contas, Entertainment: entretenimento, Health: uma farmácia, Transport: transporte, Other: uma loja}
+    channel: {POS: na maquininha, ATM: num caixa eletrônico, Web: pela internet, App: pelo app, Branch: numa agência, Transfer: por transferência}
+    product: {credit_card: no cartão de crédito, debit_card: no cartão de débito, savings_account: da poupança, checking_account: da conta corrente}
+    card: {"true": "O cartão está comigo.", "false": "Não estou mais com o cartão."}
+    detail: "{clues}."
+    all_clues: "É isso que eu lembro: {clues}."
+    nothing_more: "Não lembro de mais detalhes."
+    pick_option: "É esta."
+    no_option: "Nenhuma dessas."
+    not_recognized: "Continuo sem reconhecer."
+    recognized: "Agora reconheço."
+    confirm: "Sim, confirmo."
