@@ -349,14 +349,15 @@ class FreeAgentConversation:
             results: list[dict[str, Any]] = []
             screen: tuple[Any, SystemTurn] | None = None
             for use in uses:
-                if use.name in UI_TOOLS and screen is None:
+                invalid = _invalid_screen(use.name, use.input)
+                if use.name in UI_TOOLS and screen is None and invalid is None:
                     screen = (use, self._screen(use.name, use.input))
                     continue
-                content = (
-                    {"error": "one screen at a time"}
-                    if use.name in UI_TOOLS
-                    else self._run_tool(s, customer, use.name, use.input)
-                )
+                if use.name in UI_TOOLS:
+                    # A screen outside its schema is not shown: the model gets the error back.
+                    content = {"error": invalid or "one screen at a time"}
+                else:
+                    content = self._run_tool(s, customer, use.name, use.input)
                 results.append(
                     {
                         "type": "tool_result",
@@ -524,6 +525,13 @@ class FreeAgentConversation:
             priority,
         )
         return {"ok": r.ok, "message": r.message}
+
+
+def _invalid_screen(name: str, tool_input: dict[str, Any]) -> str | None:
+    """Why a screen call cannot be shown, or None when it can."""
+    if name == "request_confirmation" and tool_input.get("action") not in CONFIRMS:
+        return f"action must be one of {', '.join(CONFIRMS)}"
+    return None
 
 
 def _transient(exc: Exception) -> bool:

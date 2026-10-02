@@ -144,3 +144,27 @@ def test_one_confirmation_of_register_and_block_covers_both_actions(tmp_path: Pa
     assert run.policy_violations == []
     assert run.final.blocks == [("C1", "P1")]
     assert score(run, case).correct is True
+
+
+def test_a_confirmation_of_an_unknown_action_is_returned_to_the_model(tmp_path: Path) -> None:
+    api = ScriptedApi(
+        [
+            _message([_use("list_transactions", {})]),
+            _message(
+                [
+                    _use(
+                        "request_confirmation",
+                        {"action": "register_and_offer_block", "handle": "T2"},
+                    )
+                ]
+            ),
+            _message([{"type": "text", "text": "Listo."}], "end_turn"),
+        ]
+    )
+
+    run = run_case(netflix_case(), "free_agent", 1, agent_staging(tmp_path, api), TEMPLATES)
+
+    assert run.error is None
+    sent_back = api.bodies[2]["messages"][-1]["content"][0]
+    assert "action must be one of" in sent_back["content"]
+    assert [t.outcome for t in run.turns] == ["reply"]
