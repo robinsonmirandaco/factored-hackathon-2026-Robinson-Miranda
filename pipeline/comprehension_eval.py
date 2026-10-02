@@ -17,6 +17,7 @@ The report holds counts and rates only, never a message or a row.
 
 import argparse
 import hashlib
+import math
 import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -24,9 +25,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import yaml
 
-from app.adapters.llm import LLMClient
+from app.adapters.llm import FIXED_SAMPLING_MODELS, LLMClient
 from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger
 from app.domain.comprehension_rules import RULES_VERSION, comprehend_rules
@@ -42,6 +44,7 @@ from pipeline.comprehension_llm import (
     combine_runs,
     usage_summary,
 )
+from pipeline.llm_replay import Budget, Pace, ReplayCache, ReplayTransport
 from pipeline.settings import PipelineSettings
 
 log = get_logger("pipeline.comprehension_eval")
@@ -451,9 +454,9 @@ def sample_bases(cases: list[CaseRecord], bases: int | None) -> list[CaseRecord]
     return [c for c in cases if c.base_id in keep]
 
 
-def _llm_client() -> LLMClient:
+def _llm_client(http_client: Any = None) -> LLMClient:
     # The harness reads the key and the model from the environment like the service does.
-    return LLMClient(Settings())
+    return LLMClient(Settings(), http_client=http_client)
 
 
 def run(
@@ -464,6 +467,7 @@ def run(
     runs: int = 3,
     bases: int | None = None,
     max_cost_usd: float = 8.0,
+    harness: tuple[ReplayCache, Budget, Pace] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Evaluates the named systems on a frozen split and writes the report.
 
@@ -475,6 +479,8 @@ def run(
         runs: Repeated runs of the LLM.
         bases: Evaluate only this many base cases (all variants), for prompt iterations.
         max_cost_usd: Most total LLM spend recorded in the cache.
+        harness: Cache, cap and pace of the evaluation harness (TRZ-45), to read through: the
+            readings it already paid are reused and its cap bounds the new spend.
 
     Returns:
         Results per system name.
@@ -505,16 +511,22 @@ def run(
         client = _llm_client()
         eval_dir = settings.data_dir / "eval"
         dev = load_split(eval_dir, "dev", settings.cases_manifest_path, settings.cases_config_path)
-        check_prompt_sources(
-            client,
-            dev,
-            load_split(
-                eval_dir, "calibration", settings.cases_manifest_path, settings.cases_config_path
-            ),
+        outside = load_split(
+            eval_dir, "calibration", settings.cases_manifest_path, settings.cases_config_path
         )
-        runner = LLMRuns(client, ReadingCache(eval_dir / CACHE_FILE), max_cost_usd)
+        # On the held-out split, the prompt is also checked against every test case (TRZ-12 CA9).
+        check_prompt_sources(client, dev, [*outside, *(cases if split == "test" else [])])
+        cache = ReadingCache(eval_dir / CACHE_FILE)
+        runner = LLMRuns(client, cache, max_cost_usd)
         per_run, usage = [], []
         for r in range(runs):
+            if harness is not None:
+                # Run r reads through the harness cache as repetition r + 1, so the first-turn
+                # readings TRAZO paid for in the harness are not paid again; the harness cap
+                # bounds the new spend, and the reading cache keeps its own entries.
+                transport = ReplayTransport(harness[0], r + 1, harness[1], harness[2])
+                run_client = _llm_client(httpx2.Client(transport=transport))
+                runner = LLMRuns(run_client, cache, math.inf)
             outcomes = runner.run(cases, r)
             per_run.append(evaluate(cases, as_system(cases, outcomes)))
             usage.append(usage_summary(outcomes))
@@ -524,9 +536,19 @@ def run(
             SystemSpec("llm", client.model, client.comprehension_prompt.version, None, runs)
         )
         meta["usage"] = {"llm": usage}
+        sampling = (
+            "default sampling with thinking off"
+            if client.model in FIXED_SAMPLING_MODELS
+            else "temperature 0"
+        )
+        checked = (
+            "development, calibration and test"
+            if split == "test"
+            else ("development and calibration")
+        )
         meta["notes"] = meta.get("notes", []) + [
-            f"LLM: temperature 0, {runs} runs; prompt examples checked against the development "
-            "and calibration splits (none cited or contained). LLM spend recorded in the cache, "
+            f"LLM: {sampling}, {runs} runs; prompt examples checked against the {checked} "
+            "splits (none cited or contained). LLM spend recorded in the cache, "
             f"prompt iterations included: {runner.cache.spent():.4f} USD."
         ]
     write_report(results, meta, specs, out)
@@ -566,10 +588,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=3, help="repeated runs of the LLM")
     parser.add_argument("--bases", type=int, default=None, help="only this many base cases")
     parser.add_argument("--max-cost-usd", type=float, default=8.0, help="total LLM spend cap")
+    parser.add_argument(
+        "--harness-budget",
+        type=float,
+        default=None,
+        help="read through the evaluation harness cache, with this most new spend in USD",
+    )
     args = parser.parse_args(argv)
     settings = PipelineSettings()
     configure_logging(settings.log_level)
-    run(settings, args.split, args.systems, args.out, args.runs, args.bases, args.max_cost_usd)
+    harness = None
+    if args.harness_budget is not None:
+        folder = settings.data_dir / "eval"
+        harness = (ReplayCache(folder), Budget(args.harness_budget), Pace(45))
+    run(
+        settings,
+        args.split,
+        args.systems,
+        args.out,
+        args.runs,
+        args.bases,
+        args.max_cost_usd,
+        harness,
+    )
+    if harness is not None:
+        log.warning(
+            "comprehension_harness_spend",
+            spent_usd=round(harness[1].spent_usd, 4),
+            cap_usd=harness[1].cap_usd,
+            refused=harness[1].refused,
+        )
     return 0
 
 

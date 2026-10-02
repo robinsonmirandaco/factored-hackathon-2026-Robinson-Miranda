@@ -121,9 +121,12 @@ cases-agreement:
 # development split, from the frozen split files under $(DATA_DIR)/eval:
 # docs/reports/comprension_desarrollo.md. LLM answers are cached in $(DATA_DIR)/eval, so a rerun
 # costs nothing; BASES=N evaluates N base cases only (prompt iterations, with OUT=<path>).
+# SPLIT=test with HARNESS_BUDGET=<USD> reads through the evaluation harness cache (TRZ-45).
 eval-comprehension:
-	uv run --frozen python -m pipeline.comprehension_eval --systems rules llm \
-		$(if $(BASES),--bases $(BASES)) $(if $(OUT),--out $(OUT))
+	uv run --frozen python -m pipeline.comprehension_eval --systems $(or $(SYSTEMS),rules llm) \
+		$(if $(SPLIT),--split $(SPLIT)) $(if $(RUNS),--runs $(RUNS)) \
+		$(if $(BASES),--bases $(BASES)) $(if $(OUT),--out $(OUT)) \
+		$(if $(HARNESS_BUDGET),--harness-budget $(HARNESS_BUDGET))
 
 # Language and variant of the first message on the development split (TRZ-11): the detector,
 # and the turn with and without the LLM variant. The LLM part reads only the answers cached by
