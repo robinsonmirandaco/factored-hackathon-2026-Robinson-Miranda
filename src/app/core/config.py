@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # Code requests allowed per document in each window.
     otp_request_limit: int = 5
     otp_request_window_minutes: int = 15
+    # Requests per client address to each login endpoint in each window (TRZ-40).
+    ip_request_limit: int = 30
+    ip_request_window_minutes: int = 15
+    # Proxies in front of the API that append to X-Forwarded-For: 0 reads the socket address
+    # (local, CI), 1 behind the edge of Railway.
+    trusted_proxy_hops: int = 0
     # The fixed demo code works only with demo_mode; otherwise every code is random.
     demo_mode: bool = False
     demo_otp_code: str = "482913"

@@ -53,6 +53,32 @@ def get_runtime(request: Request) -> Runtime:
 RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 
 
+def get_client_address(request: Request, runtime: RuntimeDep) -> str:
+    """Returns the address of the client, as the closest trusted proxy saw it (TRZ-40).
+
+    Each proxy appends the address it received from to X-Forwarded-For, so with
+    TRUSTED_PROXY_HOPS = n the address is the n-th entry from the right. Entries further left
+    are written by the client and can be anything, which is why the leftmost one is never used.
+    Without trusted proxies, or with fewer entries than proxies, it is the socket address.
+
+    Args:
+        request: Current request.
+        runtime: App runtime.
+
+    Returns:
+        The client address, or "unknown" when the socket has none.
+    """
+    hops = runtime.settings.trusted_proxy_hops
+    entries = [e.strip() for e in request.headers.get("x-forwarded-for", "").split(",")]
+    entries = [e for e in entries if e]
+    if hops > 0 and len(entries) >= hops:
+        return entries[-hops]
+    return request.client.host if request.client else "unknown"
+
+
+ClientAddressDep = Annotated[str, Depends(get_client_address)]
+
+
 def get_demo(runtime: RuntimeDep) -> DemoConfig:
     """Returns the demo configuration, or answers 404 outside demo mode (TRZ-38 CA2).
 
