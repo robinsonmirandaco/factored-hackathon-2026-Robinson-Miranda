@@ -14,6 +14,7 @@ the LLM fails the case goes to a person, the safe fallback. The model never sees
 handles charges and claims by short handles (T1, C1) the harness maps back.
 """
 
+import dataclasses
 import json
 import time
 import uuid
@@ -35,6 +36,7 @@ from app.adapters.db.session import SchemaUrls
 from app.core.errors import AppError
 from app.core.logging import new_trace_id, trace_id_var
 from app.core.time import utcnow
+from app.domain.fact_check import amount_fact
 from app.domain.fx import local_currency, to_usd
 from app.domain.language import decide as decide_language
 from app.domain.pii import redact
@@ -266,6 +268,7 @@ class FreeAgentConversation:
         self.disputed: str | None = None
         self.dispute: dict[str, Any] = {}
         self.actions: list[str] = []
+        self.shown_counts: list[int] = []
 
     # ---- one customer turn ----------------------------------------------------------------
 
@@ -408,6 +411,7 @@ class FreeAgentConversation:
     def _screen(self, name: str, tool_input: dict[str, Any]) -> SystemTurn:
         if name == "show_options":
             ids = [self.handles[h] for h in tool_input.get("handles", []) if h in self.handles]
+            self.shown_counts.append(len(ids))
             return SystemTurn("show_options", options=tuple(ids))
         if name == "show_charge":
             return SystemTurn("recognition")
@@ -488,9 +492,11 @@ class FreeAgentConversation:
             self.handles[handle] = c.transaction_id
             on = c.timestamp.date()
             rates = rates_near(s, on, {(c.currency, "USD"), (c.currency, local)})
+            amount_usd = to_usd(c.amount, c.currency, on, rates)
             self.records[handle] = {
                 "transaction_id": c.transaction_id,
                 "amount": c.amount,
+                "amount_usd": amount_usd,
                 "date": on.isoformat(),
                 "merchant": c.merchant_name,
             }
@@ -501,7 +507,7 @@ class FreeAgentConversation:
                     "merchant": c.merchant_name,
                     "amount": c.amount,
                     "currency": c.currency,
-                    "amount_usd": to_usd(c.amount, c.currency, on, rates),
+                    "amount_usd": amount_usd,
                     "channel": c.channel,
                     "type": c.transaction_type,
                     "status": c.status,
@@ -513,7 +519,10 @@ class FreeAgentConversation:
         """Runs TRAZO's fact checker on a reply, as an observer: the reply is sent anyway.
 
         The free agent has no verifier (CA3); the check only measures its unsupported claims
-        (design 13.3), against the facts its own tools returned in the conversation.
+        (design 13.3). What its tools returned and its prompt gave it counts as backed: the
+        amounts of the listed charges, registered and in USD; how many it listed and showed;
+        the folio, date and deadline of a registration; the actions that ran; and every policy
+        passage, which its prompt lets it cite.
         """
         assert self.case_id is not None
         facts = {
@@ -525,6 +534,16 @@ class FreeAgentConversation:
         }
         verified = verified_facts(
             s, customer.customer_id, facts, dict(self.deps.passages), self.deps.clock.today()
+        )
+        passages = list(self.deps.passages.values())
+        verified = dataclasses.replace(
+            verified,
+            amounts=verified.amounts
+            | {amount_fact(r["amount_usd"]) for r in self.records.values() if r["amount_usd"]},
+            counts=verified.counts | set(self.shown_counts) | {len(self.records)},
+            passages=verified.passages | {p.id for p in passages},
+            deadlines=verified.deadlines
+            | {d for p in passages for d in (p.business_days, p.calendar_days) if d},
         )
         check_reply(s, self.case_id, reply, verified, enforce=False)
 

@@ -244,7 +244,10 @@ def measures(rows: list[Scored]) -> dict[str, Any]:
         }
     any_unsafe = sum(bool(x.unsafe) for x in rows)
     latencies = sorted(x.run.latency_ms for x in rows)
-    turn_latencies = sorted(t.latency_ms for x in rows for t in x.run.turns)
+    # A turn answered from the cache has no LLM time of its own: only fresh runs count here.
+    turn_latencies = sorted(
+        t.latency_ms for x in rows if not x.run.llm_cache_hits for t in x.run.turns
+    )
     cost = sum(x.run.cost_usd for x in rows)
     return {
         "cases": len(rows),
@@ -266,6 +269,9 @@ def measures(rows: list[Scored]) -> dict[str, Any]:
             "n": len(rows),
             "upper": clopper_pearson_upper(any_unsafe, len(rows)),
         },
+        "unsupported_kinds": dict(
+            Counter(k for x in rows for k in x.run.final.unsupported_kinds).most_common()
+        ),
         "security_flagged": sum(x.score.security_flagged for x in rows),
         "policy_violations": sum(bool(x.run.policy_violations) for x in rows),
         "errors": sum(x.run.error is not None for x in rows),
@@ -488,9 +494,11 @@ def execute(
         path = folder / "harness" / f"{tag}-{split}-{system}-{variant}-r{rep}.jsonl"
         write_runs(runs, path)
         m = measures(scored(runs, by_id))
+        # A sensitivity variant runs with a zero budget: its refused requests are expected
+        # and reported, not a sign of an unfinished run.
         complete = (
             len(runs) == len(cases)
-            and m["efficiency"]["llm_refused"] == 0
+            and (m["efficiency"]["llm_refused"] == 0 or variant != "base")
             and m["efficiency"]["cases_paced"] == 0
         )
         line = {
@@ -793,11 +801,12 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
     if split == "test":
         w(f"- Opens of the held-out files during the runs: {opens or 'none recorded'}")
     w("")
-    case_list = list(cases.values())
+    run_ids = {x.case.case_id for v in data.values() for x in v}
+    case_list = [c for c in cases.values() if c.case_id in run_ids]
     w("## Cases\n")
     w(
-        f"{len(case_list)} cases from {len({c.base_id for c in case_list})} base cases, each in "
-        "ES-MX, ES-CO, ES-AR and PT-BR.\n"
+        f"{len(case_list)} cases run from {len({c.base_id for c in case_list})} base cases, "
+        "each in ES-MX, ES-CO, ES-AR and PT-BR.\n"
     )
     for title, key in (
         ("Provenance", lambda c: c.provenance),
@@ -893,6 +902,8 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
         + ". Actions without the customer's confirmation (free agent only; TRAZO's code "
         "enforces it): "
         + ", ".join(f"{s} {m[(s, 'base', 1)]['policy_violations']}" for s in systems)
+        + ". Unsupported claims sent, by kind: "
+        + "; ".join(f"{s} {m[(s, 'base', 1)]['unsupported_kinds'] or 'none'}" for s in systems)
         + ". Harness errors (included, not dropped): "
         + ", ".join(f"{s} {m[(s, 'base', 1)]['errors']}" for s in systems)
         + ".\n"
@@ -910,6 +921,8 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
             "Latency per turn, p50 / p95 (ms)",
             lambda e: (
                 f"{e['turn_latency_p50_ms']} / {e['turn_latency_p95_ms']} ({e['turns']} turns)"
+                if e["turns"]
+                else "n/a (answered from the cache)"
             ),
         ),
         ("LLM cost, total (USD)", lambda e: f"{e['cost_usd']:.4f}"),

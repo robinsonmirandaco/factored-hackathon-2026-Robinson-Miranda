@@ -84,6 +84,7 @@ class FinalState:
         replies_checked: Replies the fact checker read.
         dossiers: For every case with a person, the required dossier fields present and with
             their source, as (present, required).
+        unsupported_kinds: Kind of each unsupported claim sent, such as folio or deadline.
     """
 
     case_statuses: list[str] = field(default_factory=list)
@@ -95,6 +96,7 @@ class FinalState:
     unsupported_sent: int = 0
     replies_checked: int = 0
     dossiers: list[tuple[int, int]] = field(default_factory=list)
+    unsupported_kinds: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -522,7 +524,9 @@ def final_state(admin_url: str, case: CaseRecord) -> FinalState:
             ):
                 state.replies_checked += 1
                 if result.get("sent"):
-                    state.unsupported_sent += len(result.get("unsupported") or [])
+                    claims = result.get("unsupported") or []
+                    state.unsupported_sent += len(claims)
+                    state.unsupported_kinds += [str(c.get("kind")) for c in claims]
     finally:
         engine.dispose()
     return state
