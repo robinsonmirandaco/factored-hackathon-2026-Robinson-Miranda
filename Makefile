@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -47,8 +47,28 @@ seed-demo:
 seed-synthetic:
 	uv run --frozen python -m app.cli.seed synthetic $(if $(REPLACE),--replace)
 
-eval:
+# Golden conversation cases (eval/cases), with the LLM off, as CI runs them.
+golden:
 	LLM_ENABLED=false uv run --frozen python -m app.cli.eval eval/cases --out eval/reports
+
+# The five measures of the statement for TRAZO and the free agent (TRZ-45):
+# docs/reports/evaluacion.md from the runs recorded in eval/runs.jsonl. Makes no LLM call.
+eval:
+	uv run --frozen python -m pipeline.evaluation report --split $(or $(SPLIT),test)
+
+# One recorded run of a system through the harness, within BUDGET USD of new LLM spend:
+#   make eval-run SPLIT=test SYSTEM=trazo REPS=3 BUDGET=4.5
+# On the test split it runs once: a clean tree is required, and a recorded run of the same
+# system, model, prompt and policy is refused unless RERUN="reason" (a later adjustment).
+eval-run:
+	uv run --frozen python -m pipeline.evaluation run --split $(SPLIT) --system $(SYSTEM) \
+		--repetitions $(or $(REPS),1) --budget $(BUDGET) $(if $(BASES),--bases $(BASES)) \
+		$(if $(RERUN),--rerun-reason "$(RERUN)")
+
+# TRAZO under half and double amount thresholds and alpha 0.10, from the LLM cache only (CA11).
+eval-sensitivity:
+	uv run --frozen python -m pipeline.evaluation sensitivity --split $(SPLIT) \
+		$(if $(BASES),--bases $(BASES))
 
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:
