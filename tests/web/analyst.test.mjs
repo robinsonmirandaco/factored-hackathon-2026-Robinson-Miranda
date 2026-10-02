@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  REVERSAL_REASONS, decisionDone, decisionPanel, decisionProblem, filterChips, queueRow, slaText,
+  REVERSAL_REASONS, decisionDone, decisionPanel, decisionProblem, filterChips, identificationTable,
+  queueRow, slaText,
 } from "../../web/assets/analyst-view.js";
 
 const NOW = Date.parse("2026-09-30T12:00:00Z");
@@ -162,4 +163,28 @@ test("the heading of a decided case shows its final status, not the kind", () =>
   assert.equal(caseHeading("escalation", "awaiting_customer", "CASE-1"), "Esperando al cliente · CASE-1");
   assert.equal(caseHeading("escalation", "escalated", "CASE-1"), "Escalado · CASE-1");
   assert.equal(caseHeading("security_event", "approved", "CASE-1"), "Evento de seguridad · Aprobado · CASE-1");
+});
+
+// Seen in the demo rehearsal: the dossier table showed "[object HTMLSpanElement]" because its
+// cells came as nested arrays. The table is now flat text, one string per cell.
+test("the identification table is flat text: a header and one string per cell", () => {
+  const identification = {
+    decision: "show_options",
+    candidates: 2,
+    conformal_set: ["T1"],
+    top: [
+      { transaction_id: "T1", probability: 0.6, components: { date: -4, amount: 0, merchant: 0.3 } },
+      { transaction_id: "T2", probability: 0.4, components: { date: 0, amount: -4, merchant: 0.1 } },
+    ],
+  };
+  const table = identificationTable(identification);
+  assert.deepEqual(table.header, ["Transacción", "date", "amount", "merchant", "p"]);
+  assert.deepEqual(table.rows.map((r) => [r.id, r.inSet]), [["T1", true], ["T2", false]]);
+  assert.deepEqual(table.rows[0].cells, ["-4.00", "0.00", "0.30", "60 %"]);
+  for (const row of table.rows) assert.ok(row.cells.every((c) => typeof c === "string"));
+});
+
+test("an identification with no candidate has no table rows", () => {
+  const table = identificationTable({ decision: "not_found", candidates: 0, conformal_set: [], top: [] });
+  assert.deepEqual(table.rows, []);
 });

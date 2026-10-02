@@ -5,8 +5,8 @@
 
 import { createClient } from "./api.js";
 import {
-  REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, candidateCards,
-  demoResetView,
+  REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
+  identificationTable,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
@@ -350,8 +350,7 @@ function dossierCards(d, history) {
   }
   const facts = factRows(d.verified_facts);
   if (facts.length) cards.push(factCard("Hechos verificados", facts));
-  const candidates = candidateCards(d.identification);
-  if (candidates.length) cards.push(identificationCard(d.identification, candidates));
+  if (identificationTable(d.identification).rows.length) cards.push(identificationCard(d.identification));
   const evidence = factRows(d.evidence);
   if (evidence.length) cards.push(factCard("Evidencia", evidence));
   if (d.later_messages.length) {
@@ -410,14 +409,16 @@ function factCard(title, rows) {
 
 // Candidates with the contribution of each part of the score and the probability; percentages
 // are for the analyst only (rule 3).
-function identificationCard(identification, candidates) {
-  const keys = candidates[0].scores.map(([k]) => k);
-  const columns = `minmax(150px, 1.6fr) repeat(${keys.length + 1}, 72px)`;
+function identificationCard(identification) {
+  const table = identificationTable(identification);
+  const columns = `minmax(150px, 1.6fr) repeat(${table.header.length - 1}, 72px)`;
+  // Cells come as one flat list: el() flattens one level, so a nested list would be printed.
   const line = (cells, cls) => {
-    const node = el("div", { class: `trow${cls ? ` ${cls}` : ""}` }, cells);
+    const node = el("div", { class: `trow${cls ? ` ${cls}` : ""}` }, ...cells);
     node.style.gridTemplateColumns = columns;
     return node;
   };
+  const right = (text, cls) => el("span", { class: cls ? `r ${cls}` : "r", text });
   return el("section", { class: "card tight" },
     el("div", { class: "card-head" },
       el("h2", { text: "Identificación" }),
@@ -425,14 +426,13 @@ function identificationCard(identification, candidates) {
     el("p", { class: "small muted", text: `${identification.candidates} candidatos · el conjunto conformal va marcado` }),
     el("div", { class: "table-wrap boxed" },
       el("div", { class: "table" },
-        line([el("span", { text: "Transacción" }), keys.map((k) => el("span", { class: "r", text: k })), el("span", { class: "r", text: "p" })], "head"),
-        candidates.map((c) => line([
+        line(table.header.map((text, i) => (i ? right(text) : el("span", { text }))), "head"),
+        table.rows.map((row) => line([
           el("span", { class: "cell-stack" },
-            el("span", { class: "mono small", text: c.id }),
-            c.inSet ? el("span", { class: "tag info", text: "En el conjunto" }) : null),
-          c.scores.map(([, v]) => el("span", { class: "r", text: v })),
-          el("span", { class: "r strong", text: c.probability }),
-        ], c.inSet ? "in-set" : null)))));
+            el("span", { class: "mono small", text: row.id }),
+            row.inSet ? el("span", { class: "tag info", text: "En el conjunto" }) : null),
+          ...row.cells.map((text, i) => right(text, i === row.cells.length - 1 ? "strong" : "")),
+        ], row.inSet ? "in-set" : null)))));
 }
 
 function actionsCard(d) {

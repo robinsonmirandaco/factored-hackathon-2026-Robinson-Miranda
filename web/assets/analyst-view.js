@@ -316,6 +316,21 @@ export function candidateCards(identification) {
   }));
 }
 
+// The identification table of a dossier as flat text: the header, then one string per cell of
+// each candidate, with its id and whether it is in the conformal set.
+export function identificationTable(identification) {
+  const candidates = candidateCards(identification);
+  const keys = candidates.length ? candidates[0].scores.map(([k]) => k) : [];
+  return {
+    header: ["Transacción", ...keys, "p"],
+    rows: candidates.map((c) => ({
+      id: c.id,
+      inSet: c.inSet,
+      cells: [...c.scores.map(([, v]) => v), c.probability],
+    })),
+  };
+}
+
 // The heading of a dossier: the kind of case while it is with a person, its status once an
 // analyst decided it or asked the customer (regression of the queue QA).
 export function caseHeading(kind, status, caseId) {
