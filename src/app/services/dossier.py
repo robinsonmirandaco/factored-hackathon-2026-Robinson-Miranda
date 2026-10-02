@@ -32,6 +32,7 @@ from app.adapters.llm import LLMClient
 from app.core.errors import AppError
 from app.domain.history import Lang, intent_label
 from app.domain.money import money_text
+from app.domain.window_text import window_text
 from app.schemas.comprehension import DateClue
 from app.schemas.dossier import (
     ActionTaken,
@@ -309,7 +310,9 @@ def _summary(case: Case, extraction: list[Clue], lang: Lang) -> str:
             about = "~" if v.get("approximate") else ""
             parts.append(f"{about}{money_text(lang, v['value'], v.get('currency'))}")
         elif clue.field == "date":
-            parts.append(str(v["expression"]))
+            # The days the words mean, as the chip and "Lo que se entendió" give them.
+            first, last = date.fromisoformat(v["window_from"]), date.fromisoformat(v["window_to"])
+            parts.append(window_text(lang, first, last))
         elif clue.field == "card_in_possession":
             parts.append(_CARD[lang][bool(v["value"])])
         else:

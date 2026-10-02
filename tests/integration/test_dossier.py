@@ -389,7 +389,13 @@ def test_the_understood_date_carries_its_window(
         _msg("no me acuerdo"),
     )
 
-    date = next(c for c in _dossier(client, case_id)["extraction"] if c["field"] == "date")
+    d = _dossier(client, case_id)
+    date = next(c for c in d["extraction"] if c["field"] == "date")
+    # The title gives the same days as the chip, not the customer's words.
+    assert "8 jun a 14 jun y días cercanos" in d["request_summary"]
+    assert "la semana pasada" not in d["request_summary"]
+    pt = _dossier(client, case_id, lang="pt")["request_summary"]
+    assert "8 de jun a 14 de jun e dias próximos" in pt
 
     # Resolved against the simulated now (2026-06-17, a Wednesday): the week before.
     assert (date["value"]["window_from"], date["value"]["window_to"]) == (
