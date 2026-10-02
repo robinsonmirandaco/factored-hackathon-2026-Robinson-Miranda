@@ -526,7 +526,9 @@ def run(
                 # bounds the new spend, and the reading cache keeps its own entries.
                 transport = ReplayTransport(harness[0], r + 1, harness[1], harness[2])
                 run_client = _llm_client(httpx2.Client(transport=transport))
-                runner = LLMRuns(run_client, cache, math.inf)
+                # One reading at a time: a wait for the request pace must not run inside the
+                # LLM timeout, and each request can read the prompt cache the previous wrote.
+                runner = LLMRuns(run_client, cache, math.inf, workers=1)
             outcomes = runner.run(cases, r)
             per_run.append(evaluate(cases, as_system(cases, outcomes)))
             usage.append(usage_summary(outcomes))
