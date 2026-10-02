@@ -2,10 +2,10 @@
 unsupported element is replaced by the fixed one and the element is audited (CA3, CA4, CA5); the
 ablation lets it through and counts it (CA6); without a backing passage no deadline is stated and
 a person is offered, in the customer's language (CA7); the card digits a reply may state are read
-from products through the charge."""
+from products through the charge. The receipt of a registration is written by code since the
+walkthrough of TRZ-40, so the checked replies are the ones the LLM still writes."""
 
 import dataclasses
-from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -63,9 +63,10 @@ def settings(schema: SchemaUrls, database_url: str) -> Settings:
     return settings
 
 
-def _deps(settings: Settings, writes: Callable[[str], str], language: str = "es") -> AgentDeps:
-    """Agent dependencies whose LLM writes `writes(folio)` for the receipt of a registration,
-    and a sentence with no figure for any other turn."""
+def _deps(settings: Settings, writes: str, language: str = "es") -> AgentDeps:
+    """Agent dependencies whose LLM writes `writes` when the customer recognizes the charge, the
+    reply the LLM still writes after the receipt became code-written (walkthrough of TRZ-40), and
+    a sentence with no figure for any other turn."""
     answer = reading(
         "unrecognized_charge",
         "es-CO" if language == "es" else "pt-BR",
@@ -74,15 +75,31 @@ def _deps(settings: Settings, writes: Callable[[str], str], language: str = "es"
     )
 
     def reply(facts: dict[str, Any]) -> str:
-        if facts["outcome"] == "registered_verified":
-            return writes(facts["dispute"]["folio"])
+        if facts["outcome"] == "recognized_closed":
+            return writes
         return "Revisaremos el cargo." if language == "es" else "Vamos revisar a cobrança."
 
     return agent_deps(settings, fake_llm(settings, answer, reply=reply))
 
 
+def _session(schema: SchemaUrls) -> Database:
+    return Database(schema.app)
+
+
+def _recognize(schema: SchemaUrls, deps: AgentDeps) -> AgentResponse:
+    db = _session(schema)
+    try:
+        with db.session(customer_id="C1") as s:
+            shown = handle_message(s, deps, "C1", MESSAGES["es"])
+            return handle_message(
+                s, deps, "C1", "Ya lo reconozco", case_id=shown.case_id, recognition="recognized"
+            )
+    finally:
+        db.dispose()
+
+
 def _register(schema: SchemaUrls, deps: AgentDeps, language: str = "es") -> AgentResponse:
-    db = Database(schema.app)
+    db = _session(schema)
     try:
         with db.session(customer_id="C1") as s:
             shown = handle_message(s, deps, "C1", MESSAGES[language])
@@ -106,57 +123,44 @@ def _register(schema: SchemaUrls, deps: AgentDeps, language: str = "es") -> Agen
         db.dispose()
 
 
-def _last_check(schema: SchemaUrls, case_id: str) -> tuple:
+def _checks(schema: SchemaUrls, case_id: str) -> list[tuple]:
     engine = create_engine(schema.admin)
     with engine.connect() as conn:
-        row = conn.execute(
+        rows = conn.execute(
             text(
                 "SELECT payload->>'mode', result->'passed', result->'sent', result->'unsupported' "
-                "FROM audit_log WHERE case_id = :case_id AND action = 'fact_check' "
-                "ORDER BY id DESC LIMIT 1"
+                "FROM audit_log WHERE case_id = :case_id AND action = 'fact_check' ORDER BY id"
             ),
             {"case_id": case_id},
-        ).one()
+        ).all()
     engine.dispose()
-    return tuple(row)
+    return [tuple(r) for r in rows]
 
 
-def _receipt(folio: str) -> str:
-    return f"Registramos tu aclaración del cargo de 120.00 USD en Netflix con el folio {folio}."
+CLOSED = "Listo, cerramos tu caso sin cambios en tu cuenta."
 
 
-def test_a_correct_receipt_is_sent_with_the_cited_deadline(
+def test_a_supported_reply_is_sent_and_its_check_is_audited(
     schema: SchemaUrls, settings: Settings
 ) -> None:
-    r = _register(schema, _deps(settings, _receipt))
+    r = _recognize(schema, _deps(settings, CLOSED))
 
-    assert (r.outcome, r.llm_fallback) == ("registered_verified", False)
-    assert r.reply.startswith(_receipt(r.facts["dispute"]["folio"]))
-    assert "(15 días hábiles).\n[simulado] §2.1 · política de demostración, no del banco" in r.reply
-    assert _last_check(schema, r.case_id) == ("enforce", True, True, [])
+    assert (r.outcome, r.llm_fallback, r.reply) == ("recognized_closed", False, CLOSED)
+    assert _checks(schema, r.case_id)[-1] == ("enforce", True, True, [])
 
 
 @pytest.mark.parametrize(
     ("writes", "unsupported"),
     [
+        (CLOSED + " Te responderemos en 5 días hábiles.", {"kind": "deadline", "value": "5 d"}),
+        (CLOSED + " El cargo fue de 1,200.00 USD.", {"kind": "amount", "value": "1200.00"}),
+        (CLOSED + " Tu folio es DSP-2026-99999.", {"kind": "folio", "value": "DSP-2026-99999"}),
         (
-            lambda folio: _receipt(folio) + " Te responderemos en 5 días hábiles.",
-            {"kind": "deadline", "value": "5 d"},
-        ),
-        (
-            lambda folio: _receipt(folio).replace("120.00 USD", "1,200.00 USD"),
-            {"kind": "amount", "value": "1200.00"},
-        ),
-        (
-            lambda _folio: _receipt("DSP-2026-99999"),
-            {"kind": "folio", "value": "DSP-2026-99999"},
-        ),
-        (
-            lambda folio: _receipt(folio) + " Confírmanos tu contraseña.",
+            CLOSED + " Confírmanos tu contraseña.",
             {"kind": "forbidden_request", "value": "contraseña"},
         ),
         (
-            lambda folio: _receipt(folio) + " También bloqueamos tu tarjeta.",
+            CLOSED + " También bloqueamos tu tarjeta.",
             {"kind": "action_claim", "value": "block_card"},
         ),
     ],
@@ -165,26 +169,25 @@ def test_a_correct_receipt_is_sent_with_the_cited_deadline(
 def test_an_unsupported_element_sends_the_fixed_reply_and_is_audited(
     schema: SchemaUrls,
     settings: Settings,
-    writes: Callable[[str], str],
+    writes: str,
     unsupported: dict[str, str],
 ) -> None:
-    r = _register(schema, _deps(settings, writes))
+    r = _recognize(schema, _deps(settings, writes))
 
-    assert (r.outcome, r.llm_fallback) == ("registered_verified", True)
-    fixed = template_reply(r.facts, "es")
-    assert r.reply.startswith(fixed + " Plazo de respuesta:")
-    assert _last_check(schema, r.case_id) == ("enforce", False, False, [unsupported])
+    assert (r.outcome, r.llm_fallback) == ("recognized_closed", True)
+    assert r.reply == template_reply(r.facts, "es")
+    assert _checks(schema, r.case_id)[-1] == ("enforce", False, False, [unsupported])
 
 
 def test_with_the_checker_off_the_unsupported_claim_reaches_the_customer_and_is_counted(
     schema: SchemaUrls, settings: Settings
 ) -> None:
-    writes = lambda folio: _receipt(folio) + " Te responderemos en 5 días hábiles."  # noqa: E731
+    writes = CLOSED + " Te responderemos en 5 días hábiles."
     deps = dataclasses.replace(_deps(settings, writes), fact_check=False)
-    r = _register(schema, deps)
+    r = _recognize(schema, deps)
 
     assert "5 días hábiles" in r.reply and not r.llm_fallback
-    assert _last_check(schema, r.case_id) == (
+    assert _checks(schema, r.case_id)[-1] == (
         "observe",
         False,
         True,
@@ -192,22 +195,23 @@ def test_with_the_checker_off_the_unsupported_claim_reaches_the_customer_and_is_
     )
 
 
+def test_the_receipt_is_written_by_code_with_the_cited_deadline(
+    schema: SchemaUrls, settings: Settings
+) -> None:
+    # The model would state its own deadline; it is never asked to write the receipt.
+    r = _register(schema, _deps(settings, CLOSED + " Responderemos en 5 días hábiles."))
+
+    assert (r.outcome, r.llm_fallback) == ("registered_verified", False)
+    assert r.reply.startswith(template_reply(r.facts, "es") + " Plazo de respuesta:")
+    assert "(15 días hábiles).\n[simulado] §2.1 · política de demostración, no del banco" in r.reply
+    assert "Responderemos" not in r.reply
+
+
 @pytest.mark.parametrize("language", ["es", "pt"])
 def test_without_a_backing_passage_no_deadline_is_stated_and_a_person_is_offered(
     schema: SchemaUrls, settings: Settings, language: str
 ) -> None:
-    def writes(folio: str) -> str:
-        # The model tries to state the usual deadline anyway.
-        if language == "es":
-            return (
-                f"Registramos tu aclaración con el folio {folio}. Responderemos en 15 días hábiles."
-            )
-        return (
-            f"Registramos a sua contestação com o protocolo {folio}. "
-            "Responderemos em 15 dias úteis."
-        )
-
-    deps = dataclasses.replace(_deps(settings, writes, language), passages={})
+    deps = dataclasses.replace(_deps(settings, CLOSED, language), passages={})
     r = _register(schema, deps, language)
 
     assert r.outcome == "registered_verified"
@@ -221,7 +225,6 @@ def test_without_a_backing_passage_no_deadline_is_stated_and_a_person_is_offered
     )
     assert PERSON[language] in r.reply
     assert "hábiles" not in r.reply and "úteis" not in r.reply
-    assert _last_check(schema, r.case_id)[3] == [{"kind": "deadline", "value": "15 d"}]
 
 
 def test_the_card_digits_are_read_from_products_through_the_charge(

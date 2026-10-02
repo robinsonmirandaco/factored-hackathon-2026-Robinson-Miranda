@@ -128,8 +128,11 @@ HOLDS_CHARGE = (
 FIXED_OUTCOMES = ("security_blocked", "failed")
 # Outcomes code writes by design, not as a fallback: what happened to the card or to a declined
 # offer, and a handoff, whose reason and review time come from the decision (the LLM once wrote
-# a doubt the customer never voiced and a contact promise instead).
+# a doubt the customer never voiced and a contact promise instead). So is the receipt of a
+# registration: folio and deadline with its citation (the LLM kept adding promises of news the
+# fact checker cannot see, a new wording each time).
 CODE_WRITTEN_OUTCOMES = (
+    "registered_verified",
     "existing_case",
     "no_pending_action",
     "no_pending_recognition",

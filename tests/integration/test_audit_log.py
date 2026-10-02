@@ -136,11 +136,11 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
     rows = _rows(schema, case_id)
 
     def by_llm(r: AuditRecord) -> bool:
-        # The recognition step (TRZ-16) and the confirmation question are written by code, so
-        # their compose rows have no model.
+        # The recognition step (TRZ-16), the confirmation question and the receipt are written
+        # by code, so their compose rows have no model.
         if r.action == "compose":
             outcome = (r.payload or {})["facts"]["outcome"]
-            return outcome not in ("recognizing", "awaiting_confirmation")
+            return outcome not in ("recognizing", "awaiting_confirmation", "registered_verified")
         return r.action == "comprehend"
 
     assert {r.action for r in rows} >= {
@@ -173,12 +173,35 @@ def test_each_step_records_actor_input_result_latency_cost_and_versions(
                 None,
                 None,
             ), r.action
-    compose = next(r for r in rows if r.action == "compose" and by_llm(r))
+    extract = next(r for r in rows if r.action == "comprehend")
+    assert extract.payload and "redacted_text" in extract.payload
+
+
+def test_a_reply_the_llm_writes_records_its_model_tokens_and_prompt_hash(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    # A recognized charge closes the case with a reply the LLM writes.
+    first = client.post("/chat", json={"message": MESSAGE}).json()
+    closed = client.post(
+        "/chat",
+        json={
+            "message": "Ya lo reconozco",
+            "case_id": first["case_id"],
+            "recognition": "recognized",
+        },
+    ).json()
+    assert closed["outcome"] == "recognized_closed", closed
+    compose = next(
+        r
+        for r in _rows(schema, first["case_id"])
+        if r.action == "compose" and (r.payload or {})["facts"]["outcome"] == "recognized_closed"
+    )
+
+    assert compose.model == "test-model"
+    assert compose.input_tokens and compose.output_tokens and compose.cost_usd
     # One prompt writes the reply; no second model judges it (TRZ-20).
     assert (compose.prompt_version or "").startswith("sha256:")
     assert "+" not in (compose.prompt_version or "")
-    extract = next(r for r in rows if r.action == "comprehend")
-    assert extract.payload and "redacted_text" in extract.payload
 
 
 def test_no_row_stores_model_reasoning(client: TestClient, schema: SchemaUrls) -> None:
