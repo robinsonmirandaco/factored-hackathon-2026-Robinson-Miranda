@@ -52,6 +52,11 @@ MAX_CALLS_PER_TURN = 6
 MAX_TOKENS = 600
 TEMPERATURE = 0.0
 UI_TOOLS = ("ask_customer", "show_options", "show_charge", "request_confirmation")
+CONFIRMS = {
+    "register_and_block": ("register_dispute", "block_card"),
+    "register_dispute": ("register_dispute",),
+    "block_card": ("block_card",),
+}
 HANDOFF_STATUS = {
     "escalate": "escalated",
     "analyst_approval": "pending_analyst_approval",
@@ -122,7 +127,10 @@ TOOLS: list[dict[str, Any]] = [
         "Returns their answer.",
         "input_schema": _schema(
             {
-                "action": {"type": "string", "enum": ["register_dispute", "block_card"]},
+                "action": {
+                    "type": "string",
+                    "enum": ["register_and_block", "register_dispute", "block_card"],
+                },
                 "handle": {"type": "string"},
             },
             ["action", "handle"],
@@ -156,11 +164,12 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "escalate_to_human",
         "description": "Hands the case to a person. kind: escalate, analyst_approval (an action "
-        "that needs approval) or security (a security event).",
+        "that needs approval) or security (a security event). priority: normal, high or urgent.",
         "input_schema": _schema(
             {
                 "kind": {"type": "string", "enum": list(HANDOFF_STATUS)},
                 "reason": {"type": "string"},
+                "priority": {"type": "string", "enum": ["normal", "high", "urgent"]},
                 "recommended_action": {"type": "string"},
             },
             ["kind", "reason"],
@@ -306,7 +315,10 @@ class FreeAgentConversation:
             answer = f"The customer answered: {redacted}"
         elif p.name == "request_confirmation":
             if turn.confirm_action_id:
-                self.confirmed.add((p.tool_input["action"], p.tool_input["handle"]))
+                action, handle = p.tool_input["action"], p.tool_input["handle"]
+                # One confirmation of register_and_block covers both actions, as in TRAZO.
+                for done in CONFIRMS[action]:
+                    self.confirmed.add((done, handle))
             answer = f"The customer answered: {redacted}"
         else:
             answer = redacted
@@ -438,7 +450,11 @@ class FreeAgentConversation:
             return {"ok": r.ok, "message": r.message}
         if name == "escalate_to_human":
             return self._handoff(
-                s, tool_input["kind"], tool_input["reason"], tool_input.get("recommended_action")
+                s,
+                tool_input["kind"],
+                tool_input["reason"],
+                tool_input.get("recommended_action"),
+                tool_input.get("priority", "normal"),
             )
         return {"ok": False, "error": f"unknown tool {name}"}
 
@@ -488,12 +504,25 @@ class FreeAgentConversation:
             self.violations.append(f"{action}_without_confirmation")
 
     def _handoff(
-        self, s: Session, kind: str, reason: str, recommended: str | None
+        self,
+        s: Session,
+        kind: str,
+        reason: str,
+        recommended: str | None,
+        priority: str = "normal",
     ) -> dict[str, Any]:
         assert self.case_id is not None
         status = HANDOFF_STATUS.get(kind, "escalated")
-        sla = self.deps.policy.config.queue.sla_hours["normal"]
-        r = T.escalate_to_human(s, self.case_id, reason, sla, recommended, status)  # type: ignore[arg-type]
+        sla = self.deps.policy.config.queue.sla_hours[priority]
+        r = T.escalate_to_human(
+            s,
+            self.case_id,
+            reason,
+            sla,
+            recommended,
+            status,  # type: ignore[arg-type]
+            priority,
+        )
         return {"ok": r.ok, "message": r.message}
 
 

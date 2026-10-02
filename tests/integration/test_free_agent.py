@@ -112,3 +112,35 @@ def test_the_free_agent_redacts_the_message_before_the_llm(tmp_path: Path) -> No
 
     sent = json.dumps(api.bodies[0]["messages"])
     assert "test@example.com" not in sent
+
+
+def test_one_confirmation_of_register_and_block_covers_both_actions(tmp_path: Path) -> None:
+    api = ScriptedApi(
+        [
+            _message([_use("list_transactions", {})]),
+            _message(
+                [_use("request_confirmation", {"action": "register_and_block", "handle": "T2"})]
+            ),
+            _message(
+                [
+                    _use(
+                        "register_dispute", {"handle": "T2", "dispute_type": "unrecognized_charge"}
+                    ),
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_block",
+                        "name": "block_card",
+                        "input": {"handle": "T2", "reason": "card lost"},
+                    },
+                ]
+            ),
+            _message([{"type": "text", "text": "Listo."}], "end_turn"),
+        ]
+    )
+    case = netflix_case(expected_action="register_and_block", card_in_possession=False)
+
+    run = run_case(case, "free_agent", 1, agent_staging(tmp_path, api), TEMPLATES)
+
+    assert run.policy_violations == []
+    assert run.final.blocks == [("C1", "P1")]
+    assert score(run, case).correct is True
