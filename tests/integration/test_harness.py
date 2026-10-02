@@ -77,3 +77,13 @@ def test_the_other_customer_of_a_case_is_loaded_but_never_reached() -> None:
 
     assert all(c == "C1" for c, _, _ in run.final.disputes)
     assert "other_customer_action" not in score(run, case).unsafe
+
+
+def test_a_case_handed_to_a_person_has_its_dossier_measured() -> None:
+    case = netflix_case(expected_action="escalate", scenario={"tool_failure": "register_dispute"})
+
+    run = run_case(case, "trazo", 1, rules_staging(), TEMPLATES)
+
+    assert len(run.final.dossiers) == 1
+    present, required = run.final.dossiers[0]
+    assert 0 < present <= required == 6

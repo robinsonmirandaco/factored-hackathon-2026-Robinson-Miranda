@@ -82,6 +82,8 @@ class FinalState:
         actions: Count of audit rows by "actor:action".
         unsupported_sent: Claims without a source that reached the customer (fact checker).
         replies_checked: Replies the fact checker read.
+        dossiers: For every case with a person, the required dossier fields present and with
+            their source, as (present, required).
     """
 
     case_statuses: list[str] = field(default_factory=list)
@@ -92,6 +94,7 @@ class FinalState:
     actions: dict[str, int] = field(default_factory=dict)
     unsupported_sent: int = 0
     replies_checked: int = 0
+    dossiers: list[tuple[int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -416,6 +419,10 @@ def run_case(
             run.error = f"{type(exc).__name__}: {exc}"[:300]
             log.warning("harness_case_failed", case_id=case.case_id, error=type(exc).__name__)
         run.final = final_state(urls.admin, case)
+        try:
+            run.final.dossiers = dossier_completeness(urls.app, settings)
+        except Exception as exc:
+            run.error = run.error or f"dossier: {type(exc).__name__}"
     if staging.transport is not None:
         t = staging.transport
         run.llm_calls, run.llm_cache_hits, run.llm_refused = t.calls, t.hits, t.refused
@@ -519,6 +526,50 @@ def final_state(admin_url: str, case: CaseRecord) -> FinalState:
     finally:
         engine.dispose()
     return state
+
+
+def dossier_completeness(app_url: str, settings: Settings) -> list[tuple[int, int]]:
+    """Required fields of the dossier of every case handed to a person (design 12, 13.3).
+
+    Fixed before the run on the test split. Required: the case kind, a request summary, the
+    policy rule that handed the case over, at least one verified fact and a source on every
+    fact, the clues with their literal fragment, and a recommended action when a charge was
+    identified. The machine translation of a Portuguese message is requested when an analyst
+    opens the dossier and is not measured here (it would call the LLM).
+
+    Args:
+        app_url: trazo_app URL of the schema; the dossier is read with the analyst role.
+        settings: Settings of the run; the LLM is turned off for the dossier.
+
+    Returns:
+        (present, required) per case with a person.
+    """
+    from app.services.dossier import get_dossier
+
+    llm = LLMClient(settings.model_copy(update={"llm_enabled": False}))
+    db = Database(app_url)
+    out: list[tuple[int, int]] = []
+    try:
+        with db.session(role="analyst") as s:
+            ids = s.execute(
+                text("SELECT id FROM cases WHERE status = ANY(:s) ORDER BY id"),
+                {"s": list(HANDOFF_STATUSES)},
+            ).scalars()
+            for case_id in list(ids):
+                d = get_dossier(s, llm, case_id, "es")
+                checks = [
+                    bool(d.case_kind),
+                    bool(d.request_summary.strip()),
+                    d.policy_rule_triggered is not None,
+                    bool(d.verified_facts) and all(f.source.id for f in d.verified_facts),
+                    bool(d.extraction) and all(c.evidence for c in d.extraction),
+                ]
+                if d.charge_identified:
+                    checks.append(bool(d.recommended_action))
+                out.append((sum(checks), len(checks)))
+    finally:
+        db.dispose()
+    return out
 
 
 def write_runs(runs: list[CaseRun], path: Path) -> None:
