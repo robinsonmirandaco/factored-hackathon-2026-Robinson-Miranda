@@ -766,16 +766,25 @@ def test_a_reply_that_misdates_the_charge_is_not_sent(
     # TX1 is from 2026-06-17 03:59, the simulated today: never "de la semana pasada".
     settings = llm_settings(database_url, log_level="WARNING")
     app = create_app(settings)
+    # The receipt is written by code since the walkthrough of TRZ-40; the LLM still writes the
+    # close of a recognized charge.
     llm = fake_llm(
-        settings, _read, reply="Registramos tu aclaración del cargo de Netflix de la semana pasada."
+        settings, _read, reply="Cerramos el caso del cargo de Netflix de la semana pasada."
     )
     app.state.runtime = dataclasses.replace(app.state.runtime, agent=agent_deps(settings, llm))
     with TestClient(app, raise_server_exceptions=False) as c:
         c.headers.update(customer_headers(c, "C1"))
         first = c.post("/chat", json={"message": READ_NETFLIX}).json()
-        done = _confirm(c, still_not_recognized(c, first["case_id"]))
+        done = c.post(
+            "/chat",
+            json={
+                "message": "Ya lo reconozco",
+                "case_id": first["case_id"],
+                "recognition": "recognized",
+            },
+        ).json()
 
-    assert done["outcome"] == "registered_verified"
+    assert done["outcome"] == "recognized_closed"
     assert "semana pasada" not in done["reply"]
     engine = create_engine(schema_rows.admin)
     with engine.connect() as conn:

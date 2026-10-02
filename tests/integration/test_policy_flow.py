@@ -307,9 +307,9 @@ def test_no_llm_call_carries_the_policy(schema: SchemaUrls, database_url: str) -
         confirm=True,
     )
     assert result.outcome == "registered_verified"
-    # comprehend; the recognition step and the confirmation are written by code; then the
-    # compose of the registration, checked by code
-    assert len(sent) == 2
+    # comprehend only: the recognition step, the confirmation and the receipt of the
+    # registration are written by code
+    assert len(sent) == 1
 
     policy = yaml.safe_load(POLICY.read_text(encoding="utf-8"))
     decide = next(r for r in rows if r.action == "decide")

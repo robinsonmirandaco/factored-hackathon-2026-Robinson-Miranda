@@ -637,13 +637,13 @@ ADDRESS = "198.51.100.7"
 
 
 def _from(address: str, spoofed: str | None = None) -> dict[str, str]:
-    """X-Forwarded-For as the edge proxy leaves it, after anything the client wrote."""
-    return {"x-forwarded-for": address if spoofed is None else f"{spoofed}, {address}"}
+    """X-Real-IP as the edge proxy sets it, and the X-Forwarded-For the client wrote, if any."""
+    return {"x-real-ip": address} | ({"x-forwarded-for": spoofed} if spoofed else {})
 
 
 @pytest.fixture
 def behind_proxy(seeded: SchemaUrls, database_url: str, clock: Clock) -> Iterator[TestClient]:
-    app = _app(database_url, clock, trusted_proxy_hops=1, ip_request_limit=3)
+    app = _app(database_url, clock, client_ip_header="x-real-ip", ip_request_limit=3)
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
 
@@ -652,7 +652,7 @@ def test_one_address_gets_30_code_requests_in_15_minutes_whatever_the_document(
     seeded: SchemaUrls, database_url: str, clock: Clock
 ) -> None:
     # Distinct documents, so the limit of 5 per document never applies.
-    app = _app(database_url, clock, trusted_proxy_hops=1)
+    app = _app(database_url, clock, client_ip_header="x-real-ip")
     with TestClient(app, raise_server_exceptions=False) as c:
         for i in range(30):
             r = c.post("/auth/otp/request", json=document(f"N{i}"), headers=_from(ADDRESS))
@@ -732,9 +732,8 @@ def test_code_checks_and_analyst_logins_have_their_own_count(behind_proxy: TestC
     )
 
 
-def test_an_address_written_by_the_client_does_not_escape_the_limit(
-    behind_proxy: TestClient,
-) -> None:
+def test_a_spoofed_x_forwarded_for_does_not_escape_the_limit(behind_proxy: TestClient) -> None:
+    # What passed on the public URL: a new X-Forwarded-For on every request.
     for i in range(3):
         headers = _from(ADDRESS, spoofed=f"192.0.2.{i}")
         behind_proxy.post("/auth/otp/request", json=document(f"N{i}"), headers=headers)
@@ -744,14 +743,25 @@ def test_an_address_written_by_the_client_does_not_escape_the_limit(
     _error(r, 429, "ip_requests_limited")
 
 
-def test_without_trusted_proxies_the_forwarded_header_changes_nothing(
+def test_requests_without_the_edge_header_share_one_count(behind_proxy: TestClient) -> None:
+    for i in range(3):
+        headers = {"x-forwarded-for": f"192.0.2.{i}"}
+        behind_proxy.post("/auth/otp/request", json=document(f"N{i}"), headers=headers)
+    r = behind_proxy.post(
+        "/auth/otp/request", json=document("N9"), headers={"x-forwarded-for": "192.0.2.200"}
+    )
+    _error(r, 429, "ip_requests_limited")
+
+
+def test_without_a_configured_header_client_headers_change_nothing(
     seeded: SchemaUrls, database_url: str, clock: Clock
 ) -> None:
     app = _app(database_url, clock, ip_request_limit=3)
     with TestClient(app, raise_server_exceptions=False) as c:
         for i in range(3):
-            c.post("/auth/otp/request", json=document(f"N{i}"), headers=_from(f"192.0.2.{i}"))
-        r = c.post("/auth/otp/request", json=document("N9"), headers=_from("192.0.2.200"))
+            headers = _from(f"198.51.100.{i}", spoofed=f"192.0.2.{i}")
+            c.post("/auth/otp/request", json=document(f"N{i}"), headers=headers)
+        r = c.post("/auth/otp/request", json=document("N9"), headers=_from("198.51.100.200"))
     _error(r, 429, "ip_requests_limited")
 
 

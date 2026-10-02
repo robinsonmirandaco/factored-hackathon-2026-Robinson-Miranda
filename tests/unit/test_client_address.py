@@ -1,5 +1,6 @@
-"""The client address behind the login limit (TRZ-40): only entries written by trusted proxies
-count, so a client cannot pick its own address with X-Forwarded-For."""
+"""The client address behind the login limit (TRZ-40): only the header the edge proxy sets
+counts. On Railway that is X-Real-IP; X-Forwarded-For reaches the service as the client wrote it
+(31 requests with a spoofed one all passed on the public URL), so it is never read."""
 
 from types import SimpleNamespace
 from typing import Any
@@ -14,44 +15,49 @@ SOCKET = "10.0.0.9"
 
 
 def _address(
-    hops: int, forwarded: str | None, client: tuple[str, int] | None = (SOCKET, 5000)
+    header: str,
+    sent: dict[str, str] | None = None,
+    client: tuple[str, int] | None = (SOCKET, 5000),
 ) -> str:
-    headers = [] if forwarded is None else [(b"x-forwarded-for", forwarded.encode())]
+    headers = [(k.encode(), v.encode()) for k, v in (sent or {}).items()]
     request = Request({"type": "http", "headers": headers, "client": client})
-    settings = Settings(database_url="postgresql+psycopg://u:p@h/d", trusted_proxy_hops=hops)
+    settings = Settings(database_url="postgresql+psycopg://u:p@h/d", client_ip_header=header)
     runtime: Any = SimpleNamespace(settings=settings)
     return get_client_address(request, runtime)
 
 
-def test_without_trusted_proxies_the_header_is_ignored() -> None:
-    assert _address(0, "198.51.100.7") == SOCKET
+def test_without_a_configured_header_the_socket_address_is_used() -> None:
+    sent = {"x-real-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.1"}
+    assert _address("", sent) == SOCKET
 
 
-def test_behind_one_proxy_the_address_is_the_entry_it_appended() -> None:
-    assert _address(1, "198.51.100.7") == "198.51.100.7"
+def test_with_a_configured_header_its_value_is_the_address() -> None:
+    assert _address("x-real-ip", {"x-real-ip": " 198.51.100.7 "}) == "198.51.100.7"
 
 
-def test_an_entry_written_by_the_client_is_not_used() -> None:
-    assert _address(1, "203.0.113.1, 198.51.100.7") == "198.51.100.7"
+@pytest.mark.parametrize("name", ["X-Real-IP", "x-real-ip"])
+def test_the_header_name_is_case_insensitive(name: str) -> None:
+    assert _address(name, {"x-real-ip": "198.51.100.7"}) == "198.51.100.7"
 
 
-def test_two_proxies_take_the_second_entry_from_the_right() -> None:
-    assert _address(2, "203.0.113.1, 198.51.100.7, 10.1.1.1") == "198.51.100.7"
+def test_x_forwarded_for_is_never_read() -> None:
+    sent = {"x-real-ip": "198.51.100.7", "x-forwarded-for": "203.0.113.1, 192.0.2.4"}
+    assert _address("x-real-ip", sent) == "198.51.100.7"
 
 
-@pytest.mark.parametrize("forwarded", [None, "", " , "])
-def test_without_entries_the_socket_address_is_used(forwarded: str | None) -> None:
-    assert _address(1, forwarded) == SOCKET
-
-
-def test_fewer_entries_than_proxies_fall_back_to_the_socket() -> None:
-    assert _address(2, "198.51.100.7") == SOCKET
+@pytest.mark.parametrize("sent", [None, {"x-real-ip": ""}, {"x-real-ip": "  "}])
+def test_a_missing_configured_header_is_one_shared_unknown_address(
+    sent: dict[str, str] | None,
+) -> None:
+    # Never the socket: behind the edge it is an internal address that changes per connection,
+    # which would give each request a fresh count.
+    assert _address("x-real-ip", sent) == "unknown"
 
 
 def test_a_request_without_a_socket_address_is_unknown() -> None:
-    assert _address(0, None, client=None) == "unknown"
+    assert _address("", None, client=None) == "unknown"
 
 
-def test_the_default_limit_is_30_requests_in_15_minutes() -> None:
+def test_the_default_limit_is_30_requests_in_15_minutes_by_socket_address() -> None:
     s = Settings(database_url="postgresql+psycopg://u:p@h/d", _env_file=None)  # type: ignore[call-arg]
-    assert (s.ip_request_limit, s.ip_request_window_minutes, s.trusted_proxy_hops) == (30, 15, 0)
+    assert (s.ip_request_limit, s.ip_request_window_minutes, s.client_ip_header) == (30, 15, "")

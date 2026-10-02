@@ -54,25 +54,24 @@ RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
 
 
 def get_client_address(request: Request, runtime: RuntimeDep) -> str:
-    """Returns the address of the client, as the closest trusted proxy saw it (TRZ-40).
+    """Returns the address of the client, as the edge proxy reports it (TRZ-40).
 
-    Each proxy appends the address it received from to X-Forwarded-For, so with
-    TRUSTED_PROXY_HOPS = n the address is the n-th entry from the right. Entries further left
-    are written by the client and can be anything, which is why the leftmost one is never used.
-    Without trusted proxies, or with fewer entries than proxies, it is the socket address.
+    With CLIENT_IP_HEADER set, the address is the value of that header, which the edge sets on
+    every request (X-Real-IP on Railway). X-Forwarded-For is never read: Railway passes it
+    through as the client wrote it. Without the header the address is "unknown", one count for
+    all such requests, never the socket, which behind the edge is an internal address that
+    changes per connection. Without CLIENT_IP_HEADER (local, CI) it is the socket address.
 
     Args:
         request: Current request.
         runtime: App runtime.
 
     Returns:
-        The client address, or "unknown" when the socket has none.
+        The client address, or "unknown".
     """
-    hops = runtime.settings.trusted_proxy_hops
-    entries = [e.strip() for e in request.headers.get("x-forwarded-for", "").split(",")]
-    entries = [e for e in entries if e]
-    if hops > 0 and len(entries) >= hops:
-        return entries[-hops]
+    header = runtime.settings.client_ip_header
+    if header:
+        return request.headers.get(header, "").strip() or "unknown"
     return request.client.host if request.client else "unknown"
 
 

@@ -45,8 +45,8 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
             )
         ],
     )
-    # A rate for the day, so the charge has a USD amount and goes to confirmation, a reply the
-    # LLM writes, rather than to a person, whose reply code writes.
+    # A rate for the day, so the charge has a USD amount and is shown for recognition rather
+    # than handed to a person.
     owner_db = Database(schema.admin)
     with owner_db.session() as s:
         s.execute(
@@ -69,28 +69,21 @@ def test_turn_sends_no_pii_to_llm_and_audits_redacted_input(
         with app_db.session(customer_id="C1") as s:
             shown = handle_message(s, deps, "C1", MESSAGE)
             assert shown.outcome == "recognizing"
+            # The close of a recognized charge is a reply the LLM still writes; the receipt of
+            # a registration is written by code since the walkthrough of TRZ-40.
             result = handle_message(
                 s,
                 deps,
                 "C1",
-                "Sigo sin reconocerlo",
+                "Ya lo reconozco",
                 case_id=shown.case_id,
-                recognition="not_recognized",
-            )
-            result = handle_message(
-                s,
-                deps,
-                "C1",
-                "Sí",
-                case_id=shown.case_id,
-                confirm_action_id=result.facts["pending_action"]["action_id"],
+                recognition="recognized",
             )
     finally:
         app_db.dispose()
 
-    assert not result.llm_fallback
-    # comprehend; the recognition step and the confirmation are written by code; then the
-    # compose of the registration, checked by code
+    assert (result.outcome, result.llm_fallback) == ("recognized_closed", False)
+    # comprehend; the recognition step is written by code; then the compose of the close
     assert len(sent) == 2
     for body in sent:
         assert FIRST_NAME not in body
