@@ -1,7 +1,8 @@
-"""The receipt of a registration (walkthrough of TRZ-40, CASE-3EE8075C10, trace
-7f109c453e9e4b2d, and CASE-316DDEF80F): code writes it, folio and deadline with its citation,
-in Spanish and Portuguese. The LLM wrote contact promises the fact checker cannot see, so it is
-not asked to write the receipt at all."""
+"""The replies after an action. The receipt of a registration (walkthrough of TRZ-40,
+CASE-3EE8075C10, trace 7f109c453e9e4b2d, and CASE-316DDEF80F): code writes it, folio and
+deadline with its citation, in Spanish and Portuguese. The LLM wrote contact promises the fact
+checker cannot see, so it is not asked to write the receipt at all. A block that fails was
+already answered by code; a test keeps it that way."""
 
 import dataclasses
 from collections.abc import Iterator
@@ -9,6 +10,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
 
 from app.adapters.db.session import SchemaUrls
 from app.adapters.llm import _REPLIES
@@ -109,4 +111,27 @@ def test_the_llm_is_not_asked_to_write_the_receipt(client: TestClient, sent: lis
     _register(client, "es")
 
     # The fixed replies before the receipt are code-written too, so no reply request at all.
+    assert not [b for b in sent if "Facts (JSON)" in b]
+
+
+def test_a_block_that_fails_is_answered_with_the_fixed_text_without_the_llm(
+    client: TestClient, schema: SchemaUrls, sent: list[str]
+) -> None:
+    body = _register(client, "es")
+    offer = body["pending_action"]
+    assert offer and offer["action"] == "block", body
+    # The card stops being active before the customer accepts the block, so the block fails.
+    engine = create_engine(schema.admin)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE products SET product_status = 'Closed' WHERE product_id = 'P1'"))
+    engine.dispose()
+
+    r = client.post(
+        "/chat",
+        json={"message": "Sí", "case_id": body["case_id"], "confirm_action_id": offer["action_id"]},
+    ).json()
+
+    assert r["outcome"] == "card_not_blocked", r
+    assert r["reply"] == _REPLIES["es"]["card_not_blocked"]
+    assert LLM_TEXT not in r["reply"]
     assert not [b for b in sent if "Facts (JSON)" in b]
