@@ -68,9 +68,10 @@ class Settings(BaseSettings):
     # Requests per client address to each login endpoint in each window (TRZ-40).
     ip_request_limit: int = 30
     ip_request_window_minutes: int = 15
-    # Proxies in front of the API that append to X-Forwarded-For: 0 reads the socket address
-    # (local, CI), 1 behind the edge of Railway.
-    trusted_proxy_hops: int = 0
+    # Header the edge proxy sets with the client address: empty reads the socket address
+    # (local, CI); x-real-ip behind the edge of Railway, which passes X-Forwarded-For through as
+    # the client wrote it.
+    client_ip_header: str = ""
     # The fixed demo code works only with demo_mode; otherwise every code is random.
     demo_mode: bool = False
     demo_otp_code: str = "482913"
