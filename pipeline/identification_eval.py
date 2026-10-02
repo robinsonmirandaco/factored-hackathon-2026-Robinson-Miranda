@@ -911,8 +911,44 @@ def _check_config(config: dict[str, Any], manifest: dict[str, Any]) -> None:
         raise SystemExit("config/identification.yaml was fitted on other splits: run the fit again")
 
 
+TEST_GROUPS: dict[str, Callable[[CaseRecord], str]] = {
+    **GROUPS,
+    "provenance": lambda c: c.provenance,
+}
+
+
+def held_out_summary(preps: Sequence[Prepared], params: Params) -> dict[str, Any]:
+    """Coverage, size and calibration on the test split with the fitted parameters (CA8).
+
+    Args:
+        preps: Prepared test cases.
+        params: Fitted parameters of one comprehension.
+
+    Returns:
+        The summary, by base case too (a base is covered when its four variants are), by group
+        and by confidence bin.
+    """
+    outs = [outcome(p, params) for p in preps]
+    by_base: dict[str, list[bool]] = defaultdict(list)
+    for o in outs:
+        by_base[o.case.base_id].append(o.covered)
+    return {
+        "summary": summarize(outs),
+        "bases_covered": sum(all(v) for v in by_base.values()),
+        "bases": len(by_base),
+        "groups": {g: by_group(outs, k) for g, k in TEST_GROUPS.items()},
+        "reliability": {
+            "all": reliability(outs),
+            **{
+                lang: reliability([o for o in outs if o.case.language == lang])
+                for lang in ("es", "pt")
+            },
+        },
+    }
+
+
 def report_command(
-    settings: PipelineSettings, budget_usd: float, out: Path = REPORT_PATH
+    settings: PipelineSettings, budget_usd: float, out: Path = REPORT_PATH, test: bool = False
 ) -> dict[str, Any]:
     """Measures both comprehensions with the fitted parameters and writes the report.
 
@@ -920,11 +956,22 @@ def report_command(
         settings: Pipeline settings.
         budget_usd: Most new LLM spend allowed (the other runs of the calibration split).
         out: Report path.
+        test: Also measure the held-out test split with the same fitted parameters (CA8);
+            nothing is fitted on it.
 
     Returns:
         The results per comprehension.
     """
     inputs = load_inputs(settings, budget_usd)
+    held_out: list[CaseRecord] = []
+    test_gold: tuple[dict[str, list[Candidate]], Rates] | None = None
+    if test:
+        eval_dir = settings.data_dir / "eval"
+        test_all = load_split(
+            eval_dir, "test", settings.cases_manifest_path, settings.cases_config_path
+        )
+        held_out = [c for c in test_all if in_population(c)]
+        test_gold = load_gold(settings.data_dir / "gold", {c.customer_id for c in held_out})
     config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     _check_config(config, inputs.manifest)
     spent_before = inputs.runner.cache.spent()
@@ -996,6 +1043,20 @@ def report_command(
                 }
             )
         results[name] = {"params": params, "runs": per_run}
+        if test_gold is not None:
+            results[name]["test"] = [
+                held_out_summary(
+                    prepare(
+                        held_out,
+                        rules_readings(held_out)
+                        if name == "rules"
+                        else llm_readings(inputs.runner, held_out, r, costs),
+                        *test_gold,
+                    ),
+                    params,
+                )
+                for r in runs
+            ]
     policy = yaml.safe_load(POLICY_PATH.read_text(encoding="utf-8"))
     meta = {
         "config": config,
@@ -1074,14 +1135,25 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
     config = meta["config"]
     fitted = config["comprehension"]
     names = list(results)
-    lines = [
-        "# Identification on the development and calibration splits",
-        "",
-        "> **Before the test split.** Weights, temperature and the rejection threshold were "
-        "fitted on the development split and q-hat on the calibration split. Coverage on "
+    has_test = all("test" in results[n] for n in names)
+    box = (
+        "> **Fitted before the test split, measured on it.** Weights, temperature and the "
+        "rejection threshold were fitted on the development split and q-hat on the calibration "
+        "split; nothing was refitted after the test split was opened. Coverage on calibration "
+        "is in-sample for q-hat; the coverage against 95% is the one on the test split, below."
+        if has_test
+        else "> **Before the test split.** Weights, temperature and the rejection threshold "
+        "were fitted on the development split and q-hat on the calibration split. Coverage on "
         "calibration is in-sample for q-hat; the cross-fit rows are the out-of-sample "
         "estimate available before the test split is frozen. The final coverage against 95% "
-        "is measured on the test split.",
+        "is measured on the test split."
+    )
+    lines = [
+        "# Identification on the development, calibration and test splits"
+        if has_test
+        else "# Identification on the development and calibration splits",
+        "",
+        box,
         "",
         "Generated by `make eval-identification` (story TRZ-15; design 6.2) from "
         "`config/identification.yaml`, written by `make fit-identification`. Counts and rates "
@@ -1404,15 +1476,87 @@ def write_report(results: dict[str, Any], meta: dict[str, Any], path: Path) -> N
         "generator, not from how real customers approximate amounts. Real customers may "
         "deviate more, and a larger deviation counts as evidence against the true charge.",
         "",
-        "## Pending until the test split is frozen",
-        "",
-        "- Coverage on the test split against 95%, with its sample size.",
-        "- Coverage by language, variant and segment on the test split.",
-        "- Coverage under distribution shift: Portuguese and the handwritten cases.",
-        "",
     ]
+    if has_test:
+        lines += _test_section(results, names, meta)
+    else:
+        lines += [
+            "## Pending until the test split is frozen",
+            "",
+            "- Coverage on the test split against 95%, with its sample size.",
+            "- Coverage by language, variant and segment on the test split.",
+            "- Coverage under distribution shift: Portuguese and the handwritten cases.",
+            "",
+        ]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _test_section(results: dict[str, Any], names: list[str], meta: dict[str, Any]) -> list[str]:
+    """The held-out test split: coverage against 95%, set size and calibration (CA8)."""
+    alpha = meta["config"]["alpha"]
+    lines = [
+        "## Test split (held-out)",
+        "",
+        f"Target coverage: {1 - alpha:.0%}. The fitted parameters above, unchanged; LLM: "
+        "mean and range of its runs. A base case is covered when its four variants are.",
+        "",
+        "| Comprehension | Cases (bases) | Coverage | Coverage by base case | Coverage if "
+        "accepted | Mean size | Size 1 | Brier | ECE | Top-1 accuracy |",
+        "| --- " * 10 + "|",
+    ]
+    for name in names:
+        t = results[name]["test"]
+        sm = [x["summary"] for x in t]
+        lines.append(
+            f"| {name} | {sm[0]['n']} ({sm[0]['bases']}) | "
+            f"{_fmt([x['coverage'] for x in sm], pct=True)} ({sm[0]['covered']}/{sm[0]['n']}) | "
+            f"{_fmt([x['bases_covered'] / x['bases'] for x in t], pct=True)} "
+            f"({t[0]['bases_covered']}/{t[0]['bases']}) | "
+            f"{_fmt([x['accepted_coverage'] for x in sm], pct=True)} | "
+            f"{_fmt([x['mean_size'] for x in sm], digits=2)} | "
+            f"{_fmt([x['size_one'] for x in sm], pct=True)} | "
+            f"{_fmt([x['brier'] for x in sm], digits=4)} | "
+            f"{_fmt([x['ece'] for x in sm], digits=4)} | "
+            f"{_fmt([x['top_accuracy'] for x in sm], pct=True)} |"
+        )
+    lines += [
+        "",
+        "Reliability of the top candidate by confidence bin, test split (LLM: run 0).",
+        "",
+        "| Comprehension | Language | Bin | Cases | Mean confidence | Accuracy |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for name in names:
+        for lang, rows in results[name]["test"][0]["reliability"].items():
+            for row in rows:
+                lines.append(
+                    f"| {name} | {lang} | {row['low']:.1f} to {row['high']:.1f} | {row['n']} | "
+                    f"{row['confidence']:.3f} | {row['accuracy']:.3f} |"
+                )
+    for group in TEST_GROUPS:
+        lines += [
+            "",
+            f"### By {group} (test split)",
+            "",
+            "| Comprehension | Group | Cases (bases) | Coverage | Mean size | Size 1 | Brier | "
+            "ECE |",
+            "| --- " * 8 + "|",
+        ]
+        for name in names:
+            t = results[name]["test"]
+            for key in t[0]["groups"][group]:
+                gs = [x["groups"][group][key] for x in t]
+                lines.append(
+                    f"| {name} | {key} | {gs[0]['n']} ({gs[0]['bases']}) | "
+                    f"{_fmt([g['coverage'] for g in gs], pct=True)} | "
+                    f"{_fmt([g['mean_size'] for g in gs], digits=2)} | "
+                    f"{_fmt([g['size_one'] for g in gs], pct=True)} | "
+                    f"{_fmt([g['brier'] for g in gs], digits=4)} | "
+                    f"{_fmt([g['ece'] for g in gs], digits=4)} |"
+                )
+    lines.append("")
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1429,13 +1573,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--budget-usd", type=float, default=3.0, help="most new LLM spend of this command"
     )
+    parser.add_argument("--test", action="store_true", help="also measure the test split")
     args = parser.parse_args(argv)
     settings = PipelineSettings()
     configure_logging(settings.log_level)
     if args.command == "fit":
         fit_command(settings, args.budget_usd)
     else:
-        report_command(settings, args.budget_usd)
+        report_command(settings, args.budget_usd, test=args.test)
     return 0
 
 

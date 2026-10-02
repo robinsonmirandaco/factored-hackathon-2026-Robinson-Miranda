@@ -142,9 +142,12 @@ fit-identification:
 	uv run --frozen python -m pipeline.identification_eval fit $(if $(BUDGET),--budget-usd $(BUDGET))
 
 # Coverage, set size, Brier, ECE and reliability of identification from
-# config/identification.yaml: docs/reports/identificacion.md. The test split is not loaded.
+# config/identification.yaml: docs/reports/identificacion.md. TEST=1 also measures the test split
+# with the same parameters, after make eval-comprehension SPLIT=test cached its readings; nothing
+# is fitted on it.
 eval-identification:
-	uv run --frozen python -m pipeline.identification_eval report $(if $(BUDGET),--budget-usd $(BUDGET))
+	uv run --frozen python -m pipeline.identification_eval report \
+		$(if $(BUDGET),--budget-usd $(BUDGET)) $(if $(TEST),--test)
 
 # Policy engine against the TRZ-42 labels on the development split: docs/reports/politica.md.
 # Reads $(DATA_DIR)/eval (make cases) and never the test split.
