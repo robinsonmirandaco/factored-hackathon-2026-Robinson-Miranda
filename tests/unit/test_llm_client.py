@@ -233,6 +233,21 @@ def test_complete_sends_the_temperature_in_the_body() -> None:
     assert (text, stats.fallback, bodies[0]["temperature"]) == ('{"es-MX": "hola"}', False, 0.7)
 
 
+def test_sonnet_5_5_gets_no_temperature_and_its_thinking_turned_off() -> None:
+    bodies: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(request_parts(request)[2])
+        return message('{"es-MX": "hola"}')
+
+    settings = llm_test_settings(llm_model_primary="claude-sonnet-5-5")
+    llm = LLMClient(settings, http_client=anthropic_http(handler))
+    llm.complete("s", "u", 50, 0.0)
+
+    assert "temperature" not in bodies[0]
+    assert bodies[0]["thinking"] == {"type": "between_tools"}
+
+
 # ---- warm-up at startup ---------------------------------------------------------------------
 
 

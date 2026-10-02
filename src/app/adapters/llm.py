@@ -219,6 +219,9 @@ def _resolve_date(reading: DateReading, clock: SimulatedClock) -> DateClue | Non
     )
 
 
+# Models that reject a sampling temperature; their thinking is turned off instead.
+FIXED_SAMPLING_MODELS = ("claude-sonnet-5-5",)
+
 COMPOSE_SYSTEM = """You are a bank customer service assistant. Reply to the customer in their
 language, in 2 to 4 short sentences, plain and warm. Use only the facts you are given: write no
 amount, date, folio, duration, card digits or merchant that is not in them, and state as done
@@ -412,9 +415,12 @@ class LLMClient:
         schema: dict[str, Any] | None,
     ) -> tuple[str, tuple[int, int, int, int]]:
         # SDK 1.x dropped `temperature` from its signature; models before Opus 4.7, such as
-        # Haiku 4.5, still accept it in the request body.
+        # Haiku 4.5, still accept it in the request body. Claude Sonnet 5.5, the comparison
+        # model of TRZ-12 CA10, rejects a non-default temperature and thinks unless told not to.
         extra: dict[str, Any] = {}
-        if temperature is not None:
+        if self.model in FIXED_SAMPLING_MODELS:
+            extra["extra_body"] = {"thinking": {"type": "between_tools"}}
+        elif temperature is not None:
             extra["extra_body"] = {"temperature": temperature}
         if schema is not None:
             extra["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
