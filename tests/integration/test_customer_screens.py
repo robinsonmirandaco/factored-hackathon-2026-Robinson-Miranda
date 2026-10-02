@@ -472,9 +472,11 @@ def llm_client(schema_rows: SchemaUrls, database_url: str) -> Iterator[TestClien
 def test_chat_shows_what_it_read_with_the_literal_fragment(llm_client: TestClient) -> None:
     body = llm_client.post("/chat", json={"message": READ_NETFLIX}).json()
 
-    no_window = {"window_from": None, "window_to": None}
+    no_window = {"window_from": None, "window_to": None, "amount": None, "currency": None}
+    # The amount goes as a number: the screen writes it in its language's format.
+    amount = {**no_window, "amount": 120.0, "currency": "USD"}
     assert body["clues"] == [
-        {"field": "amount", "value": "120 USD", "evidence": "120 dólares", **no_window},
+        {"field": "amount", "value": "120.00 USD", "evidence": "120 dólares", **amount},
         {"field": "merchant_hint", "value": "Netflix", "evidence": "Netflix", **no_window},
         {
             "field": "card_in_possession",

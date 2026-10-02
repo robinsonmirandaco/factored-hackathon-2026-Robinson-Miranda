@@ -6,7 +6,7 @@
 import { createClient } from "./api.js";
 import {
   REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
-  identificationTable,
+  identificationTable, recommendationText,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
@@ -463,7 +463,7 @@ function decisionCard(d, item, status) {
   const panel = decisionPanel(item);
   const head = el("div", { class: "stack tight-stack" },
     el("h2", { text: "Acción recomendada" }),
-    el("p", { class: "soft-body", text: d.recommended_action ? actionLabel(d.recommended_action) : "Sin acción recomendada." }));
+    el("p", { class: "soft-body", text: recommendationText(d) }));
   if (!panel.open) {
     return el("section", { class: "card soft" }, head,
       el("p", { class: "inner muted", text: `El caso no está en la cola. Estado: ${statusLabel(status)}.` }));

@@ -31,6 +31,8 @@ from app.adapters.db.rates import rates_near
 from app.adapters.llm import LLMClient
 from app.core.errors import AppError
 from app.domain.history import Lang, intent_label
+from app.domain.money import money_text
+from app.schemas.comprehension import DateClue
 from app.schemas.dossier import (
     ActionTaken,
     AuditDraw,
@@ -169,6 +171,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             later_messages=[],
             info_exchanges=[],
             simulated=case.simulated,
+            charge_identified=False,
         )
     read = [r for r in rows if (r.actor, r.action) == ("agent", "comprehend")]
     original = (read[0].payload or {}).get("redacted_text") if read else None
@@ -183,6 +186,8 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         for k in CLUE_FIELDS
         if clues and getattr(clues.clues, k) is not None and k in clues.sources
     ]
+    # The same test as the open question charge_not_identified.
+    charge = not (case.intent in DISPUTE_INTENTS and case.transaction_id is None)
     return Dossier(
         case_id=case.id,
         trace_id=case.trace_id,
@@ -203,7 +208,10 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         evidence=_evidence(session, case, rows),
         open_questions=_open_questions(case, rule, read, lang),
         policy_rule_triggered=rule,
-        recommended_action=case.recommended_action,
+        # The policy names the routing of the intent even when no charge matched; without a
+        # charge there is nothing to register (demo rehearsal).
+        recommended_action=case.recommended_action if charge else None,
+        charge_identified=charge,
         later_messages=[
             LaterMessage(
                 text=(r.payload or {}).get("redacted_text", ""),
@@ -250,7 +258,12 @@ def _last(rows: list[AuditRecord], actor: str, action: str) -> AuditRecord | Non
 
 
 def _value(clue: Any) -> Any:
-    return clue.model_dump(mode="json", exclude={"evidence"})
+    value = clue.model_dump(mode="json", exclude={"evidence"})
+    if isinstance(clue, DateClue):
+        # The days the words mean, as the customer's chip gives them.
+        first, last = clue.window()
+        value |= {"window_from": first.isoformat(), "window_to": last.isoformat()}
+    return value
 
 
 def _translation(
@@ -294,7 +307,7 @@ def _summary(case: Case, extraction: list[Clue], lang: Lang) -> str:
         v = clue.value
         if clue.field == "amount":
             about = "~" if v.get("approximate") else ""
-            parts.append(f"{about}{v['value']:g} {v.get('currency') or ''}".strip())
+            parts.append(f"{about}{money_text(lang, v['value'], v.get('currency'))}")
         elif clue.field == "date":
             parts.append(str(v["expression"]))
         elif clue.field == "card_in_possession":

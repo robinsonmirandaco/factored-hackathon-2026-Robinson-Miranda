@@ -298,7 +298,8 @@ def _completeness(d: dict[str, Any], rule: str) -> float:
         and d["policy_rule_triggered"]["rule"] == rule
         and bool(d["policy_rule_triggered"]["version"])
         and "autonomy_level" in d["policy_rule_triggered"],
-        bool(d["recommended_action"]),
+        # Without an identified charge there is nothing to register, so nothing is recommended.
+        bool(d["recommended_action"]) or d["charge_identified"] is False,
         *(bool(f["source"]["table"]) and bool(f["source"]["id"]) for f in sourced),
         *(bool(c["evidence"]) and isinstance(c["read_in"], int) for c in d["extraction"]),
         *(bool(q["code"]) and bool(q["text"]) for q in d["open_questions"]),
@@ -356,7 +357,46 @@ def test_a_dossier_scores_every_candidate_by_component(
     assert top["transaction_id"] == "C1S" and top["components"]
     usd = next(f for f in d["verified_facts"] if f["name"] == "amount_usd")
     assert (usd["value"], usd["source"]) == (1500.0, {"table": "transactions", "id": "C1S"})
-    assert d["request_summary"] == "Cargo no reconocido: 1500 USD, Sears."
+    # The amount in the format of the web for the language asked (demo rehearsal: "2.3e+06 COP").
+    assert d["request_summary"] == "Cargo no reconocido: USD\u00a01,500.00, Sears."
+    pt = _dossier(client, case_id, lang="pt")
+    assert "US$\u00a01.500,00" in pt["request_summary"]
+    assert (d["recommended_action"], d["charge_identified"]) == ("register_and_offer_block", True)
+
+
+def test_a_dossier_without_an_identified_charge_recommends_nothing(
+    schema: SchemaUrls, deps: AgentDeps, client: TestClient
+) -> None:
+    # Demo rehearsal: a case no charge matched showed "Registrar y ofrecer el bloqueo".
+    case_id = _chat(schema, deps, "C3", _msg("No reconozco 900 dólares en Coppel"))
+
+    d = _dossier(client, case_id)
+
+    assert d["policy_rule_triggered"]["rule"] == "escalate.conformal_set_empty"
+    assert (d["recommended_action"], d["charge_identified"]) == (None, False)
+
+
+def test_the_understood_date_carries_its_window(
+    schema: SchemaUrls, deps: AgentDeps, client: TestClient
+) -> None:
+    # Demo rehearsal: the dossier said "ontem" while the customer's chip gave the days.
+    case_id = _chat(
+        schema,
+        deps,
+        "C1",
+        _msg("No reconozco un cargo en MercaYa la semana pasada"),
+        _msg("no sé"),
+        _msg("no me acuerdo"),
+    )
+
+    date = next(c for c in _dossier(client, case_id)["extraction"] if c["field"] == "date")
+
+    # Resolved against the simulated now (2026-06-17, a Wednesday): the week before.
+    assert (date["value"]["window_from"], date["value"]["window_to"]) == (
+        "2026-06-08",
+        "2026-06-14",
+    )
+    assert date["evidence"]
 
 
 def test_a_failed_read_back_is_in_the_dossier(

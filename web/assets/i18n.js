@@ -429,6 +429,11 @@ export function money(lang, amount, currency) {
   }
 }
 
+// A number with no currency, such as an amount the customer gave without one.
+export function number(lang, value) {
+  return new Intl.NumberFormat(LOCALES[lang]).format(value);
+}
+
 // "2026-06-10" and "2026-06-10T14:22:00" are dates of the records, without a time zone: they
 // are read as written, never shifted to the browser's zone.
 function parts(iso) {

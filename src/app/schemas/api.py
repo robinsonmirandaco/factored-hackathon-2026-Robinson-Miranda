@@ -217,6 +217,8 @@ class ClueOut(BaseModel):
         evidence: The literal fragment of the redacted message the value was read from.
         window_from: For a date, the first day it can mean, counted from the simulated now.
         window_to: For a date, the last day it can mean.
+        amount: For an amount, the number read; the screen writes it in its language's format.
+        currency: For an amount, its ISO 4217 code, if the message gave one.
     """
 
     field: Literal["amount", "date", "merchant_hint", "channel_hint", "card_in_possession"]
@@ -224,6 +226,8 @@ class ClueOut(BaseModel):
     evidence: str
     window_from: date | None = None
     window_to: date | None = None
+    amount: float | None = None
+    currency: str | None = None
 
 
 class PendingActionOut(BaseModel):

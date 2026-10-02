@@ -1,7 +1,7 @@
 // What the customer screens say, built from API data. Pure functions, no DOM: the chat and the
 // lists render their output, and tests/web checks it.
 
-import { day, dayMonth, dayTime, label, money } from "./i18n.js";
+import { day, dayMonth, dayTime, label, money, number } from "./i18n.js";
 
 const card = (p) => (p.last4 ? `•••• ${p.last4}` : "");
 
@@ -48,6 +48,10 @@ export function clarificationLines(t, lang, item) {
 export function chipParts(t, lang, chip) {
   let value = chip.value;
   if (chip.field === "card_in_possession") value = t(chip.value === "yes" ? "card_yes" : "card_no");
+  // An amount comes as a number and is written as every amount of this screen.
+  if (chip.field === "amount" && chip.amount != null) {
+    value = chip.currency ? money(lang, chip.amount, chip.currency) : number(lang, chip.amount);
+  }
   if (chip.field === "date" && chip.window_from && chip.window_to) {
     const from = dayMonth(lang, chip.window_from);
     const to = dayMonth(lang, chip.window_to);

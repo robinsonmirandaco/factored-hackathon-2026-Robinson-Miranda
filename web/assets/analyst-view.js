@@ -4,6 +4,7 @@
 // words and formats of the customer web (i18n.js), in Spanish.
 
 import { day, label, money, translator } from "./i18n.js";
+import { chipParts } from "./view.js";
 
 const es = translator("es");
 
@@ -298,9 +299,23 @@ export function clueChips(extraction) {
     let value = v.value;
     if (c.field === "amount") value = v.currency ? money("es", Number(v.value), v.currency) : String(v.value);
     if (c.field === "card_in_possession") value = v.value ? "La tiene" : "No la tiene";
-    if (c.field === "date") value = v.expression || v.kind || c.evidence;
+    // The days the words mean, as the customer's chip gives them; the words are the evidence.
+    if (c.field === "date") {
+      value = v.window_from && v.window_to
+        ? chipParts(translator("es"), "es", { ...v, field: "date", evidence: c.evidence }).value
+        : v.expression || v.kind || c.evidence;
+    }
     return { label: clueLabel(c.field), value: String(value ?? ""), evidence: c.evidence };
   });
+}
+
+// The recommended action of a dossier, or why there is none.
+export function recommendationText(d) {
+  if (d.recommended_action) return actionLabel(d.recommended_action);
+  if (d.case_kind !== "security_event" && d.charge_identified === false) {
+    return "Sin acción recomendada: no se identificó ningún cargo.";
+  }
+  return "Sin acción recomendada.";
 }
 
 // Candidates with their probability: percentages are for the analyst only (rule 3).

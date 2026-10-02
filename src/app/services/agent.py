@@ -379,6 +379,9 @@ class Chip:
     # A date is read as a window of days, resolved against the simulated now.
     window_from: date | None = None
     window_to: date | None = None
+    # An amount goes as a number, so the screen writes it in its own language's format.
+    amount: float | None = None
+    currency: str | None = None
 
 
 def chips(clues: Comprehension) -> list[Chip]:
@@ -393,9 +396,14 @@ def chips(clues: Comprehension) -> list[Chip]:
     out = []
     if clues.amount:
         a = clues.amount
+        plain = f"{a.value:.2f}"
         out.append(
             Chip(
-                "amount", f"{a.value:g} {a.currency}" if a.currency else f"{a.value:g}", a.evidence
+                "amount",
+                f"{plain} {a.currency}" if a.currency else plain,
+                a.evidence,
+                amount=a.value,
+                currency=a.currency,
             )
         )
     if clues.date:
