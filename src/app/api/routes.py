@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header, Query, Response
 from app.api.deps import (
     AnalystDep,
     AnalystSessionDep,
+    ClientAddressDep,
     CustomerDep,
     CustomerSessionDep,
     DemoDep,
@@ -72,7 +73,7 @@ _ERRORS = {
     404: {"description": "Not found"},
     409: {"description": "Conflict with the current state"},
     422: {"description": "Invalid input"},
-    429: {"description": "Document locked, or too many code requests for it"},
+    429: {"description": "Document locked, or too many requests for it or from the address"},
     503: {"description": "A dependency is unavailable"},
 }
 _AUTH = {401: _ERRORS[401], 403: _ERRORS[403]}
@@ -98,9 +99,12 @@ def health(session: SessionDep, runtime: RuntimeDep) -> HealthOut:
     status_code=202,
     responses={422: _ERRORS[422], 429: _ERRORS[429]},
 )
-def request_code(body: OtpRequestIn, runtime: RuntimeDep) -> OtpRequestOut:
+def request_code(
+    body: OtpRequestIn, runtime: RuntimeDep, address: ClientAddressDep
+) -> OtpRequestOut:
     """Sends a one-time code; the answer is the same whether or not a customer has the document."""
     s = runtime.settings
+    auth.limit_address(runtime.db, s, "otp_request", address, runtime.now())
     auth.request_code(runtime.db, s, body.document_type, body.document_number, runtime.now())
     return OtpRequestOut(expires_in_seconds=s.otp_ttl_minutes * 60)
 
@@ -110,8 +114,9 @@ def request_code(body: OtpRequestIn, runtime: RuntimeDep) -> OtpRequestOut:
     response_model=TokenOut,
     responses={401: _ERRORS[401], 422: _ERRORS[422], 429: _ERRORS[429]},
 )
-def verify_code(body: OtpVerifyIn, runtime: RuntimeDep) -> TokenOut:
+def verify_code(body: OtpVerifyIn, runtime: RuntimeDep, address: ClientAddressDep) -> TokenOut:
     """Exchanges a valid one-time code for a customer session token."""
+    auth.limit_address(runtime.db, runtime.settings, "otp_verify", address, runtime.now())
     issued = auth.verify_code(
         runtime.db,
         runtime.settings,
@@ -126,10 +131,11 @@ def verify_code(body: OtpVerifyIn, runtime: RuntimeDep) -> TokenOut:
 @router.post(
     "/auth/analyst/login",
     response_model=TokenOut,
-    responses={401: _ERRORS[401], 422: _ERRORS[422]},
+    responses={401: _ERRORS[401], 422: _ERRORS[422], 429: _ERRORS[429]},
 )
-def analyst_login(body: AnalystLoginIn, runtime: RuntimeDep) -> TokenOut:
+def analyst_login(body: AnalystLoginIn, runtime: RuntimeDep, address: ClientAddressDep) -> TokenOut:
     """Exchanges the analyst test credentials for an analyst session token."""
+    auth.limit_address(runtime.db, runtime.settings, "analyst_login", address, runtime.now())
     issued = auth.analyst_login(
         runtime.db, runtime.settings, body.username, body.password, runtime.now()
     )

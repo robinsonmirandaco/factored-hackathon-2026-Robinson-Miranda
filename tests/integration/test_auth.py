@@ -631,6 +631,153 @@ def test_every_route_but_login_and_health_requires_a_session(
         _error(r, 401, "not_authenticated")
 
 
+# ---- TRZ-40: requests per client address ----------------------------------------------------
+
+ADDRESS = "198.51.100.7"
+
+
+def _from(address: str, spoofed: str | None = None) -> dict[str, str]:
+    """X-Forwarded-For as the edge proxy leaves it, after anything the client wrote."""
+    return {"x-forwarded-for": address if spoofed is None else f"{spoofed}, {address}"}
+
+
+@pytest.fixture
+def behind_proxy(seeded: SchemaUrls, database_url: str, clock: Clock) -> Iterator[TestClient]:
+    app = _app(database_url, clock, trusted_proxy_hops=1, ip_request_limit=3)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        yield c
+
+
+def test_one_address_gets_30_code_requests_in_15_minutes_whatever_the_document(
+    seeded: SchemaUrls, database_url: str, clock: Clock
+) -> None:
+    # Distinct documents, so the limit of 5 per document never applies.
+    app = _app(database_url, clock, trusted_proxy_hops=1)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        for i in range(30):
+            r = c.post("/auth/otp/request", json=document(f"N{i}"), headers=_from(ADDRESS))
+            assert r.status_code == 202, (i, r.text)
+        limited = c.post("/auth/otp/request", json=document("N99"), headers=_from(ADDRESS))
+        _error(limited, 429, "ip_requests_limited")
+        assert limited.json()["message"] == "Too many requests from this network. Try again later."
+        assert (
+            c.post(
+                "/auth/otp/request", json=document("N99"), headers=_from("203.0.113.5")
+            ).status_code
+            == 202
+        )
+        clock.advance(15)
+        assert (
+            c.post("/auth/otp/request", json=document("N99"), headers=_from(ADDRESS)).status_code
+            == 202
+        )
+
+
+@pytest.mark.parametrize("customer_id", ["C1", "NOBODY"])
+def test_the_address_limit_answers_the_same_for_every_document(
+    behind_proxy: TestClient, customer_id: str
+) -> None:
+    for i in range(3):
+        behind_proxy.post("/auth/otp/request", json=document(f"N{i}"), headers=_from(ADDRESS))
+    r = behind_proxy.post("/auth/otp/request", json=document(customer_id), headers=_from(ADDRESS))
+    _error(r, 429, "ip_requests_limited")
+
+
+def test_a_limited_address_gets_no_code_even_for_a_customer(behind_proxy: TestClient) -> None:
+    for i in range(3):
+        behind_proxy.post("/auth/otp/request", json=document(f"N{i}"), headers=_from(ADDRESS))
+    behind_proxy.post("/auth/otp/request", json=document("C1"), headers=_from(ADDRESS))
+    # From another address the code check runs, and no code was issued to C1.
+    _error(
+        behind_proxy.post(
+            "/auth/otp/verify",
+            json={**document("C1"), "code": DEMO_CODE},
+            headers=_from("203.0.113.5"),
+        ),
+        401,
+        "invalid_code",
+    )
+
+
+def test_code_checks_and_analyst_logins_have_their_own_count(behind_proxy: TestClient) -> None:
+    for i in range(3):
+        r = behind_proxy.post(
+            "/auth/otp/verify", json={**document(f"N{i}"), "code": "000000"}, headers=_from(ADDRESS)
+        )
+        _error(r, 401, "invalid_code")
+    _error(
+        behind_proxy.post(
+            "/auth/otp/verify", json={**document("N9"), "code": "000000"}, headers=_from(ADDRESS)
+        ),
+        429,
+        "ip_requests_limited",
+    )
+    login = {"username": "analista.demo", "password": TEST_ANALYST_PASSWORD}
+    for _ in range(3):
+        assert (
+            behind_proxy.post("/auth/analyst/login", json=login, headers=_from(ADDRESS)).status_code
+            == 200
+        )
+    # Right credentials do not get past the limit.
+    _error(
+        behind_proxy.post("/auth/analyst/login", json=login, headers=_from(ADDRESS)),
+        429,
+        "ip_requests_limited",
+    )
+    assert (
+        behind_proxy.post(
+            "/auth/otp/request", json=document("C1"), headers=_from(ADDRESS)
+        ).status_code
+        == 202
+    )
+
+
+def test_an_address_written_by_the_client_does_not_escape_the_limit(
+    behind_proxy: TestClient,
+) -> None:
+    for i in range(3):
+        headers = _from(ADDRESS, spoofed=f"192.0.2.{i}")
+        behind_proxy.post("/auth/otp/request", json=document(f"N{i}"), headers=headers)
+    r = behind_proxy.post(
+        "/auth/otp/request", json=document("N9"), headers=_from(ADDRESS, spoofed="192.0.2.200")
+    )
+    _error(r, 429, "ip_requests_limited")
+
+
+def test_without_trusted_proxies_the_forwarded_header_changes_nothing(
+    seeded: SchemaUrls, database_url: str, clock: Clock
+) -> None:
+    app = _app(database_url, clock, ip_request_limit=3)
+    with TestClient(app, raise_server_exceptions=False) as c:
+        for i in range(3):
+            c.post("/auth/otp/request", json=document(f"N{i}"), headers=_from(f"192.0.2.{i}"))
+        r = c.post("/auth/otp/request", json=document("N9"), headers=_from("192.0.2.200"))
+    _error(r, 429, "ip_requests_limited")
+
+
+def test_an_invalid_body_is_not_counted(behind_proxy: TestClient) -> None:
+    for _ in range(5):
+        r = behind_proxy.post(
+            "/auth/otp/request", json={"document_type": "CC"}, headers=_from(ADDRESS)
+        )
+        _error(r, 422, "validation_error")
+    assert (
+        behind_proxy.post(
+            "/auth/otp/request", json=document("C1"), headers=_from(ADDRESS)
+        ).status_code
+        == 202
+    )
+
+
+def test_the_address_is_stored_only_as_a_keyed_hash(
+    behind_proxy: TestClient, seeded: SchemaUrls
+) -> None:
+    behind_proxy.post("/auth/otp/request", json=document("C1"), headers=_from(ADDRESS))
+    rows = _query(seeded, "SELECT scope, ip_key, request_count FROM auth_ip_limits")
+    assert [(r.scope, r.request_count) for r in rows] == [("otp_request", 1)]
+    assert len(rows[0].ip_key) == 64 and ADDRESS not in rows[0].ip_key
+
+
 # ---- helpers ----------------------------------------------------------------------------
 
 
