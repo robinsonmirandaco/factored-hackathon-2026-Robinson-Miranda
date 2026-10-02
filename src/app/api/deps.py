@@ -13,6 +13,7 @@ from app.adapters.db.session import Database
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.core.time import utcnow
+from app.domain.demo import DemoConfig
 from app.services import auth
 from app.services.agent import AgentDeps
 
@@ -26,12 +27,14 @@ class Runtime:
         db: Database engine and session factory.
         agent: Policy and LLM used by the agent.
         now: Real clock of sessions and codes, naive UTC; tests replace it to move time.
+        demo: config/demo.yaml in demo mode; None otherwise, and the demo routes do not exist.
     """
 
     settings: Settings
     db: Database
     agent: AgentDeps
     now: Callable[[], datetime] = utcnow
+    demo: DemoConfig | None = None
 
 
 def get_runtime(request: Request) -> Runtime:
@@ -48,6 +51,29 @@ def get_runtime(request: Request) -> Runtime:
 
 
 RuntimeDep = Annotated[Runtime, Depends(get_runtime)]
+
+
+def get_demo(runtime: RuntimeDep) -> DemoConfig:
+    """Returns the demo configuration, or answers 404 outside demo mode (TRZ-38 CA2).
+
+    Declared before the session dependencies of a route, so outside demo mode the route does not
+    exist for anyone, signed in or not: the answer is the one of an unknown path.
+
+    Args:
+        runtime: App runtime.
+
+    Returns:
+        config/demo.yaml.
+
+    Raises:
+        AppError: 404 http_404 without DEMO_MODE.
+    """
+    if runtime.demo is None:
+        raise AppError("http_404", "Not Found", 404)
+    return runtime.demo
+
+
+DemoDep = Annotated[DemoConfig, Depends(get_demo)]
 
 
 def get_session(runtime: RuntimeDep) -> Iterator[Session]:

@@ -1,0 +1,14 @@
+meta {
+  name: demo
+}
+
+docs {
+  TRZ-38 against a running API with DEMO_MODE=true on a database that holds the cohort and ran
+  make seed-demo, with ANALYST_DEMO_PASSWORD in bruno/.env. It resets the demo: run it before a
+  walkthrough, not in the middle of one.
+  01 to 03: the analyst session; the database can be reset; a reset without its key is 422.
+  04 to 06: the persona signs in with the invented document DNI DEMO-MX-0001; a customer
+  session cannot reset (403).
+  07 to 09: a reset creates the 22 simulated cases again; the same key resets once; the queue
+  shows the three seeded escalations, each marked simulated.
+}

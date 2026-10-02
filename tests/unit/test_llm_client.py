@@ -302,3 +302,41 @@ def test_a_failed_read_back_confirms_nothing(language: str, redirect: str | None
     assert ("analista" in reply) and ("Registramos" not in reply)
     blocking = "línea de bloqueo" if language == "es" else "central de bloqueio"
     assert (blocking in reply) == (redirect == "card_block")
+
+
+# ---- translation for the analyst (TRZ-25 CA3) ---------------------------------------------
+
+
+def _translator(text: str) -> LLMClient:
+    return _client(lambda _r: message(text), [])
+
+
+def test_a_translation_that_adds_a_placeholder_is_not_used() -> None:
+    # Seen in the demo rehearsal: "no meu cartão" came back as "en mi tarjeta [CARD]".
+    text, stats = _translator(
+        "Oye, apareció un cargo que no reconozco en mi tarjeta [CARD]"
+    ).translate("Oi, apareceu uma cobrança que eu não reconheço no meu cartão")
+    assert text is None
+    assert stats.error == "translation_added_content"
+
+
+def test_a_translation_that_adds_a_number_is_not_used() -> None:
+    text, stats = _translator("Fue un cargo de 500 pesos en la librería").translate(
+        "Foi uma cobrança na livraria"
+    )
+    assert text is None and stats.error == "translation_added_content"
+
+
+def test_a_translation_keeps_the_placeholders_and_numbers_of_the_original() -> None:
+    text, stats = _translator("Fue de 2.300.000 pesos con la tarjeta [CARD], ayer").translate(
+        "Foi de 2.300.000 pesos com o cartão [CARD], ontem"
+    )
+    assert text == "Fue de 2.300.000 pesos con la tarjeta [CARD], ayer"
+    assert stats.error is None
+
+
+def test_the_translation_prompt_names_no_placeholder_the_message_lacks() -> None:
+    calls: list[str] = []
+    _client(lambda _r: message("Hola"), calls).translate("Oi")
+    system = calls[0].split("\n")[0]
+    assert "[CARD]" not in calls[0] and "[NAME]" not in calls[0], system

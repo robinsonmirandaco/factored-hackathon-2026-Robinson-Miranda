@@ -16,7 +16,9 @@ failure returns a typed fallback. Callers never see an exception from this modul
 
 import hashlib
 import json
+import re
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -228,9 +230,29 @@ the bank in the first person plural (nosotros in Spanish, nós in Portuguese), a
 customer's request an "aclaración" in Spanish or a "contestação" in Portuguese."""
 
 
+# No example placeholder is named: naming one led the model to add it where the message had none
+# ("no meu cartão" came back as "en mi tarjeta [CARD]").
 TRANSLATE_SYSTEM = """Translate the customer's message from Portuguese into Spanish for a bank
-analyst. Keep every placeholder in brackets, such as [NAME] or [CARD], exactly as it is. Add
-nothing: no explanation, no greeting, no note. Output only the translation."""
+analyst. Copy each placeholder in brackets that the message contains exactly as it is, and add
+none it does not contain. Add nothing else either: no explanation, no greeting, no note, no
+number. Output only the translation."""
+_PLACEHOLDER = re.compile(r"\[[A-Z_]+\]")
+_NUMBER = re.compile(r"\d[\d.,]*")
+
+
+def _adds_content(original: str, translation: str) -> bool:
+    """Tells whether a translation has a placeholder or a number the original does not have.
+
+    Numbers are compared by their digits, so "2.300.000" and "2,300,000" are the same number.
+    """
+
+    def numbers(text: str) -> Counter[str]:
+        return Counter(re.sub(r"\D", "", n) for n in _NUMBER.findall(text))
+
+    placeholders = Counter(_PLACEHOLDER.findall(translation)) - Counter(
+        _PLACEHOLDER.findall(original)
+    )
+    return bool(placeholders or numbers(translation) - numbers(original))
 
 
 @dataclass
@@ -574,6 +596,11 @@ class LLMClient:
         text, stats = self._call(TRANSLATE_SYSTEM, redacted_text, max_tokens=600)
         if stats.fallback or not text.strip():
             stats.fallback = True
+            return None, stats
+        if _adds_content(redacted_text, text):
+            # Not shown: a translation that says more than the message would put words in the
+            # customer's mouth.
+            stats.error = "translation_added_content"
             return None, stats
         return text.strip(), stats
 

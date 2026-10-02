@@ -1,7 +1,7 @@
 // What the customer screens say, built from API data. Pure functions, no DOM: the chat and the
 // lists render their output, and tests/web checks it.
 
-import { day, dayMonth, dayTime, label, money } from "./i18n.js";
+import { day, dayMonth, dayTime, label, money, number } from "./i18n.js";
 
 const card = (p) => (p.last4 ? `•••• ${p.last4}` : "");
 
@@ -48,6 +48,10 @@ export function clarificationLines(t, lang, item) {
 export function chipParts(t, lang, chip) {
   let value = chip.value;
   if (chip.field === "card_in_possession") value = t(chip.value === "yes" ? "card_yes" : "card_no");
+  // An amount comes as a number and is written as every amount of this screen.
+  if (chip.field === "amount" && chip.amount != null) {
+    value = chip.currency ? money(lang, chip.amount, chip.currency) : number(lang, chip.amount);
+  }
   if (chip.field === "date" && chip.window_from && chip.window_to) {
     const from = dayMonth(lang, chip.window_from);
     const to = dayMonth(lang, chip.window_to);
@@ -174,11 +178,36 @@ export function statusTone(status) {
 // arrives for a conversation already left is dropped, so it cannot set its case back.
 export function createConversation() {
   let turn = 0;
+  // The turn whose request is in flight, or null. One request at a time: a message, an option or
+  // a confirmation sent meanwhile would be lost or answered out of order.
+  let flying = null;
   return {
     current: () => turn,
-    startNew: () => ++turn,
+    startNew: () => {
+      flying = null;
+      return ++turn;
+    },
     isCurrent: (t) => t === turn,
+    busy: () => flying !== null,
+    // Starts a request of the current conversation; null while another one is in flight.
+    begin: () => {
+      if (flying !== null) return null;
+      flying = turn;
+      return turn;
+    },
+    // Ends a request. True when its typed text may be cleared: it was answered, and its
+    // conversation is still the current one.
+    end: (t, ok) => {
+      if (flying === t) flying = null;
+      return Boolean(ok) && t === turn;
+    },
   };
+}
+
+// The composer while a request may be in flight: Send (and Enter) only with text and nothing in
+// flight, and the reply shown on its way meanwhile.
+export function composerState(text, busy) {
+  return { canSubmit: !busy && canSend(text), pending: Boolean(busy) };
 }
 
 // The analyst's question on a clarification (TRZ-28): open with its deadline and a form, or

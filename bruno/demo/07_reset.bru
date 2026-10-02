@@ -1,0 +1,37 @@
+meta {
+  name: TRZ-38 CA1 CA2 the reset creates the seeded cases again
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/demo/reset
+  body: none
+  auth: bearer
+}
+
+headers {
+  idempotency-key: {{resetKey}}
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+script:pre-request {
+  bru.setVar("resetKey", "bruno-" + Date.now());
+}
+
+script:post-response {
+  bru.setVar("resetBody", JSON.stringify(res.getBody()));
+}
+
+tests {
+  test("200 with 19 reviews and 9 reversals", function() {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    expect(body.cases_created).to.equal(22);
+    expect(body.reviews).to.equal(19);
+    expect(body.reversals).to.equal(9);
+  });
+}

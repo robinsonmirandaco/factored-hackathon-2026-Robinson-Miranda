@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-38 a customer cannot reset
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/demo/reset
+  body: none
+  auth: bearer
+}
+
+headers {
+  idempotency-key: bruno-customer
+}
+
+auth:bearer {
+  token: {{personaToken}}
+}
+
+tests {
+  test("403 forbidden", function() {
+    expect(res.getStatus()).to.equal(403);
+    expect(res.getBody().error_code).to.equal("forbidden");
+  });
+}

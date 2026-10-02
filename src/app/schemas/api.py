@@ -217,6 +217,8 @@ class ClueOut(BaseModel):
         evidence: The literal fragment of the redacted message the value was read from.
         window_from: For a date, the first day it can mean, counted from the simulated now.
         window_to: For a date, the last day it can mean.
+        amount: For an amount, the number read; the screen writes it in its language's format.
+        currency: For an amount, its ISO 4217 code, if the message gave one.
     """
 
     field: Literal["amount", "date", "merchant_hint", "channel_hint", "card_in_possession"]
@@ -224,6 +226,8 @@ class ClueOut(BaseModel):
     evidence: str
     window_from: date | None = None
     window_to: date | None = None
+    amount: float | None = None
+    currency: str | None = None
 
 
 class PendingActionOut(BaseModel):
@@ -296,6 +300,8 @@ class CaseOut(BaseModel):
     summary: str | None
     trace_id: str
     created_at: str | None
+    # Created by the demo state, not by a customer (TRZ-38).
+    simulated: bool = False
 
 
 class TraceEventOut(BaseModel):
@@ -357,6 +363,7 @@ class QueueItemOut(BaseModel):
         can_approve: Approving has something to do: run the recommended registration, or
             close a security event.
         created_at: When the row entered the queue.
+        simulated: The demo state created the case, not a customer (TRZ-38).
     """
 
     queue_id: int
@@ -375,6 +382,7 @@ class QueueItemOut(BaseModel):
     recommended_action: str | None
     can_approve: bool
     created_at: datetime
+    simulated: bool = False
 
 
 class QueueOut(BaseModel):
@@ -665,3 +673,31 @@ class AutomationOut(BaseModel):
     all_to_human: bool
     changed_by: str | None = None
     changed_at: datetime | None = None
+
+
+class DemoStateOut(BaseModel):
+    """Whether the demo can be reset here (TRZ-38).
+
+    Attributes:
+        seeded: `make seed-demo` prepared this database.
+        demo_version: Version of config/demo.yaml.
+    """
+
+    seeded: bool
+    demo_version: str
+
+
+class DemoResetOut(BaseModel):
+    """What a demo reset created (TRZ-38).
+
+    Attributes:
+        cases_created: Simulated cases the reset created through the agent.
+        reviews: Analyst reviews in the PT-BR cell.
+        reversals: Reviews among them that reverse the system.
+        demo_version: Version of config/demo.yaml.
+    """
+
+    cases_created: int
+    reviews: int
+    reversals: int
+    demo_version: str

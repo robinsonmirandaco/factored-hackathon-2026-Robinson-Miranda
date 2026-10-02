@@ -39,6 +39,7 @@ const TEXT = {
     chatIntro: "Cuéntanos qué cargo no reconoces o qué pasó con tu tarjeta.",
     placeholder: "Escribe tu mensaje…",
     send: "Enviar",
+    replyOnTheWay: "La respuesta está en camino…",
     newCase: "Nueva conversación",
     noneOfThese: "Ninguno de estos",
     choice_not_recognized: "Sigo sin reconocerlo",
@@ -131,6 +132,8 @@ const TEXT = {
     rejectedNote: "Revisamos tu aclaración y no procedió. Si sigues sin reconocer el cargo, escríbenos de nuevo con más detalles, como el monto, la fecha o el comercio.",
     yourAnswer: "Tu respuesta",
     error_nothing_to_approve: "No hay acción que ejecutar.",
+    error_demo_not_seeded: "Esta base no tiene el estado del demo.",
+    error_demo_script_diverged: "El demo no se pudo reiniciar; nada cambió.",
     error_charge_already_disputed: "El cargo ya tiene una aclaración abierta.",
     error_reason_required: "Falta el motivo.",
     error_reason_not_allowed: "El motivo no está en la lista.",
@@ -234,6 +237,7 @@ const TEXT = {
     chatIntro: "Conte para nós qual cobrança você não reconhece ou o que aconteceu com seu cartão.",
     placeholder: "Escreva sua mensagem…",
     send: "Enviar",
+    replyOnTheWay: "A resposta está a caminho…",
     newCase: "Nova conversa",
     noneOfThese: "Nenhuma destas",
     choice_not_recognized: "Continuo sem reconhecer",
@@ -326,6 +330,8 @@ const TEXT = {
     rejectedNote: "Revisamos seu esclarecimento e ele não foi aceito. Se você ainda não reconhece a cobrança, escreva de novo com mais detalhes, como o valor, a data ou o estabelecimento.",
     yourAnswer: "Sua resposta",
     error_nothing_to_approve: "Não há ação para executar.",
+    error_demo_not_seeded: "Esta base não tem o estado da demo.",
+    error_demo_script_diverged: "Não foi possível reiniciar a demo; nada mudou.",
     error_charge_already_disputed: "A cobrança já tem um esclarecimento aberto.",
     error_reason_required: "Falta o motivo.",
     error_reason_not_allowed: "O motivo não está na lista.",
@@ -421,6 +427,11 @@ export function money(lang, amount, currency) {
   } catch {
     return `${amount} ${currency}`;
   }
+}
+
+// A number with no currency, such as an amount the customer gave without one.
+export function number(lang, value) {
+  return new Intl.NumberFormat(LOCALES[lang]).format(value);
 }
 
 // "2026-06-10" and "2026-06-10T14:22:00" are dates of the records, without a time zone: they

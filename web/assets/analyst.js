@@ -1,10 +1,12 @@
-// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-35): login, the queue with its filters, the
-// dossier of a case, the decisions, and the global automation switch in the header. Every figure is read from the API; text reaches the page only through
-// textContent, never as HTML.
+// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-35, TRZ-38): login, the queue with its filters,
+// the dossier of a case, the decisions, and the automation switch and demo reset in the header.
+// Every figure is read from the API; text reaches the page only through textContent, never as
+// HTML.
 
 import { createClient } from "./api.js";
 import {
-  REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, candidateCards,
+  REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
+  identificationTable, recommendationText,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
@@ -42,6 +44,8 @@ const ERRORS = {
   reason_not_allowed: "El motivo no está en la lista.",
   question_required: "Escribe la pregunta para el cliente.",
   db_unavailable: "La base de datos no responde. Intenta de nuevo.",
+  demo_not_seeded: "Esta base no tiene el estado del demo: corre make seed-demo.",
+  demo_script_diverged: "Un caso sembrado no terminó como espera config/demo.yaml; nada cambió.",
 };
 const errorText = (e) => ERRORS[e?.code] || "Algo falló. Intenta de nuevo.";
 
@@ -57,7 +61,10 @@ const pill = (p) => el("span", { class: `pill${p.tone ? ` ${p.tone}` : ""}`, tex
 
 function showChrome(loggedIn) {
   $("appbar").hidden = !loggedIn;
-  if (loggedIn) loadAutomation();
+  if (loggedIn) {
+    loadAutomation();
+    loadDemo();
+  }
 }
 
 // ---- global automation switch (TRZ-35) ----------------------------------------------------
@@ -82,11 +89,14 @@ async function loadAutomation() {
   drawAutomation();
 }
 
-// The dialog of the switch, with the markup and style of the customer's expired session dialog:
-// the focus goes into it, Tab stays on its buttons, Escape or Cancelar closes it unchanged, and
-// the focus goes back to the switch.
-function openSwitchDialog() {
-  const view = automationView(automation);
+// The header's dialog, with the markup and style of the customer's expired session dialog: the
+// automation switch and the demo reset ask through it. The focus goes into it, Tab stays on its
+// buttons, Escape or Cancelar closes it unchanged, and the focus goes back to the button that
+// opened it.
+let dialog = null;
+
+function openDialog(view, run, opener) {
+  dialog = { run, opener };
   $("switch-title").textContent = view.title;
   $("switch-text").textContent = view.confirm;
   $("switch-cancel").textContent = view.cancelLabel;
@@ -97,23 +107,51 @@ function openSwitchDialog() {
   $("switch-cancel").focus();
 }
 
-function closeSwitchDialog() {
+function closeDialog() {
   $("switch-dialog").hidden = true;
-  $("automation").focus();
+  dialog?.opener.focus();
+  dialog = null;
 }
 
-$("automation").addEventListener("click", openSwitchDialog);
-$("switch-cancel").addEventListener("click", closeSwitchDialog);
+$("automation").addEventListener("click", () => openDialog(automationView(automation), async () => {
+  automation = await api.call("/automation", {
+    method: "PUT", body: { all_to_human: !automation.all_to_human },
+  });
+  drawAutomation();
+}, $("automation")));
+
+// ---- demo reset (TRZ-38) ------------------------------------------------------------------
+
+async function loadDemo() {
+  try {
+    const state = await api.call("/demo");
+    $("demo-reset").hidden = !state.seeded;
+  } catch {
+    // Outside demo mode the route does not exist.
+    $("demo-reset").hidden = true;
+  }
+}
+
+$("demo-reset").addEventListener("click", () => {
+  // One key per dialog: a second click on the same dialog does not reset twice.
+  const key = crypto.randomUUID();
+  openDialog(demoResetView(), async () => {
+    await api.call("/demo/reset", { method: "POST", headers: { "idempotency-key": key } });
+    filter = "all";
+    await loadAutomation();
+    location.hash = "#/cola";
+    route();
+  }, $("demo-reset"));
+});
+
+$("switch-cancel").addEventListener("click", closeDialog);
 
 $("switch-confirm").addEventListener("click", async () => {
   const button = $("switch-confirm");
   button.disabled = true;
   try {
-    automation = await api.call("/automation", {
-      method: "PUT", body: { all_to_human: !automation.all_to_human },
-    });
-    drawAutomation();
-    closeSwitchDialog();
+    await dialog.run();
+    closeDialog();
   } catch (e) {
     $("switch-error").textContent = errorText(e);
     $("switch-error").hidden = false;
@@ -126,7 +164,7 @@ $("switch-dialog").addEventListener("keydown", (event) => {
   const step = dialogKey(event.key, event.shiftKey, buttons.indexOf(document.activeElement), buttons.length);
   if (!step) return;
   event.preventDefault();
-  if (step.cancel) closeSwitchDialog();
+  if (step.cancel) closeDialog();
   else buttons[step.focus].focus();
 });
 
@@ -260,6 +298,7 @@ async function renderCase(caseId) {
           el("span", { class: "mono small muted", text: caseHeading(dossier.case_kind, one.status, dossier.case_id) }),
           el("h1", { class: "case-title", text: dossier.request_summary })),
         el("div", { class: "row" },
+          dossier.simulated ? el("span", { class: "sim", text: "[simulado]" }) : null,
           row ? pill({ text: `Prioridad ${row.priority.text}`, tone: row.priority.tone }) : null,
           pill({ text: statusLabel(one.status), tone: STATUS_TONE[one.status] || "" }))),
       el("div", { class: "detail ruled-top" },
@@ -311,8 +350,7 @@ function dossierCards(d, history) {
   }
   const facts = factRows(d.verified_facts);
   if (facts.length) cards.push(factCard("Hechos verificados", facts));
-  const candidates = candidateCards(d.identification);
-  if (candidates.length) cards.push(identificationCard(d.identification, candidates));
+  if (identificationTable(d.identification).rows.length) cards.push(identificationCard(d.identification));
   const evidence = factRows(d.evidence);
   if (evidence.length) cards.push(factCard("Evidencia", evidence));
   if (d.later_messages.length) {
@@ -371,14 +409,16 @@ function factCard(title, rows) {
 
 // Candidates with the contribution of each part of the score and the probability; percentages
 // are for the analyst only (rule 3).
-function identificationCard(identification, candidates) {
-  const keys = candidates[0].scores.map(([k]) => k);
-  const columns = `minmax(150px, 1.6fr) repeat(${keys.length + 1}, 72px)`;
+function identificationCard(identification) {
+  const table = identificationTable(identification);
+  const columns = `minmax(150px, 1.6fr) repeat(${table.header.length - 1}, 72px)`;
+  // Cells come as one flat list: el() flattens one level, so a nested list would be printed.
   const line = (cells, cls) => {
-    const node = el("div", { class: `trow${cls ? ` ${cls}` : ""}` }, cells);
+    const node = el("div", { class: `trow${cls ? ` ${cls}` : ""}` }, ...cells);
     node.style.gridTemplateColumns = columns;
     return node;
   };
+  const right = (text, cls) => el("span", { class: cls ? `r ${cls}` : "r", text });
   return el("section", { class: "card tight" },
     el("div", { class: "card-head" },
       el("h2", { text: "Identificación" }),
@@ -386,14 +426,13 @@ function identificationCard(identification, candidates) {
     el("p", { class: "small muted", text: `${identification.candidates} candidatos · el conjunto conformal va marcado` }),
     el("div", { class: "table-wrap boxed" },
       el("div", { class: "table" },
-        line([el("span", { text: "Transacción" }), keys.map((k) => el("span", { class: "r", text: k })), el("span", { class: "r", text: "p" })], "head"),
-        candidates.map((c) => line([
+        line(table.header.map((text, i) => (i ? right(text) : el("span", { text }))), "head"),
+        table.rows.map((row) => line([
           el("span", { class: "cell-stack" },
-            el("span", { class: "mono small", text: c.id }),
-            c.inSet ? el("span", { class: "tag info", text: "En el conjunto" }) : null),
-          c.scores.map(([, v]) => el("span", { class: "r", text: v })),
-          el("span", { class: "r strong", text: c.probability }),
-        ], c.inSet ? "in-set" : null)))));
+            el("span", { class: "mono small", text: row.id }),
+            row.inSet ? el("span", { class: "tag info", text: "En el conjunto" }) : null),
+          ...row.cells.map((text, i) => right(text, i === row.cells.length - 1 ? "strong" : "")),
+        ], row.inSet ? "in-set" : null)))));
 }
 
 function actionsCard(d) {
@@ -424,7 +463,7 @@ function decisionCard(d, item, status) {
   const panel = decisionPanel(item);
   const head = el("div", { class: "stack tight-stack" },
     el("h2", { text: "Acción recomendada" }),
-    el("p", { class: "soft-body", text: d.recommended_action ? actionLabel(d.recommended_action) : "Sin acción recomendada." }));
+    el("p", { class: "soft-body", text: recommendationText(d) }));
   if (!panel.open) {
     return el("section", { class: "card soft" }, head,
       el("p", { class: "inner muted", text: `El caso no está en la cola. Estado: ${statusLabel(status)}.` }));

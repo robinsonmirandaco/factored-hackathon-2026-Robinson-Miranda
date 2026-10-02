@@ -625,7 +625,7 @@ def test_every_route_but_login_and_health_requires_a_session(
         if path not in PUBLIC
         for method in operations
     ]
-    assert len(routes) == 18
+    assert len(routes) == 20
     for method, path in routes:
         r = client.request(method, path, json={"message": "hola", "decision": "approve"})
         _error(r, 401, "not_authenticated")

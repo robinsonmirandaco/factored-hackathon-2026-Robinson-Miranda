@@ -4,6 +4,7 @@
 // words and formats of the customer web (i18n.js), in Spanish.
 
 import { day, label, money, translator } from "./i18n.js";
+import { chipParts } from "./view.js";
 
 const es = translator("es");
 
@@ -183,6 +184,8 @@ export function queueRow(item, nowMs, rho) {
   if (item.kind === "audit_sample") tags.push({ text: "Auditoría", tone: "info" });
   if (item.status === "awaiting_customer") tags.push({ text: "Esperando al cliente", tone: "warn" });
   if (item.updated) tags.push({ text: "Actualizado", tone: "new" });
+  // Created by the demo state, not by a customer (TRZ-38, design 10.2 rule 5).
+  if (item.simulated) tags.push({ text: "[simulado]", tone: "sim" });
   return {
     href: `#/caso/${encodeURIComponent(item.case_id)}`,
     caseId: item.case_id,
@@ -296,9 +299,23 @@ export function clueChips(extraction) {
     let value = v.value;
     if (c.field === "amount") value = v.currency ? money("es", Number(v.value), v.currency) : String(v.value);
     if (c.field === "card_in_possession") value = v.value ? "La tiene" : "No la tiene";
-    if (c.field === "date") value = v.expression || v.kind || c.evidence;
+    // The days the words mean, as the customer's chip gives them; the words are the evidence.
+    if (c.field === "date") {
+      value = v.window_from && v.window_to
+        ? chipParts(translator("es"), "es", { ...v, field: "date", evidence: c.evidence }).value
+        : v.expression || v.kind || c.evidence;
+    }
     return { label: clueLabel(c.field), value: String(value ?? ""), evidence: c.evidence };
   });
+}
+
+// The recommended action of a dossier, or why there is none.
+export function recommendationText(d) {
+  if (d.recommended_action) return actionLabel(d.recommended_action);
+  if (d.case_kind !== "security_event" && d.charge_identified === false) {
+    return "Sin acción recomendada: no se identificó ningún cargo.";
+  }
+  return "Sin acción recomendada.";
 }
 
 // Candidates with their probability: percentages are for the analyst only (rule 3).
@@ -312,6 +329,21 @@ export function candidateCards(identification) {
     parts: Object.entries(c.components).map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join(" · "),
     scores: Object.entries(c.components).map(([k, v]) => [k, Number(v).toFixed(2)]),
   }));
+}
+
+// The identification table of a dossier as flat text: the header, then one string per cell of
+// each candidate, with its id and whether it is in the conformal set.
+export function identificationTable(identification) {
+  const candidates = candidateCards(identification);
+  const keys = candidates.length ? candidates[0].scores.map(([k]) => k) : [];
+  return {
+    header: ["Transacción", ...keys, "p"],
+    rows: candidates.map((c) => ({
+      id: c.id,
+      inSet: c.inSet,
+      cells: [...c.scores.map(([, v]) => v), c.probability],
+    })),
+  };
 }
 
 // The heading of a dossier: the kind of case while it is with a person, its status once an
@@ -338,6 +370,18 @@ export function automationView(state) {
       ? "Los casos vuelven a registrarse solos según la política."
       : "Ninguna aclaración se registrará sola: todas irán a la cola con el motivo «Automatización desactivada».",
     confirmLabel: action,
+    cancelLabel: "Cancelar",
+  };
+}
+
+// The demo reset (TRZ-38), as its header button says it and as the dialog asks it.
+export function demoResetView() {
+  return {
+    title: "¿Reiniciar el demo?",
+    confirm: "Se borran los casos, la cola, las disputas, los bloqueos, las notificaciones y el "
+      + "audit log del demo, las tarjetas bloqueadas vuelven a su estado y se crean de nuevo los "
+      + "casos [simulado] de la cola. Las sesiones de los clientes se cierran.",
+    confirmLabel: "Reiniciar demo",
     cancelLabel: "Cancelar",
   };
 }

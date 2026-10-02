@@ -32,8 +32,8 @@ export function createClient(role) {
   const tokenKey = `trazo.${role}.token`;
   let memory = read(tokenKey);
 
-  async function call(path, { method = "GET", body } = {}) {
-    const headers = { accept: "application/json" };
+  async function call(path, { method = "GET", body, headers: extra = {} } = {}) {
+    const headers = { accept: "application/json", ...extra };
     if (body !== undefined) headers["content-type"] = "application/json";
     if (memory) headers.authorization = `Bearer ${memory}`;
     const response = await fetch(path, {

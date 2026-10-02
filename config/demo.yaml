@@ -1,0 +1,129 @@
+# Demo state of TRAZO (TRZ-38, design 10.3 and 11.7). `make seed-demo` reads this file; the
+# reset endpoint repeats its seeded scripts. Nothing here comes from the dataset: the people of
+# the demo are chosen by rule, and the chosen ids are written only to the database.
+#
+# How a role is filled: the cohort customers of its country that are active, have no complaint
+# in the look-back, are not in any case of any evaluation split (case_customers.txt of
+# `make cases`) and have the charges the role asks for, are tried in md5(order_seed:customer_id)
+# order. The first one whose rehearsals end in the expected status gets the role. A rehearsal
+# runs the real agent with the LLM off and is rolled back. A role with no such customer stops
+# the seed; no rule is relaxed silently.
+#
+# A charge rule asks for a disputable charge in the dispute window of the policy: its type, an
+# active card when `card` is true, a USD amount in `usd` [above, up to] (null: no upper bound),
+# its currency, and `same_merchant`: how many charges of that merchant the card has in the
+# window (2 gives two candidates). Charges of each rule are tried in md5(order_seed:id) order.
+#
+# A turn is one of: {say} a free message, {button: charge, say} the "No lo reconozco" button on
+# a charge, {option: n, say} the n-th option shown, {recognition, say} the answer to the
+# recognition step, {confirm: true, say} the confirmation of the pending action. `say` may name
+# a charge's merchant as {charge.merchant}.
+
+version: "demo-1"
+order_seed: "trazo-demo-1"
+complaint_lookback_days: 90
+# Customers with every charge of a role that are rehearsed before the seed gives up.
+max_candidates: 200
+# Analyst name of the decisions the seed takes on the PT-BR cell; never a login.
+seed_analyst: "demo.seed"
+
+# People the jury signs in as. Their cases are not seeded: the walkthrough makes them live.
+# Document numbers are invented, publishable and absent from the dataset; the type stays the
+# customer's own, since the stored hash covers type and number.
+personas:
+  - role: mx_main
+    country: MX
+    document: {type: DNI, number: DEMO-MX-0001}
+    walkthrough: "10.3 steps 1, 2 and 3 (the person step on a charge that needs an analyst's approval)"
+    charges:
+      two_candidates: {type: Purchase, card: true, usd: [0, 500], same_merchant: 2}
+      approval: {type: Payment, usd: [500, 1000]}
+    rehearsals:
+      - turns:
+          - {say: "No reconozco un cargo de {two_candidates.merchant}"}
+          - {option: 0, say: "Es este"}
+          - {recognition: not_recognized, say: "Sigo sin reconocerlo"}
+          - {confirm: true, say: "Sí, confirmo"}
+        expect: registered_verified
+      - turns:
+          - {button: approval, say: "No lo reconozco"}
+          - {recognition: not_recognized, say: "Sigo sin reconocerlo"}
+        expect: pending_analyst_approval
+  - role: co_pt
+    country: CO
+    document: {type: CC, number: DEMO-CO-0001}
+    walkthrough: "10.3 step 4 and a full registration in Portuguese with a real COP amount and rate"
+    charges:
+      register: {type: Purchase, card: true, usd: [0, 500], same_merchant: 1, currency: COP}
+    rehearsals:
+      - turns:
+          - {say: "Não reconheço uma cobrança de {register.merchant}"}
+          - {recognition: not_recognized, say: "Continuo sem reconhecer"}
+          - {confirm: true, say: "Sim, confirmo"}
+        expect: registered_verified
+    # Step 4 (a charge that matches none, a question, then a person) is read by the LLM and
+    # cannot be rehearsed with it off; queue_co_pt below shows a PT-BR escalation by rules.
+
+# Cases of the starting queue, created through the agent at every seed and reset and marked
+# simulated. None of them is registered by the agent, so none takes an audit sample draw: the
+# first two registrations after a reset take draws 1 and 2, which the policy seed selects.
+seeded:
+  - role: queue_ar
+    country: AR
+    charges:
+      charge: {type: Payment, usd: [500, 1000]}
+    script:
+      turns:
+        - {button: charge, say: "No lo reconozco"}
+        - {recognition: not_recognized, say: "Sigo sin reconocerlo"}
+      expect: pending_analyst_approval
+  - role: queue_mx
+    country: MX
+    charges:
+      charge: {type: Payment, usd: [1000, null]}
+    script:
+      turns:
+        - {button: charge, say: "No lo reconozco"}
+        - {recognition: not_recognized, say: "Sigo sin reconocerlo"}
+      expect: escalated
+  - role: queue_co_pt
+    country: CO
+    charges: {}
+    script:
+      turns:
+        - {say: "Não reconheço uma cobrança da semana passada"}
+      expect: escalated
+
+# The unrecognized charge x PT-BR cell: one case per customer, each handed to an analyst with a
+# registration recommended, then decided by the seed analyst in this order. 19 reviews with 9
+# reversals (design 11.7); the reversal of step 6 makes it 10 of 20.
+pt_cell:
+  role: pt_cell
+  country: CO
+  charges:
+    charge: {type: Payment, usd: [500, 1000]}
+  script:
+    turns:
+      - {button: charge, say: "Não reconheço"}
+      - {recognition: not_recognized, say: "Continuo sem reconhecer"}
+    expect: pending_analyst_approval
+  decisions:
+    - approve
+    - {reject: wrong_charge}
+    - approve
+    - {reject: should_have_escalated}
+    - approve
+    - {reject: insufficient_data}
+    - approve
+    - {reject: wrong_charge}
+    - approve
+    - {reject: should_have_escalated}
+    - approve
+    - {reject: insufficient_data}
+    - approve
+    - {reject: wrong_charge}
+    - approve
+    - {reject: should_have_escalated}
+    - approve
+    - {reject: insufficient_data}
+    - approve

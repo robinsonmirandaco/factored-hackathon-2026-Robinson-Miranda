@@ -1,0 +1,26 @@
+meta {
+  name: TRZ-38 the invented document signs the persona in
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/auth/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {"document_type": "DNI", "document_number": "DEMO-MX-0001", "code": "{{demoCode}}"}
+}
+
+script:post-response {
+  bru.setVar("personaToken", res.getBody().access_token);
+}
+
+tests {
+  test("200 role customer", function() {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().role).to.equal("customer");
+  });
+}

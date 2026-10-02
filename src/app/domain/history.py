@@ -383,6 +383,26 @@ def _automation_switch(lang: Lang, p: Fields, r: Fields, policy: str | None) -> 
     return f"A analista {who} reativou a automação."
 
 
+def _mark_simulated(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    version = r.get("demo") or "?"
+    if lang == "es":
+        return (
+            f"[simulado] Caso creado por el estado del demo ({version}) con turnos guionados y "
+            "sin LLM."
+        )
+    return (
+        f"[simulado] Caso criado pelo estado da demo ({version}) com turnos roteirizados e sem LLM."
+    )
+
+
+def _demo_reset(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    who = p.get("analyst") or "?"
+    cases = r.get("cases_created", "?")
+    if lang == "es":
+        return f"[simulado] {who} reinició el demo: se crearon {cases} casos simulados."
+    return f"[simulado] {who} reiniciou a demo: foram criados {cases} casos simulados."
+
+
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     # The one line that tells free text: the answer, stored redacted, next to its question.
     answer = p.get("redacted_text")
@@ -708,6 +728,8 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("human", "decision"): _human_decision,
     ("policy", "audit_draw"): _audit_draw,
     ("system", "notify"): _notify,
+    ("system", "mark_simulated"): _mark_simulated,
+    ("human", "demo_reset"): _demo_reset,
     ("agent", "automation_disabled"): _automation_disabled,
     ("human", "automation_switch"): _automation_switch,
     ("customer", "info_reply"): _info_reply,

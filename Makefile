@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -36,6 +36,12 @@ migrate:
 # ADMIN_DATABASE_URL. A database holds one source: REPLACE=1 empties it first.
 seed:
 	uv run --frozen python -m app.cli.seed cohort $(if $(REPLACE),--replace)
+
+# Demo people and starting cases on a database that holds the cohort (TRZ-38): needs both
+# ADMIN_DATABASE_URL and DATABASE_URL, and case_customers.txt of make cases. Run it again after
+# make seed REPLACE=1, which empties the demo too.
+seed-demo:
+	uv run --frozen python -m app.cli.seed_demo
 
 # The synthetic fixture instead of the cohort, as in CI and a fresh compose stack.
 seed-synthetic:

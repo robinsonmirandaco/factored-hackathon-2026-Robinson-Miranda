@@ -29,7 +29,14 @@ from pipeline.cases import handwritten
 from pipeline.cases.render import GENERATOR_VERSION, Generator, LLMCache, Paraphraser, render_base
 from pipeline.cases.sampling import Context, SplitSample, load_context, sample_split
 from pipeline.cases.schema import CaseRecord, Split
-from pipeline.cases.splits import Part, check_separation, read_manifest, summary, write_split
+from pipeline.cases.splits import (
+    Part,
+    check_separation,
+    read_manifest,
+    summary,
+    write_case_customers,
+    write_split,
+)
 from pipeline.settings import PipelineSettings
 from pipeline.silver import load_normalization, sql_str
 
@@ -273,6 +280,7 @@ def build(settings: PipelineSettings, offline: bool, refreeze: bool) -> None:
         splits[part] = entry
     manifest.update(
         {
+            "case_customers": write_case_customers(folder, parts),
             "config_version": version,
             "seed": settings.seed,
             "presence_rates": {

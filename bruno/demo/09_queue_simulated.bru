@@ -1,0 +1,25 @@
+meta {
+  name: TRZ-38 CA3 the seeded escalations are marked simulated
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/queue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("three simulated escalations, one in Portuguese", function() {
+    expect(res.getStatus()).to.equal(200);
+    const items = res.getBody().items;
+    expect(items.length).to.equal(3);
+    expect(items.every((i) => i.simulated === true && i.kind === "escalation")).to.equal(true);
+    expect(items.filter((i) => i.language === "pt").length).to.equal(1);
+  });
+}

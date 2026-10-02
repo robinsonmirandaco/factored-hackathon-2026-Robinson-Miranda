@@ -1,0 +1,22 @@
+meta {
+  name: TRZ-38 a reset without its key is refused
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/demo/reset
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("422 validation_error", function() {
+    expect(res.getStatus()).to.equal(422);
+    expect(res.getBody().error_code).to.equal("validation_error");
+  });
+}

@@ -201,3 +201,8 @@ class Dossier(_Strict):
     later_messages: list[LaterMessage]
     info_exchanges: list[InfoExchange]
     audit_draw: AuditDraw | None = None
+    # Created by the demo state, not by a customer (TRZ-38).
+    simulated: bool = False
+    # False when no charge was identified: there is nothing to register, so nothing is
+    # recommended.
+    charge_identified: bool = True

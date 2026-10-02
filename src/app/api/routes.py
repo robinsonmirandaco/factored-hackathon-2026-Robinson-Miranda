@@ -3,13 +3,14 @@
 import dataclasses
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Header, Query, Response
 
 from app.api.deps import (
     AnalystDep,
     AnalystSessionDep,
     CustomerDep,
     CustomerSessionDep,
+    DemoDep,
     PrincipalDep,
     RuntimeDep,
     SessionDep,
@@ -27,6 +28,8 @@ from app.schemas.api import (
     ClarificationOut,
     ClueOut,
     DecisionOut,
+    DemoResetOut,
+    DemoStateOut,
     HealthOut,
     HistoryEntryOut,
     HumanDecisionIn,
@@ -52,6 +55,7 @@ from app.services import (
     automation,
     cases,
     decisions,
+    demo,
     dossier,
     info_requests,
     me,
@@ -414,3 +418,30 @@ def put_automation(
 def metrics(session: AnalystSessionDep) -> MetricsOut:
     """Returns operational counters from the cases table and the audit log."""
     return cases.get_metrics(session)
+
+
+@router.get("/demo", response_model=DemoStateOut, responses={**_AUTH, 404: _ERRORS[404]})
+def demo_state(demo_config: DemoDep, session: AnalystSessionDep) -> DemoStateOut:
+    """Says whether this database can be reset; the route exists only in demo mode."""
+    return DemoStateOut(seeded=demo.is_seeded(session), demo_version=demo_config.version)
+
+
+@router.post(
+    "/demo/reset",
+    response_model=DemoResetOut,
+    responses={**_AUTH, 404: _ERRORS[404], 409: _ERRORS[409], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def demo_reset(
+    demo_config: DemoDep,
+    analyst: AnalystDep,
+    runtime: RuntimeDep,
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=128)],
+) -> DemoResetOut:
+    """Brings the demo back to its seeded state; the route exists only in demo mode (TRZ-38)."""
+    return demo.reset(
+        runtime.db,
+        demo.offline(runtime.agent, runtime.settings),
+        demo_config,
+        analyst.subject,
+        idempotency_key,
+    )
