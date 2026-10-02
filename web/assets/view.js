@@ -174,11 +174,36 @@ export function statusTone(status) {
 // arrives for a conversation already left is dropped, so it cannot set its case back.
 export function createConversation() {
   let turn = 0;
+  // The turn whose request is in flight, or null. One request at a time: a message, an option or
+  // a confirmation sent meanwhile would be lost or answered out of order.
+  let flying = null;
   return {
     current: () => turn,
-    startNew: () => ++turn,
+    startNew: () => {
+      flying = null;
+      return ++turn;
+    },
     isCurrent: (t) => t === turn,
+    busy: () => flying !== null,
+    // Starts a request of the current conversation; null while another one is in flight.
+    begin: () => {
+      if (flying !== null) return null;
+      flying = turn;
+      return turn;
+    },
+    // Ends a request. True when its typed text may be cleared: it was answered, and its
+    // conversation is still the current one.
+    end: (t, ok) => {
+      if (flying === t) flying = null;
+      return Boolean(ok) && t === turn;
+    },
   };
+}
+
+// The composer while a request may be in flight: Send (and Enter) only with text and nothing in
+// flight, and the reply shown on its way meanwhile.
+export function composerState(text, busy) {
+  return { canSubmit: !busy && canSend(text), pending: Boolean(busy) };
 }
 
 // The analyst's question on a clarification (TRZ-28): open with its deadline and a form, or

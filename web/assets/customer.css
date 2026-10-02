@@ -177,6 +177,8 @@
 .receipt-top .folio { font: 500 clamp(22px, 3vw, 28px) var(--mono); letter-spacing: 0.02em; }
 .receipt-bottom { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
 .meta { font: 11px var(--mono); color: var(--muted); }
+/* Shown while a chat request is in flight; Send stays off until the answer arrives. */
+.pending { margin: 0 0 6px 4px; }
 .composer {
   display: flex; gap: 8px; align-items: center; padding: 8px 8px 8px 16px; background: var(--surface);
   border: 1px solid var(--field); border-radius: 16px;

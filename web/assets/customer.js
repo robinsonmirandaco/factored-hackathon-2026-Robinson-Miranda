@@ -5,7 +5,8 @@
 import { createClient } from "./api.js";
 import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
-  buttonMessage, canSend, clarificationLines, closedNote, codeStep, createConversation, deadlineKind,
+  buttonMessage, canSend, clarificationLines, closedNote, codeStep, composerState, createConversation,
+  deadlineKind,
   errorText,
   infoRequestViews, movementDetail, openQuestions, reviewLine, statusKey, statusTone, turnModel,
   unreadBadge,
@@ -21,7 +22,6 @@ const state = {
   me: null,
   caseId: api.store.read(CASE_KEY),
   nextBefore: null,
-  busy: false,
   lastTurn: null,
   notes: null,
 };
@@ -660,35 +660,46 @@ function redrawLastTurn() {
   if (disabled) for (const b of last.node.querySelectorAll("button")) b.disabled = true;
 }
 
-async function send(body, shown) {
-  if (state.busy) return;
-  state.busy = true;
-  const turn = talk.current();
+// Send and Enter are off while a request is in flight, and the reply is shown on its way.
+function drawComposer() {
+  const view = composerState($("message").value, talk.busy());
+  $("send").disabled = !view.canSubmit;
+  $("pending").hidden = !view.pending;
+}
+
+// One request at a time: a message, an option or a confirmation pressed while another one is in
+// flight is not sent. `sent` runs once the API answered, so typed text is cleared only then.
+async function send(body, shown, sent) {
+  const turn = talk.begin();
+  if (turn === null) return;
   bubble("me", shown);
   for (const b of $("log").querySelectorAll(".choices button")) b.disabled = true;
+  drawComposer();
   try {
     const r = await api.call("/chat", { method: "POST", body });
     // The customer started a new conversation meanwhile: this answer belongs to the old one.
-    if (!talk.isCurrent(turn)) return;
+    if (!talk.end(turn, true)) return;
+    sent?.();
     setCase(r.case_id);
     renderTurn(r);
   } catch (e) {
+    talk.end(turn, false);
     if (!talk.isCurrent(turn)) return;
     if (e.code === "case_not_found") setCase(null);
     bubble("bot", el("div", { class: "bubble" }, el("span", { class: "error", text: errorText(t, e) })),
       e.traceId ? el("span", { class: "meta", text: `trace_id ${e.traceId}` }) : null);
   } finally {
-    if (talk.isCurrent(turn)) state.busy = false;
+    drawComposer();
   }
 }
 
 // A new conversation: no case, an empty log, and nothing of the previous one still arriving.
 function newConversation() {
   talk.startNew();
-  state.busy = false;
   state.lastTurn = null;
   setCase(null);
   greet();
+  drawComposer();
 }
 
 function openByButton(transactionId, text) {
@@ -699,19 +710,19 @@ function openByButton(transactionId, text) {
 
 // ---- wiring -------------------------------------------------------------------------------
 
-$("message").addEventListener("input", () => {
-  $("send").disabled = !canSend($("message").value);
-});
+$("message").addEventListener("input", drawComposer);
 
 $("composer").addEventListener("submit", (event) => {
   event.preventDefault();
   const text = $("message").value.trim();
-  if (!canSend(text)) return;
-  $("message").value = "";
-  $("send").disabled = true;
+  // Enter while a request is in flight does nothing, and the text stays in the box.
+  if (!composerState(text, talk.busy()).canSubmit) return;
   const body = { message: text };
   if (state.caseId) body.case_id = state.caseId;
-  send(body, text);
+  send(body, text, () => {
+    // Only what was sent is cleared, not what the customer typed while waiting.
+    if ($("message").value.trim() === text) $("message").value = "";
+  });
 });
 
 $("new-case").addEventListener("click", newConversation);
