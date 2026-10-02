@@ -121,6 +121,15 @@ def test_a_recorded_test_run_is_not_run_again_without_a_reason(
         E.execute("test", "trazo", 3, 0.0, None, None, settings)
 
 
+def test_the_run_log_and_the_reports_do_not_make_the_tree_dirty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    status = " M eval/runs.jsonl\n M docs/reports/evaluacion.md\n?? pipeline/new.py\n"
+    monkeypatch.setattr(E, "_git", lambda *a: status)
+
+    assert E.uncommitted() == ["pipeline/new.py"]
+
+
 def test_an_incomplete_run_does_not_block_a_resume() -> None:
     line = {"split": "test", "system": "trazo", "repetition": 1, "complete": False}
 

@@ -363,6 +363,16 @@ def same_run(line: dict[str, Any], key: dict[str, Any]) -> bool:
     return line.get("complete", False) and all(line.get(k) == v for k, v in key.items())
 
 
+# What the evaluation commands write themselves; every other change must be committed.
+OUTPUTS = ("eval/runs.jsonl", "docs/reports/")
+
+
+def uncommitted() -> list[str]:
+    """Changed or untracked paths of the working tree, the evaluation's own outputs aside."""
+    paths = [line[3:] for line in _git("status", "--porcelain").splitlines() if line.strip()]
+    return [p for p in paths if not p.startswith(OUTPUTS)]
+
+
 class HeldOutAlreadyRun(RuntimeError):
     """The held-out run of this system was already recorded."""
 
@@ -454,8 +464,8 @@ def execute(
         HeldOutAlreadyRun: On the test split when the run was recorded and no reason is given.
     """
     folder = Path(settings.data_dir) / "eval"
-    if split == "test" and _git("status", "--porcelain").strip():
-        raise DirtyTree("commit every change before the run on the test split")
+    if split == "test" and (dirty := uncommitted()):
+        raise DirtyTree(f"commit every change before the run on the test split: {dirty}")
     v = versions(settings)
     hashes = split_hashes(split)
     key = {
