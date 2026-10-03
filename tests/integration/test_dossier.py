@@ -23,6 +23,7 @@ from app.core.config import Settings
 from app.main import create_app
 from app.services import tools as T
 from app.services.agent import AgentDeps, handle_message
+from app.services.autonomy import CellStatus
 from tests.agent_support import agent_deps, fake_llm, llm_settings, reading
 from tests.auth_support import analyst_headers, customer_headers
 from tests.serving_data import card, customer, load, transaction
@@ -210,7 +211,7 @@ def _disputed(message: str) -> list[dict[str, Any]]:
 
 
 def _with_autonomy(level: str) -> Callable[[AgentDeps], AgentDeps]:
-    return lambda d: dataclasses.replace(d, autonomy=lambda _i, _l: level)
+    return lambda d: dataclasses.replace(d, autonomy=lambda _s, _i, _l: CellStatus(level))
 
 
 # One handoff per reason of the policy: (id, customer, turns, deps change, expected rule).
@@ -298,8 +299,11 @@ def _completeness(d: dict[str, Any], rule: str) -> float:
         and d["policy_rule_triggered"]["rule"] == rule
         and bool(d["policy_rule_triggered"]["version"])
         and "autonomy_level" in d["policy_rule_triggered"],
-        # Without an identified charge there is nothing to register, so nothing is recommended.
-        bool(d["recommended_action"]) or d["charge_identified"] is False,
+        # Without an identified charge there is nothing to register, so nothing is recommended;
+        # at A2 the recommendation is recorded but not shown (TRZ-30 CA7).
+        bool(d["recommended_action"])
+        or d["charge_identified"] is False
+        or d["recommendation_hidden"] is True,
         *(bool(f["source"]["table"]) and bool(f["source"]["id"]) for f in sourced),
         *(bool(c["evidence"]) and isinstance(c["read_in"], int) for c in d["extraction"]),
         *(bool(q["code"]) and bool(q["text"]) for q in d["open_questions"]),
@@ -340,6 +344,8 @@ def test_the_dossier_of_each_reason_is_complete_and_sourced(
         assert {c["field"] for c in d["extraction"]} == {"merchant_hint", "date"}
     if reason == "amount_unknown":
         assert "amount_not_convertible" in {q["code"] for q in d["open_questions"]}
+    if reason == "autonomy_a2":
+        assert (d["recommended_action"], d["recommendation_hidden"]) == (None, True)
     if reason == "open_dispute_last_90d":
         assert {"table": "complaints", "id": "CMP-OPEN0001"} in [e["source"] for e in d["evidence"]]
     if reason.startswith("autonomy"):

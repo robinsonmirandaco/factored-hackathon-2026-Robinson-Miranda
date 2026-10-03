@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity eval-degradation density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -69,6 +69,13 @@ eval-run:
 eval-sensitivity:
 	uv run --frozen python -m pipeline.evaluation sensitivity --split $(SPLIT) \
 		$(if $(BASES),--bases $(BASES))
+
+# TRAZO on the PT-BR cases of the test split with the comprehension prompt without its Portuguese
+# example (TRZ-47), REPS repetitions within BUDGET USD of new LLM spend. Only measured; the
+# autonomy watch section of make eval replays it:  make eval-degradation BUDGET=0.5
+eval-degradation:
+	uv run --frozen python -m pipeline.evaluation degradation --repetitions $(or $(REPS),3) \
+		--budget $(BUDGET)
 
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:

@@ -37,6 +37,7 @@ from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger
 from app.domain.pii import ACCOUNT, CARD, DOCUMENT, EMAIL, PHONE, redact
 from app.domain.policy import load_policy
+from pipeline import autonomy_watch
 from pipeline.cases.schema import CaseRecord
 from pipeline.cases.splits import load_split, read_manifest
 from pipeline.free_agent import PROMPT_PATH as FREE_AGENT_PROMPT
@@ -312,6 +313,11 @@ def load_runs(path: Path) -> list[CaseRun]:
                 "blocks": [tuple(x) for x in f["blocks"]],
                 "handoffs": [tuple(x) for x in f["handoffs"]],
                 "dossiers": [tuple(x) for x in f.get("dossiers", [])],
+                "recommended": (
+                    [tuple(x) for x in f["recommended"]]
+                    if f.get("recommended") is not None
+                    else None
+                ),
             }
         )
         d["turns"] = [TurnTrace(**t) for t in d["turns"]]
@@ -442,6 +448,7 @@ def execute(
     settings: Settings,
     variant: str = "base",
     workers: int = 1,
+    case_variant: str | None = None,
 ) -> list[dict[str, Any]]:
     """Runs one system over a split, once per repetition, and records each run.
 
@@ -453,8 +460,9 @@ def execute(
         bases: Only this many base cases; None for the whole split.
         rerun_reason: Why a recorded test run is run again; required to do so.
         settings: Settings of the systems (the policy and identification files of a variant).
-        variant: base, or the name of a sensitivity variant.
+        variant: base, or the name of a sensitivity or degradation variant.
         workers: Cases at once; 1 with paid LLM calls.
+        case_variant: Only the cases of this language variant, such as pt-BR; None for all.
 
     Returns:
         The lines appended to eval/runs.jsonl.
@@ -494,6 +502,8 @@ def execute(
     sys.addaudithook(opens.hook)
     opens.active = True
     cases = pick_bases(load_split(folder, split, MANIFEST, CASES_CONFIG), bases)  # type: ignore[arg-type]
+    if case_variant is not None:
+        cases = [c for c in cases if c.variant == case_variant]
     by_id = {c.case_id: c for c in cases}
     data = CohortData(Path(settings.data_dir) / "gold" / "cohort", settings.document_hash_key)
     cache, budget, pace = ReplayCache(folder), Budget(budget_usd), Pace(45)
@@ -508,7 +518,7 @@ def execute(
         # and reported, not a sign of an unfinished run.
         complete = (
             len(runs) == len(cases)
-            and (m["efficiency"]["llm_refused"] == 0 or variant != "base")
+            and (m["efficiency"]["llm_refused"] == 0 or budget_usd == 0)
             and m["efficiency"]["cases_paced"] == 0
         )
         line = {
@@ -643,6 +653,38 @@ def sensitivity(split: str, bases: int | None = None) -> None:
 
 
 # ---- report -------------------------------------------------------------------------------
+
+# ---- degradation (TRZ-47) -----------------------------------------------------------------
+
+
+def degradation(repetitions: int, budget_usd: float) -> None:
+    """Runs TRAZO on the PT-BR cases of the test split with the degraded comprehension prompt.
+
+    Only measured: nothing is tuned on it. The prompt is the base one without its Portuguese
+    example, written under DATA_DIR/eval/degradation.
+
+    Args:
+        repetitions: Repetitions, each a separate set of LLM calls.
+        budget_usd: Most new LLM spend across the repetitions.
+    """
+    base = Settings(llm_enabled=True, log_level="WARNING")
+    folder = Path(base.data_dir) / "eval"
+    prompt = autonomy_watch.degraded_prompt(
+        base.llm_comprehension_prompt_path, folder / "degradation"
+    )
+    settings = base.model_copy(update={"llm_comprehension_prompt_path": prompt})
+    execute(
+        "test",
+        "trazo",
+        repetitions,
+        budget_usd,
+        None,
+        None,
+        settings,
+        autonomy_watch.DEGRADED_VARIANT,
+        case_variant=autonomy_watch.DEGRADED_CASES,
+    )
+
 
 DECLARATIONS = (
     "The held-out test split was frozen with its hashes before any tuning run and opened once "
@@ -1216,7 +1258,13 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
                 )
         w("")
     # Sensitivity (CA11)
-    variants = sorted({v for (s, v, _) in data if s == "trazo" and v != "base"})
+    variants = sorted(
+        {
+            v
+            for (s, v, _) in data
+            if s == "trazo" and v not in ("base", autonomy_watch.DEGRADED_VARIANT)
+        }
+    )
     if variants:
         w("## Sensitivity of the thresholds\n")
         w(
@@ -1239,6 +1287,22 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
                 f"{x['efficiency']['llm_refused']} |"
             )
         w("")
+    degraded = ("trazo", autonomy_watch.DEGRADED_VARIANT)
+    watched = {
+        "base": {r: v for (sy, va, r), v in data.items() if (sy, va) == ("trazo", "base")},
+        "degraded": {r: v for (sy, va, r), v in data.items() if (sy, va) == degraded},
+    }
+    pt = autonomy_watch.DEGRADED_CASES
+    md += autonomy_watch.section(
+        load_policy(settings.policy_path).autonomy,
+        watched["degraded"],
+        watched["base"],
+        {r: x for (sy, va, r), x in lines.items() if (sy, va) == degraded},
+        {
+            name: {r: measures([x for x in v if x.case.variant == pt]) for r, v in runs.items()}
+            for name, runs in watched.items()
+        },
+    )
     # Evolution (CA10)
     w("## Runs recorded\n")
     w(
@@ -1269,7 +1333,8 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point of `make eval`, `make eval-run` and `make eval-sensitivity`.
+    """Entry point of `make eval`, `make eval-run`, `make eval-sensitivity` and
+    `make eval-degradation`.
 
     Args:
         argv: Arguments; defaults to sys.argv.
@@ -1289,6 +1354,9 @@ def main(argv: list[str] | None = None) -> int:
     sens = sub.add_parser("sensitivity")
     sens.add_argument("--split", choices=["dev", "test"], required=True)
     sens.add_argument("--bases", type=int, default=None)
+    deg = sub.add_parser("degradation")
+    deg.add_argument("--repetitions", type=int, default=3)
+    deg.add_argument("--budget", type=float, required=True, help="most new LLM spend, USD")
     rep = sub.add_parser("report")
     rep.add_argument("--split", choices=["dev", "test"], default="test")
     rep.add_argument("--out", type=Path, default=REPORT_PATH)
@@ -1307,6 +1375,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     elif args.command == "sensitivity":
         sensitivity(args.split, args.bases)
+    elif args.command == "degradation":
+        degradation(args.repetitions, args.budget)
     else:
         report(args.split, args.out)
     return 0

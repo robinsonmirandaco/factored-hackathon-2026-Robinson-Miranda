@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  REVERSAL_REASONS, decisionDone, decisionPanel, decisionProblem, filterChips, identificationTable,
-  markedParts, queueRow, slaText,
+  REVERSAL_REASONS, cellEvidence, decisionDone, decisionPanel, decisionProblem, filterChips,
+  identificationTable, markedParts, queueRow, recommendationText, slaText,
 } from "../../web/assets/analyst-view.js";
 
 const NOW = Date.parse("2026-09-30T12:00:00Z");
@@ -211,4 +211,26 @@ test("the identification table is flat text: a header and one string per cell", 
 test("an identification with no candidate has no table rows", () => {
   const table = identificationTable({ decision: "not_found", candidates: 0, conformal_set: [], top: [] });
   assert.deepEqual(table.rows, []);
+});
+
+test("the rule card tells r, W and N of the block that set the level of the cell (TRZ-30)", () => {
+  const rule = {
+    rule: "approval.autonomy_a1", version: "2026.09.5", level: "L3", autonomy_level: "A1",
+    autonomy_change: {
+      level_before: "A0", level_after: "A1", n: 20, reversals: 10, r: 0.5, w: 0.3274,
+      threshold: "demote_if_wilson_lower_gte", threshold_value: 0.3,
+      source: { table: "audit_log", id: "41" },
+    },
+  };
+  assert.equal(
+    cellEvidence(rule),
+    "Celda en A1 desde un bloque de 20 revisiones con 10 reversiones: r = 0,50, W = 0,327 ≥ 0,30 (N = 20). Antes estaba en A0.",
+  );
+  assert.equal(cellEvidence({ ...rule, autonomy_change: null }), null);
+});
+
+test("at A2 the dossier proposes no action (TRZ-30 CA7)", () => {
+  const d = { recommended_action: null, recommendation_hidden: true, charge_identified: true };
+  assert.match(recommendationText(d), /^Sin propuesta: la celda está en A2/);
+  assert.equal(recommendationText({ recommended_action: "register", charge_identified: true }), "Registrar la aclaración");
 });

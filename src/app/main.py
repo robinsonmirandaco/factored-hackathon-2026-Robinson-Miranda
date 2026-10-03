@@ -22,10 +22,11 @@ from app.domain.business_days import load_calendars
 from app.domain.clock import SimulatedClock
 from app.domain.demo import load_demo
 from app.domain.identification import MAX_OPTIONS, Params, load_params
-from app.domain.policy import PolicyEngine, PolicyError, initial_autonomy
+from app.domain.policy import PolicyEngine, PolicyError
 from app.domain.policy_passages import load_passages
 from app.services.agent import AgentDeps
 from app.services.auth import check_secrets
+from app.services.autonomy import cell_reader
 
 log = get_logger("api")
 
@@ -92,7 +93,7 @@ def build_runtime(settings: Settings) -> Runtime:
             llm=LLMClient(settings),
             clock=SimulatedClock(settings.trazo_now),
             identification=load_identification(settings, policy),
-            autonomy=initial_autonomy(policy.config),
+            autonomy=cell_reader(policy.config.autonomy.initial_level),
             passages=load_passages(
                 settings.policy_passages_path, policy.config.dispute_window_days
             ),

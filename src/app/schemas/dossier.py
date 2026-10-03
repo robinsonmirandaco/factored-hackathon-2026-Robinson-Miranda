@@ -146,6 +146,32 @@ class InfoExchange(_Strict):
     source: Source
 
 
+class AutonomyChange(_Strict):
+    """The block of reviews that set the autonomy level of the case's cell (TRZ-30).
+
+    Attributes:
+        level_before: Level before the block closed.
+        level_after: Level it set, the one in force.
+        n: Reviews in the block.
+        reversals: Reversals among them.
+        r: Reversal rate.
+        w: Wilson lower bound of the rate.
+        threshold: Policy key of the threshold crossed.
+        threshold_value: Its value.
+        source: The audit row of the block, with the reversed cases and their reasons.
+    """
+
+    level_before: str
+    level_after: str
+    n: int
+    reversals: int
+    r: float
+    w: float
+    threshold: str | None
+    threshold_value: float | None
+    source: Source
+
+
 class RuleTriggered(_Strict):
     """The policy rule that handed the case over.
 
@@ -154,12 +180,14 @@ class RuleTriggered(_Strict):
         version: Policy version.
         level: Display level of the action.
         autonomy_level: Autonomy level of the intent x language cell, when consulted.
+        autonomy_change: Why the cell is at that level; None while it has never changed.
     """
 
     rule: str
     version: str
     level: str
     autonomy_level: str | None
+    autonomy_change: AutonomyChange | None = None
 
 
 class AuditDraw(_Strict):
@@ -211,3 +239,5 @@ class Dossier(_Strict):
     # with the instruction are marked as character spans of `original_message`.
     injection: bool = False
     injected_spans: list[tuple[int, int]] = []
+    # The cell was at A2: the system recommended an action it does not show (TRZ-30 CA7).
+    recommendation_hidden: bool = False

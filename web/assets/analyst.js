@@ -6,7 +6,7 @@
 import { createClient } from "./api.js";
 import {
   INJECTION_REASON, REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
-  identificationTable, recommendationText,
+  identificationTable, recommendationText, cellEvidence,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, markedParts, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
@@ -455,7 +455,8 @@ function ruleCard(d) {
     el("h2", { text: d.case_kind === "audit_sample" ? "Regla que decidió" : "Regla que escaló" }),
     el("span", { class: "rule mono", text: rule.rule }),
     el("span", { text: d.injection ? INJECTION_REASON : reasonLabel(rule.rule) }),
-    el("span", { class: "tiny muted mono", text: `política ${rule.version} · nivel ${rule.level}${rule.autonomy_level ? ` · celda ${rule.autonomy_level}` : ""}` }));
+    el("span", { class: "tiny muted mono", text: `política ${rule.version} · nivel ${rule.level}${rule.autonomy_level ? ` · celda ${rule.autonomy_level}` : ""}` }),
+    cellEvidence(rule) ? el("span", { class: "small", text: cellEvidence(rule) }) : null);
 }
 
 // The decision, as in the prototype: the three buttons, and the panel of a rejection or of a

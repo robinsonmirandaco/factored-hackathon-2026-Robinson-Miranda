@@ -37,9 +37,10 @@ GRANT SELECT, INSERT ON demo_resets TO trazo_app;
 -- Empties the operational tables and restarts the counters, keeping the bank's records and the
 -- demo documents. It runs as the owner (SECURITY DEFINER) because trazo_app may not delete or
 -- truncate anything; it checks the analyst role itself, and trazo_app is the only role that
--- may call it. The audit log is emptied too: the autonomy cells count their reviews from it,
--- so keeping it would add every rehearsal's reversals to the next one. The append-only trigger
--- still stops any UPDATE or DELETE of its rows.
+-- may call it. The autonomy cells and the audit log are emptied too: a cell counts the reviews
+-- of its open block and reads the reversed cases from the audit log, so keeping either would add
+-- every rehearsal's reversals to the next one. The append-only trigger still stops any UPDATE or
+-- DELETE of the audit log's rows.
 CREATE OR REPLACE FUNCTION demo_reset() RETURNS void
     LANGUAGE plpgsql
     SECURITY DEFINER
@@ -74,6 +75,7 @@ BEGIN
     DELETE FROM case_queue;
     DELETE FROM cases;
     TRUNCATE audit_log;
+    DELETE FROM autonomy_cells;
     DELETE FROM auth_challenges;
 
     ALTER SEQUENCE audit_draw_seq RESTART;

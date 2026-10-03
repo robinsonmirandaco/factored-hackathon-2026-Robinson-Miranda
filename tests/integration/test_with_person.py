@@ -19,6 +19,7 @@ from app.core.config import Settings
 from app.main import create_app
 from app.services import tools as T
 from app.services.agent import AgentDeps, handle_message
+from app.services.autonomy import CellStatus
 from tests.agent_support import agent_deps, fake_llm, llm_settings, reading
 from tests.auth_support import analyst_headers
 from tests.serving_data import card, customer, load, transaction
@@ -124,7 +125,7 @@ def _escalated(schema: SchemaUrls, deps: AgentDeps, _mp: pytest.MonkeyPatch) -> 
 
 
 def _approval(schema: SchemaUrls, deps: AgentDeps, _mp: pytest.MonkeyPatch) -> str:
-    a1 = dataclasses.replace(deps, autonomy=lambda _i, _l: "A1")
+    a1 = dataclasses.replace(deps, autonomy=lambda _s, _i, _l: CellStatus("A1"))
     shown = _turn(schema, a1, NETFLIX)
     return _turn(
         schema, a1, "Sigo sin reconocerlo", case_id=shown.case_id, recognition="not_recognized"

@@ -39,6 +39,7 @@ from app.schemas.comprehension import DateClue
 from app.schemas.dossier import (
     ActionTaken,
     AuditDraw,
+    AutonomyChange,
     Clue,
     Dossier,
     Fact,
@@ -157,6 +158,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             version=decide.result["version"],
             level=decide.result["level"],
             autonomy_level=decide.result.get("autonomy_level"),
+            autonomy_change=_autonomy_change(decide.result.get("autonomy_change")),
         )
         if decide and decide.result
         else None
@@ -203,6 +205,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
     ]
     # The same test as the open question charge_not_identified.
     charge = not (case.intent in DISPUTE_INTENTS and case.transaction_id is None)
+    hidden = bool(rule and rule.autonomy_level == "A2")
     return Dossier(
         case_id=case.id,
         trace_id=case.trace_id,
@@ -234,7 +237,8 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         policy_rule_triggered=rule,
         # The policy names the routing of the intent even when no charge matched; without a
         # charge there is nothing to register (demo rehearsal).
-        recommended_action=case.recommended_action if charge else None,
+        recommended_action=case.recommended_action if charge and not hidden else None,
+        recommendation_hidden=hidden,
         charge_identified=charge,
         later_messages=[
             LaterMessage(
@@ -256,6 +260,23 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             if sampled and drawn is not None and drawn.payload and drawn.result
             else None
         ),
+    )
+
+
+def _autonomy_change(change: dict[str, Any] | None) -> AutonomyChange | None:
+    """The block that set the level of the cell, as the policy decision recorded it."""
+    if not change:
+        return None
+    return AutonomyChange(
+        level_before=change["level_before"],
+        level_after=change["level_after"],
+        n=change["n"],
+        reversals=change["reversals"],
+        r=change["r"],
+        w=change["w"],
+        threshold=change.get("threshold"),
+        threshold_value=change.get("threshold_value"),
+        source=Source(table="audit_log", id=str(change["audit_id"])),
     )
 
 

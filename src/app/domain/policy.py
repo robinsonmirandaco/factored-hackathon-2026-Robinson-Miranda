@@ -34,8 +34,8 @@ AutonomyLevel = Literal["A0", "A1", "A2"]
 Language = Literal["es", "pt"]
 Priority = Literal["normal", "high", "urgent"]
 
-# (intent, language) -> level of that cell. TRZ-30 reads it from the database; until then
-# `initial_autonomy` gives the configured initial level to every cell.
+# (intent, language) -> level of that cell. The service reads it from the database (TRZ-30);
+# `initial_autonomy` gives the configured initial level to every cell, as the labels assume.
 AutonomyLookup = Callable[[Intent, Language], AutonomyLevel]
 
 SECURITY_RULES = ("security_event",)
@@ -118,7 +118,7 @@ class AmountBands(_Strict):
 
 
 class Autonomy(_Strict):
-    """Autonomy settings of design 6.7; TRZ-30 applies the Wilson rule with them."""
+    """Autonomy settings of design 6.7; domain/autonomy.py applies the Wilson rule with them."""
 
     cell: tuple[Literal["intent"], Literal["language"]]
     initial_level: AutonomyLevel
@@ -263,7 +263,7 @@ def load_policy(path: str | Path) -> PolicyConfig:
 
 
 def initial_autonomy(policy: PolicyConfig) -> AutonomyLookup:
-    """The autonomy lookup used until TRZ-30: every cell at the configured initial level.
+    """Every cell at the configured initial level, the level the case labels assume.
 
     Args:
         policy: The policy.

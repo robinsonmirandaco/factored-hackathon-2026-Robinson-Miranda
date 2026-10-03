@@ -85,6 +85,8 @@ class FinalState:
         dossiers: For every case with a person, the required dossier fields present and with
             their source, as (present, required).
         unsupported_kinds: Kind of each unsupported claim sent, such as folio or deadline.
+        recommended: (transaction_id, recommended_action) of the case of every escalation row:
+            what an analyst reviews (TRZ-47). None in runs recorded before it was kept.
     """
 
     case_statuses: list[str] = field(default_factory=list)
@@ -97,6 +99,7 @@ class FinalState:
     replies_checked: int = 0
     dossiers: list[tuple[int, int]] = field(default_factory=list)
     unsupported_kinds: list[str] = field(default_factory=list)
+    recommended: list[tuple[str | None, str | None]] | None = None
 
 
 @dataclass
@@ -508,6 +511,13 @@ def final_state(admin_url: str, case: CaseRecord) -> FinalState:
             ]
             state.handoffs = [
                 (r[0], r[1]) for r in rows("SELECT kind, reason FROM case_queue ORDER BY id")
+            ]
+            state.recommended = [
+                (r[0], r[1])
+                for r in rows(
+                    "SELECT c.transaction_id, c.recommended_action FROM case_queue q "
+                    "JOIN cases c ON c.id = q.case_id WHERE q.kind = 'escalation' ORDER BY q.id"
+                )
             ]
             if case.truth.transaction_id:
                 found = rows(
