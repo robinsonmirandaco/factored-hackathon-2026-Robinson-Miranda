@@ -722,6 +722,7 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
     Returns:
         The recorded run.
     """
+    source = source_state()
     settings = Settings()
     stack = Stack(scenario, settings)
     mock = None
@@ -793,25 +794,7 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
     record = {
         "scenario": scenario,
         "started_at": started.isoformat(timespec="seconds"),
-        "commit": subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True
-        ).stdout.strip(),
-        # Uncommitted changes besides the outputs of make load would make the run not reproducible.
-        "dirty": bool(
-            subprocess.run(
-                [
-                    "git",
-                    "status",
-                    "--porcelain",
-                    "--",
-                    ".",
-                    ":!eval/load",
-                    ":!docs/reports/carga.md",
-                ],
-                capture_output=True,
-                text=True,
-            ).stdout.strip()
-        ),
+        **source,
         "model": settings.llm_model_primary if scenario == "real" else None,
         "seed": SEED,
         "fixture": {
@@ -838,6 +821,18 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
     with RUNS_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
     return record
+
+
+def source_state() -> dict[str, Any]:
+    """The commit the run starts from, and whether the tree has other changes.
+
+    Changes to the outputs of make load do not count; any other would make the run not
+    reproducible from the commit.
+    """
+    git = ["git", "status", "--porcelain", "--", ".", ":!eval/load", ":!docs/reports/carga.md"]
+    head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+    status = subprocess.run(git, capture_output=True, text=True, check=True)
+    return {"commit": head.stdout.strip(), "dirty": bool(status.stdout.strip())}
 
 
 def machine() -> dict[str, Any]:
@@ -956,9 +951,15 @@ def report(path: Path = RUNS_PATH, out: Path = REPORT_PATH) -> str:
     lines += [
         "## Note on the fixture",
         "",
-        "The fixture has fewer rows than the cohort, but the work of a turn depends on the rows "
-        "of one customer, not on the size of the tables: every query of a turn filters by the "
-        "customer of the session (row level security) and by the window of the charge.",
+        "The fixture has fewer customers than the cohort, which matters little here: the work of "
+        "a turn depends on the rows of one customer, not on the size of the tables. Each query "
+        "of a turn filters by the customer of the session (row level security), and the tables "
+        "it reads have an index on the customer (`ix_transactions_customer_date`, "
+        "`ix_products_customer`, `ix_cases_customer`, `ix_audit_log_customer`). Per customer "
+        "the two are close: 25 transactions each in the fixture; 144,475 transactions of 5,000 "
+        "customers in the cohort, about 29 each, or 32 among the 4,451 with any "
+        "(`docs/reports/cohorte.md`). What the fixture does not show is a cold cache of a larger "
+        "database.",
         "",
     ]
     text_out = "\n".join(lines)
