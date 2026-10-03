@@ -227,3 +227,32 @@ def test_the_marker_is_shown_in_the_language_asked_for(
         "[removido por retenção]",
         "[removido por retenção]",
     )
+
+
+def test_the_command_refuses_to_run_as_a_superuser(
+    client: TestClient, schema: SchemaUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner of the test database is a superuser, as POSTGRES_USER is in compose and CI.
+    _conversation(client)
+    later = (utcnow() + timedelta(days=91)).isoformat(timespec="minutes")
+    monkeypatch.setenv("DATABASE_URL", schema.admin)
+    with pytest.raises(SystemExit, match="connect as trazo_app"):
+        jobs.main(["purge", "--now", later])
+    assert all(word in _text_of_every_row(schema) for word in WORDS)
+    assert _query(schema, "SELECT count(*) FROM audit_log WHERE action = 'retention_purge'") == [
+        (0,)
+    ]
+
+
+def test_the_command_refuses_to_run_as_a_role_that_creates_roles(
+    client: TestClient,
+    schema: SchemaUrls,
+    role_that_creates_roles: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _conversation(client)
+    later = (utcnow() + timedelta(days=91)).isoformat(timespec="minutes")
+    monkeypatch.setenv("DATABASE_URL", role_that_creates_roles)
+    with pytest.raises(SystemExit, match="CREATEROLE"):
+        jobs.main(["all", "--now", later])
+    assert all(word in _text_of_every_row(schema) for word in WORDS)

@@ -6,8 +6,9 @@ python -m app.cli.jobs purge [--now YYYY-MM-DDTHH:MM]
 python -m app.cli.jobs all
 
 They connect as trazo_app, never as the owner, so row level security applies to them as to the
-API. A scheduler (the cron service of Railway) runs `all`; tests and the demo run one part with
-a made-up date. The simulated clock of the service is fixed at TRAZO_NOW, so without --as-of a
+API; like the API, they refuse to start as a superuser or a role with BYPASSRLS or CREATEROLE.
+A scheduler (the cron service of Railway) runs `all`; tests and the demo run one part with a
+made-up date. The simulated clock of the service is fixed at TRAZO_NOW, so without --as-of a
 request for information asked through the service never reaches its deadline.
 """
 
@@ -15,7 +16,7 @@ import argparse
 from datetime import date, datetime
 from typing import Any
 
-from app.adapters.db.session import Database
+from app.adapters.db.session import Database, PrivilegedRoleError
 from app.adapters.email import EmailProvider, ResendProvider
 from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger, new_trace_id
@@ -117,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
     email = config_from(settings)
     db = Database(settings.database_url)
     try:
+        try:
+            db.assert_unprivileged()
+        except PrivilegedRoleError as exc:
+            raise SystemExit(f"{exc}: no job was run") from exc
         if args.job in ("expire-info-requests", "all"):
             expire_info_requests(db, args.as_of or settings.trazo_now.date(), email)
         if args.job in ("send-email", "all"):

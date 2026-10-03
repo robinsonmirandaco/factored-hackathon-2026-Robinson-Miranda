@@ -119,9 +119,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     Returns:
         The application, which also serves the customer and analyst web from `web/` (TRZ-34
-        CA5). On startup it refuses to run if its database role could bypass row level
-        security, and starts the LLM warm-up call in the background; connections are closed
-        on shutdown.
+        CA5). On startup it refuses to run if its database role is a superuser or has
+        BYPASSRLS or CREATEROLE, and starts the LLM warm-up call in the background;
+        connections are closed on shutdown.
     """
     settings = settings or Settings()
     configure_logging(settings.log_level)
