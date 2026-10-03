@@ -802,6 +802,92 @@ def tool_failure_note(rows: list[Scored]) -> str:
     )
 
 
+def post_run_section(folder: Path) -> list[str]:
+    """Changes made after the single run on the test split, measured on development only.
+
+    Compares the first and the last complete TRAZO run over the whole development split. The
+    held-out split is not run again, so nothing above this section changes with them.
+
+    Args:
+        folder: DATA_DIR/eval, where the run files are.
+
+    Returns:
+        The lines of the section; none while there are fewer than two such runs.
+    """
+    runs = [
+        line
+        for line in read_log()
+        if line["split"] == "dev"
+        and line["system"] == "trazo"
+        and line["variant"] == "base"
+        and line["bases"] is None
+        and line.get("complete")
+    ]
+    if len(runs) < 2:
+        return []
+    cases = {c.case_id: c for c in load_split(folder, "dev", MANIFEST, CASES_CONFIG)}  # type: ignore[arg-type]
+    pair = [runs[0], runs[-1]]
+    rows = [scored(load_runs(folder / "harness" / line["run_file"]), cases) for line in pair]
+    ms = [measures(r) for r in rows]
+    names = [f"`{line['commit'][:9]}`" for line in pair]
+    md = [
+        "## After the single run: development only\n",
+        "Changes made after the single run on the test split (2026-10-02): a security event "
+        "raised from the text of the message (another customer, or an injected instruction), "
+        "and the card blocked only after its dispute reads back. They were measured on the "
+        "development split only, with one TRAZO run before and one after. The held-out split "
+        "was not run again: every figure above is from the commits listed under Run, and the "
+        "system as it is now has changes not measured on the held-out cases. Development cases "
+        "are the ones the system was built on, so these rates are not an estimate of how it "
+        "does on new cases.\n",
+        f"| Measure | before ({names[0]}) | after ({names[1]}) |",
+        "| --- | --- | --- |",
+    ]
+    for title, key in (
+        ("Safe automated resolution", "safe_resolution"),
+        ("Containment", "containment"),
+        ("Missed escalations", "missed_escalation"),
+        ("Unnecessary escalations", "unnecessary_escalation"),
+    ):
+        md.append(f"| {title} | {_fmt_rate(ms[0][key])} | {_fmt_rate(ms[1][key])} |")
+    md.append(
+        "| Cases with any unsafe outcome | "
+        + " | ".join(f"{m['unsafe_any']['k']}/{m['unsafe_any']['n']}" for m in ms)
+        + " |"
+    )
+    for kind in ("should_have_escalated", "injection_success", "other_customer_action"):
+        md.append(
+            f"| Unsafe: {kind} | "
+            + " | ".join(str(sum(kind in x.score.unsafe for x in r)) for r in rows)
+            + " |"
+        )
+    md.append(
+        "| Security stops | "
+        + " | ".join(str(sum(x.score.security_flagged for x in r)) for r in rows)
+        + " |"
+    )
+    md.append(
+        "| LLM cost (USD) | " + " | ".join(f"{m['efficiency']['cost_usd']:.4f}" for m in ms) + " |"
+    )
+    md += [
+        "",
+        "Correct final state and security stops by category, development split. A security "
+        "stop outside `injection` and `other_customer` is a false alarm.\n",
+        "| Category | before correct | before security stops | after correct | after security "
+        "stops |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for cat in sorted({x.case.category for x in rows[0]}):
+        cells = []
+        for r in rows:
+            sel = [x for x in r if x.case.category == cat]
+            cells += [f"{sum(x.score.correct for x in sel)}/{len(sel)}"]
+            cells += [str(sum(x.score.security_flagged for x in sel))]
+        md.append(f"| {cat} | " + " | ".join(cells) + " |")
+    md.append("")
+    return md
+
+
 def report(split: str = "test", out: Path = REPORT_PATH) -> None:
     """Writes the evaluation report from the recorded runs of a split.
 
@@ -1158,6 +1244,8 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
             f"{line['metrics']['efficiency']['cost_usd']:.4f} | {line.get('rerun_reason') or ''} |"
         )
     w("")
+    if split == "test":
+        md += post_run_section(folder)
     w("## Declarations\n")
     for d in DECLARATIONS:
         w(f"- {d}")
