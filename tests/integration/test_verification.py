@@ -154,6 +154,28 @@ def test_a_registration_that_writes_nothing_fails_and_escalates(
     assert _query(schema, "SELECT count(*) FROM disputes") == [(0,)]
 
 
+def test_a_registration_that_writes_nothing_leaves_the_card_unblocked(
+    client: TestClient, schema: SchemaUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def says_ok(*_a: object, **_k: object) -> T.ToolResult:
+        return T.ToolResult(True, {"folio": "DSP-2026-00042", "due_date": "2026-07-09"})
+
+    def must_not_run(*_a: object, **_k: object) -> T.ToolResult:
+        raise AssertionError("the card was blocked without a verified dispute")
+
+    monkeypatch.setattr(T, "register_dispute", says_ok)
+    monkeypatch.setattr(T, "block_card", must_not_run)
+    r = _confirmed(client, STOLEN)
+
+    _assert_failed(r, schema)
+    # Without the card and without a block, the customer is sent to block it.
+    assert "línea de bloqueo" in r["reply"]
+    assert _checks(schema, r["case_id"]) == [("register_dispute", False, ["missing"])]
+    assert _query(schema, "SELECT count(*) FROM disputes") == [(0,)]
+    assert _query(schema, "SELECT count(*) FROM card_blocks") == [(0,)]
+    assert _query(schema, "SELECT product_status FROM products") == [("Active",)]
+
+
 def test_a_block_that_writes_nothing_sends_a_customer_without_the_card_to_block_it(
     client: TestClient, schema: SchemaUrls, monkeypatch: pytest.MonkeyPatch
 ) -> None:

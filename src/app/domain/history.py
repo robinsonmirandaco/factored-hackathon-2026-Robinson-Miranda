@@ -587,9 +587,22 @@ def _security_event(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
         return (
             "O cliente escolheu uma cobrança que não estava entre as opções: evento de segurança."
         )
+    if p.get("reason") == "instruction_in_text":
+        if lang == "es":
+            return "El mensaje traía una instrucción dirigida al sistema: evento de seguridad."
+        return "A mensagem trazia uma instrução dirigida ao sistema: evento de segurança."
     if lang == "es":
         return "La petición intentó llegar a datos de otro cliente: evento de seguridad."
     return "A solicitação tentou acessar dados de outro cliente: evento de segurança."
+
+
+def _read_beside_instruction(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    if lang == "es":
+        return (
+            "Se leyó el resto del mensaje con las reglas locales, sin la instrucción, para la "
+            "analista."
+        )
+    return "O resto da mensagem foi lido pelas regras locais, sem a instrução, para a analista."
 
 
 def _show_charge(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -747,6 +760,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "fact_check"): _fact_check,
     ("agent", "verification_failed"): _verification_failed,
     ("agent", "security_event"): _security_event,
+    ("agent", "read_beside_instruction"): _read_beside_instruction,
     ("agent", "recognize"): _recognize,
     ("agent", "choose"): _choose,
     ("agent", "merge_clues"): _merge_clues,

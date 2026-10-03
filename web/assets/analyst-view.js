@@ -176,11 +176,16 @@ export function filterChips(counts, active) {
   }));
 }
 
+// The security rule is the same for every stop; an injection says what it was.
+export const INJECTION_REASON = "Instrucción inyectada en el mensaje";
+
 // One row of the queue, a value per column. A security event shows no customer data (TRZ-27
-// CA8): the API sends none, and the row says so instead of leaving blanks.
+// CA8): the API sends none, and the row says so instead of leaving blanks. CA8 protects another
+// customer's data; an injection stop holds the customer's own, so its row is shown in full.
 export function queueRow(item, nowMs, rho) {
-  const security = item.kind === "security_event";
+  const security = item.kind === "security_event" && !item.injection;
   const tags = [];
+  if (item.injection) tags.push({ text: "Inyección", tone: "bad" });
   if (item.kind === "audit_sample") tags.push({ text: "Auditoría", tone: "info" });
   if (item.status === "awaiting_customer") tags.push({ text: "Esperando al cliente", tone: "warn" });
   if (item.updated) tags.push({ text: "Actualizado", tone: "new" });
@@ -195,7 +200,7 @@ export function queueRow(item, nowMs, rho) {
     type: security ? kindLabel(item.kind) : intentLabel(item.intent),
     amount: security ? null : item.amount_usd == null ? "Sin monto en USD" : usd(item.amount_usd),
     language: item.language ? item.language.toUpperCase() : "",
-    reason: reasonLabel(item.reason, rho),
+    reason: item.injection ? INJECTION_REASON : reasonLabel(item.reason, rho),
     priority: { text: PRIORITY[item.priority] || item.priority, tone: item.priority === "normal" ? "" : "bad" },
     sla: slaText(item.sla_due_at, nowMs),
   };
@@ -218,7 +223,8 @@ export function decisionPanel(item) {
       canAsk: false,
     };
   }
-  const security = item.kind === "security_event";
+  // An injection stop is decided like any other case (TRZ-46 follow-up).
+  const security = item.kind === "security_event" && !item.injection;
   return {
     open: true,
     audit: false,
@@ -234,6 +240,19 @@ export function decisionPanel(item) {
       : "No hay acción que ejecutar: pide información o rechaza.",
     canAsk: !security,
   };
+}
+
+// The message split at the marked spans, so the injected instruction can be highlighted.
+export function markedParts(text, spans) {
+  const parts = [];
+  let at = 0;
+  for (const [start, end] of spans || []) {
+    if (start > at) parts.push({ text: text.slice(at, start), marked: false });
+    parts.push({ text: text.slice(start, end), marked: true });
+    at = end;
+  }
+  if (at < text.length || !parts.length) parts.push({ text: text.slice(at), marked: false });
+  return parts;
 }
 
 // The same checks the API makes, so the form says what is missing before it sends.

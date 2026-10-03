@@ -5,7 +5,9 @@ identification, policy decision, customer profile, charge detail, read-back), it
 actions, and the records they name. Nothing is written by the LLM except the Spanish translation
 of a Portuguese message, which is made once, kept in the audit log and labeled automatic.
 
-A case stopped for security shows no customer data: no message, fact or evidence (TRZ-27 CA8).
+A case stopped for security shows no customer data: no message, fact or evidence (TRZ-27 CA8),
+which protects another customer's data. A stop for an instruction injected in the message is the
+customer's own case: its dossier is the usual one, with the instruction marked (TRZ-46 follow-up).
 """
 
 from collections.abc import Iterable
@@ -49,7 +51,7 @@ from app.schemas.dossier import (
     Source,
     Translation,
 )
-from app.services.cases import DISPUTE_INTENTS, HANDOFF_STATUSES
+from app.services.cases import DISPUTE_INTENTS, HANDOFF_STATUSES, injection_stop
 from app.services.clues import CLUE_FIELDS, last_clues
 
 # A dossier opens while the case is with a person, waits for the customer's answer, or was
@@ -61,6 +63,10 @@ DOSSIER_STATUSES = (*HANDOFF_STATUSES, "awaiting_customer", "approved", "rejecte
 _QUESTIONS: dict[Lang, dict[str, str]] = {
     "es": {
         "security_event": "La petición intentó llegar a datos de otro cliente.",
+        "injected_instruction": (
+            "El mensaje trae una instrucción dirigida al sistema (marcada); no se obedeció. "
+            "El resto se leyó con las reglas locales, sin el LLM."
+        ),
         "charge_not_identified": "No se pudo identificar el cargo del que habla el cliente.",
         "clarifications_exhausted": "Tras dos aclaraciones, el cargo sigue sin distinguirse.",
         "amount_not_convertible": "El monto del cargo no se pudo convertir a USD.",
@@ -71,6 +77,10 @@ _QUESTIONS: dict[Lang, dict[str, str]] = {
     },
     "pt": {
         "security_event": "A solicitação tentou acessar dados de outro cliente.",
+        "injected_instruction": (
+            "A mensagem traz uma instrução dirigida ao sistema (marcada); não foi obedecida. "
+            "O resto foi lido pelas regras locais, sem o LLM."
+        ),
         "charge_not_identified": "Não foi possível identificar a cobrança citada pelo cliente.",
         "clarifications_exhausted": "Após dois esclarecimentos, a cobrança ainda não se distingue.",
         "amount_not_convertible": "O valor da cobrança não pôde ser convertido para USD.",
@@ -152,7 +162,9 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         else None
     )
     # Told by its rule, not its status: a security event an analyst closed is still one (CA8).
-    if case.status == "security_blocked" or (rule and rule.rule.startswith("security.")):
+    security = case.status == "security_blocked" or bool(rule and rule.rule.startswith("security."))
+    injection = security and injection_stop(session, case)
+    if security and not injection:
         return Dossier(
             case_id=case.id,
             trace_id=case.trace_id,
@@ -176,6 +188,8 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         )
     read = [r for r in rows if (r.actor, r.action) == ("agent", "comprehend")]
     original = (read[0].payload or {}).get("redacted_text") if read else None
+    # After an injection stop, the amount was compared by the reading beside the instruction.
+    compared = _last(rows, "agent", "read_beside_instruction") if injection else None
     clues = last_clues(session, case)
     extraction = [
         Clue(
@@ -192,22 +206,31 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
     return Dossier(
         case_id=case.id,
         trace_id=case.trace_id,
-        case_kind="audit_sample" if sampled else "escalation",
+        case_kind="security_event" if injection else "audit_sample" if sampled else "escalation",
+        injection=injection,
+        injected_spans=[
+            (int(a), int(b)) for a, b in (read[0].payload or {}).get("injected_spans", [])
+        ]
+        if injection and read
+        else [],
         simulated=case.simulated,
         language=case.language,
         original_message=original,
         machine_translation=(
             _translation(session, llm, case, rows, read[0].id, original)
-            if case.language == "pt" and read and original
+            # The message with an injected instruction never goes to the LLM, not even to be
+            # translated.
+            if case.language == "pt" and read and original and not injection
             else None
         ),
         request_summary=_summary(case, extraction, lang),
-        verified_facts=_facts(session, case, decide),
+        verified_facts=_facts(session, case, compared or decide),
         extraction=extraction,
         identification=_identification(_last(rows, "tool", "identify_transaction")),
         actions_taken=_actions(session, case, rows),
         evidence=_evidence(session, case, rows),
-        open_questions=_open_questions(case, rule, read, lang),
+        open_questions=([_question("injected_instruction", lang)] if injection else [])
+        + _open_questions(case, rule, read, lang),
         policy_rule_triggered=rule,
         # The policy names the routing of the intent even when no charge matched; without a
         # charge there is nothing to register (demo rehearsal).
