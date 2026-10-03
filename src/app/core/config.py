@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     email_max_attempts: int = 5
     email_retry_minutes: list[int] = [1, 2, 4, 8]
 
+    # Days the redacted conversation text is kept before the purge replaces it (TRZ-41).
+    conversation_retention_days: int = 90
+
     policy_path: str = "config/policy.yaml"
     # Demo policy passages and bank holidays: the response deadline of a dispute (TRZ-21).
     policy_passages_path: Path = Path("config/policy_passages.yaml")

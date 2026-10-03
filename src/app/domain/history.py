@@ -521,6 +521,23 @@ def _email_attempt(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return f"[simulado] E-mail do aviso, tentativa {n}: {outcome}."
 
 
+def _retention_purge(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    days, rows, asked = (
+        p.get("retention_days", "?"),
+        r.get("audit_rows", 0),
+        r.get("info_requests", 0),
+    )
+    if lang == "es":
+        return (
+            f"Purga de retención ({days} días): se eliminó el texto de la conversación de {rows} "
+            f"filas del registro y {asked} solicitudes de información; las filas se conservan."
+        )
+    return (
+        f"Expurgo de retenção ({days} dias): o texto da conversa foi eliminado de {rows} linhas "
+        f"do registro e {asked} pedidos de informação; as linhas são mantidas."
+    )
+
+
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     # The one line that tells free text: the answer, stored redacted, next to its question.
     answer = p.get("redacted_text")
@@ -871,6 +888,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("customer", "info_reply"): _info_reply,
     ("system", "info_expired"): _info_expired,
     ("system", "email_attempt"): _email_attempt,
+    ("system", "retention_purge"): _retention_purge,
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,
     ("tool", "list_recent_transactions"): _recent,

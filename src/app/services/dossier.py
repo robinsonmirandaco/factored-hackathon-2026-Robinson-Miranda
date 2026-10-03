@@ -34,6 +34,7 @@ from app.adapters.llm import LLMClient
 from app.core.errors import AppError
 from app.domain.history import Lang, intent_label
 from app.domain.money import money_text
+from app.domain.retention import PURGED_TEXT
 from app.domain.window_text import window_text
 from app.schemas.comprehension import DateClue
 from app.schemas.dossier import (
@@ -230,7 +231,11 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
             _translation(session, llm, case, rows, read[0].id, original)
             # The message with an injected instruction never goes to the LLM, not even to be
             # translated.
-            if case.language == "pt" and read and original and not injection
+            if case.language == "pt"
+            and read
+            and original
+            and original != PURGED_TEXT
+            and not injection
             else None
         ),
         request_summary=_summary(case, extraction, lang),

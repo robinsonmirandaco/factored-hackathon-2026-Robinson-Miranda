@@ -2,6 +2,7 @@
 
 python -m app.cli.jobs expire-info-requests [--as-of YYYY-MM-DD]
 python -m app.cli.jobs send-email
+python -m app.cli.jobs purge [--now YYYY-MM-DDTHH:MM]
 python -m app.cli.jobs all
 
 They connect as trazo_app, never as the owner, so row level security applies to them as to the
@@ -11,7 +12,8 @@ request for information asked through the service never reaches its deadline.
 """
 
 import argparse
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from app.adapters.db.session import Database
 from app.adapters.email import EmailProvider, ResendProvider
@@ -21,6 +23,7 @@ from app.core.time import utcnow
 from app.domain.email import EmailConfig
 from app.services.email_outbox import config_from, send_due
 from app.services.info_requests import expire_overdue
+from app.services.retention import purge
 
 log = get_logger("jobs")
 
@@ -61,6 +64,24 @@ def send_email(db: Database, provider: EmailProvider, config: EmailConfig) -> di
     return counts
 
 
+def purge_conversations(db: Database, now: datetime, days: int) -> dict[str, Any]:
+    """Replaces the conversation text older than the retention, keeping every row (TRZ-41).
+
+    Args:
+        db: Database of the service.
+        now: Time of the run, naive UTC.
+        days: Days the text is kept.
+
+    Returns:
+        Rows cleaned and the times they were written.
+    """
+    new_trace_id()
+    with db.session(role="analyst") as session:
+        result = purge(session, now, days)
+    log.info("conversations_purged", **result)
+    return result
+
+
 def _provider(settings: Settings) -> EmailProvider:
     if not settings.resend_api_key:
         raise SystemExit("EMAIL_ENABLED is on but RESEND_API_KEY is not set: nothing was sent")
@@ -79,11 +100,16 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code: 0 on success.
     """
     parser = argparse.ArgumentParser(prog="python -m app.cli.jobs")
-    parser.add_argument("job", choices=["expire-info-requests", "send-email", "all"])
+    parser.add_argument("job", choices=["expire-info-requests", "send-email", "purge", "all"])
     parser.add_argument(
         "--as-of",
         type=date.fromisoformat,
         help="day of the simulated clock for the deadlines; TRAZO_NOW by default",
+    )
+    parser.add_argument(
+        "--now",
+        type=datetime.fromisoformat,
+        help="real time of the purge, naive UTC; the current time by default",
     )
     args = parser.parse_args(argv)
     settings = Settings()
@@ -98,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
                 log.info("email_disabled")
             else:
                 send_email(db, _provider(settings), email)
+        if args.job in ("purge", "all"):
+            purge_conversations(db, args.now or utcnow(), settings.conversation_retention_days)
     finally:
         db.dispose()
     return 0
