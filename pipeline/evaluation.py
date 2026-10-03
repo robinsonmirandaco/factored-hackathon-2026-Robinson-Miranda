@@ -1288,11 +1288,20 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
             )
         w("")
     degraded = ("trazo", autonomy_watch.DEGRADED_VARIANT)
+    watched = {
+        "base": {r: v for (sy, va, r), v in data.items() if (sy, va) == ("trazo", "base")},
+        "degraded": {r: v for (sy, va, r), v in data.items() if (sy, va) == degraded},
+    }
+    pt = autonomy_watch.DEGRADED_CASES
     md += autonomy_watch.section(
         load_policy(settings.policy_path).autonomy,
-        {r: v for (sy, va, r), v in data.items() if (sy, va) == degraded},
-        {r: v for (sy, va, r), v in data.items() if (sy, va) == ("trazo", "base")},
+        watched["degraded"],
+        watched["base"],
         {r: x for (sy, va, r), x in lines.items() if (sy, va) == degraded},
+        {
+            name: {r: measures([x for x in v if x.case.variant == pt]) for r, v in runs.items()}
+            for name, runs in watched.items()
+        },
     )
     # Evolution (CA10)
     w("## Runs recorded\n")

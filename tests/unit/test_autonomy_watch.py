@@ -84,6 +84,21 @@ def _scored(**kw: Any) -> SimpleNamespace:
     return SimpleNamespace(case=case, score=score, run=SimpleNamespace(final=final), **kw)
 
 
+def test_a_missing_block_or_an_unsupported_claim_is_not_a_reversal() -> None:
+    o = aw.outcome(_scored(acted=True, unsafe=("unsupported_claim",), correct=False))
+    assert (o.kind, o.wrong, o.unsafe) == ("auto", False, False)
+
+
+def test_an_approval_of_the_true_charge_agrees_with_the_label_of_an_approval() -> None:
+    x = _scored(
+        handed_off=True,
+        unsafe=(),
+        expected="analyst_approval",
+        recommended=[("T1", "register_and_offer_block")],
+    )
+    assert (aw.outcome(x).kind, aw.outcome(x).wrong) == ("review", False)
+
+
 def test_a_case_the_system_resolved_alone_is_an_audit_candidate() -> None:
     o = aw.outcome(_scored(acted=True, unsafe=("wrong_charge",), correct=False))
     assert (o.cell, o.kind, o.wrong, o.unsafe) == (
@@ -108,10 +123,12 @@ def test_a_handover_is_reversed_when_its_recommended_charge_is_not_the_label() -
 def test_runs_without_the_recommended_charge_fall_back_to_the_rule() -> None:
     approval = [("escalation", "approval.amount_above_auto_register")]
     empty = [("escalation", "escalate.conformal_set_empty")]
-    on_label = _scored(handed_off=True, unsafe=(), handoffs=approval)
-    off_label = _scored(handed_off=True, unsafe=(), handoffs=approval, expected="escalate")
+    # The label of a 500 to 1000 USD case is an approval: approving the true charge agrees.
+    on_label = _scored(handed_off=True, unsafe=(), handoffs=approval, expected="analyst_approval")
+    no_charge = _scored(handed_off=True, unsafe=(), handoffs=approval)
+    no_charge.case.truth.transaction_id = None
     assert (aw.outcome(on_label).kind, aw.outcome(on_label).wrong) == ("review", False)
-    assert aw.outcome(off_label).wrong is True
+    assert aw.outcome(no_charge).wrong is True
     assert aw.outcome(_scored(handed_off=True, unsafe=(), handoffs=empty)).kind == "other"
 
 
@@ -128,7 +145,7 @@ def test_the_degraded_prompt_drops_only_the_portuguese_example(tmp_path: Path) -
 
 
 def test_the_section_says_simulado_and_the_criterion_of_ca4() -> None:
-    md = "\n".join(aw.section(PARAMS, {}, {}, {}))
+    md = "\n".join(aw.section(PARAMS, {}, {}, {}, {}))
     assert "## Autonomy watch [simulado]" in md
     assert "fixed before this simulation ran" in md
     assert "The degraded run is not recorded yet." in md
