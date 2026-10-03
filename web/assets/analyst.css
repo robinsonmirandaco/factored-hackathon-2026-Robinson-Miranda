@@ -63,6 +63,20 @@ mark.injected { background: var(--bad-soft); color: var(--bad); border-radius: 3
 .reversed { display: flex; flex-direction: column; gap: 12px; padding: 4px 20px 16px; }
 .reversed-row { gap: 12px; padding: 4px 0; }
 
+/* The console bar holds two tabs and more controls than the customer's. From laptop width up it
+   stays on one line: the gaps are tighter, the brand keeps its size, and the subtitle beside
+   the logo gives way when the line is short. Narrower screens keep the bar of base.css. */
+@media (min-width: 1180px) {
+  .appbar-inner { flex-wrap: nowrap; gap: 16px; }
+  .appbar .brand { flex: none; }
+  .appbar .brand-name span { white-space: nowrap; }
+  .appbar .navpills { flex-wrap: nowrap; }
+  .appbar-end { flex: none; flex-wrap: nowrap; gap: 8px; }
+}
+@media (min-width: 1180px) and (max-width: 1400px) {
+  .appbar .brand-name span { display: none; }
+}
+
 /* Global automation switch in the header (TRZ-35) */
 /* A pill sits at the top of a card; in the header it is centered like the other controls. */
 .pill.switch {
