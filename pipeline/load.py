@@ -758,7 +758,7 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
             log.info(
                 "load_step",
                 scenario=scenario,
-                level=level,
+                concurrency=level,
                 holds=last["holds"],
                 chat_p95=last["latency_ms"]["chat"]["p95"],
                 ratio=last["p95_ratio"],
