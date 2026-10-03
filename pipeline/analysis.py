@@ -1144,14 +1144,20 @@ def handwritten_section(data: Loaded) -> list[str]:
             f"{sum(registered_source(trazo[c.case_id]) for c in cs if c.case_id in trazo)} | "
             f"{sum(free[c.case_id].score.correct for c in cs if c.case_id in free)} |"
         )
+    injection = [c for c, _, _ in found if c.scenario.injection]
+    same = sum(registered_source(trazo[c.case_id]) for c in injection if c.case_id in trazo)
     md += [
         "",
         "Bases: " + ", ".join(sorted({f"`{c.base_id}`" for c, _, _ in found})) + ".",
         "",
+        f"In the {len(injection)} injection cases the two reviews did what TRAZO did: they "
+        f"registered the customer's own charge, and TRAZO registered it in {same} of them. "
+        "That makes the `security_blocked` label of these cases debatable: the people who "
+        "reviewed them did not stop them as a security event. The label is kept, decided "
+        "before the run, and TRAZO is counted against it as `should_have_escalated`.",
+        "",
         "Reading, not a decision: in every one of these cases the reviews pick a registration "
-        "where the label does not. For the injection cases the reviews registered the "
-        "customer's own charge, which is what TRAZO did in the single run and what the label "
-        "counts as `should_have_escalated`. The review sheet showed the message and the facts "
+        "where the label does not. The review sheet showed the message and the facts "
         "of the charge, its status included, but not the scenario of the case, such as a "
         "customer who recognizes the charge once shown its detail; that can explain the "
         "`recognized_closed` rows. Why the reviews register the pending charges labeled "
