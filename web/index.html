@@ -94,6 +94,8 @@
             <span class="sim">demo</span>
           </div>
           <p class="small muted" data-t="auditNote"></p>
+          <button type="button" class="btn small" id="audit-switch" role="switch" aria-checked="false"></button>
+          <div class="audit-trace" id="audit-trace" aria-live="polite" hidden></div>
           <div class="detail">
             <div><span class="k" data-t="lastTrace"></span><span class="v mono small" id="last-trace">-</span></div>
           </div>
@@ -103,6 +105,7 @@
     </section>
 
     <section id="view-clarifications" hidden></section>
+    <section id="view-trace" hidden></section>
   </main>
 
   <div class="backdrop" id="expired" hidden>

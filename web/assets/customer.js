@@ -1,12 +1,14 @@
-// Customer web (TRZ-34): login, home, movements, the clarification chat and Mis aclaraciones.
+// Customer web (TRZ-34): login, home, movements, the clarification chat, Mis aclaraciones and,
+// in demo mode with the audit view switched on, the trace of a case.
 // Every figure on screen is read from the API; the page holds no customer data of its own.
 // Text reaches the page only through textContent, never as HTML.
 
 import { createClient } from "./api.js";
 import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
+  AUDIT_KEY, auditOn, auditSwitchView,
   buttonMessage, canSend, clarificationLines, closedNote, codeStep, composerState, createConversation,
-  deadlineKind,
+  deadlineKind, traceCase, traceHref, traceLines,
   errorText,
   infoRequestViews, movementDetail, openQuestions, reviewLine, statusKey, statusTone, turnModel,
   unreadBadge,
@@ -24,6 +26,7 @@ const state = {
   nextBefore: null,
   lastTurn: null,
   notes: null,
+  audit: auditOn(api.store.read(AUDIT_KEY)),
 };
 let t = translator(state.lang);
 
@@ -69,6 +72,7 @@ function setLang(lang) {
   t = translator(lang);
   applyTexts();
   redrawLastTurn();
+  drawAudit();
   route();
 }
 
@@ -233,6 +237,64 @@ async function loadMe() {
   $("audit").hidden = !state.me.demo;
   applyTexts();
   showChrome(true);
+  drawAudit();
+}
+
+// ---- the audit view of the demo (TRZ-34 CA4) ----------------------------------------------
+
+// The trace is shown only with the switch on, in demo mode, labeled "demo" by its panel.
+const auditVisible = () => state.audit && Boolean(state.me?.demo);
+
+function timeline(steps) {
+  const lines = traceLines(steps);
+  if (!lines.length) return el("p", { class: "small muted", text: t("traceEmpty") });
+  return el("ol", { class: "timeline" }, lines.map((l) => el("li", {},
+    el("span", { class: "rail" }),
+    el("div", { class: "body" },
+      el("span", { class: "title", text: l.text }),
+      el("span", { class: "when", text: l.meta })))));
+}
+
+const traceOf = (caseId) => api.call(
+  `/me/clarifications/${encodeURIComponent(caseId)}/trace?lang=${encodeURIComponent(state.lang)}`);
+
+function drawAudit() {
+  const view = auditSwitchView(t, state.audit);
+  $("audit-switch").textContent = view.text;
+  $("audit-switch").setAttribute("aria-checked", String(view.checked));
+  $("audit-trace").hidden = !auditVisible();
+  loadPanelTrace();
+}
+
+// The trace of the case of the conversation, read again after every turn.
+async function loadPanelTrace() {
+  const target = $("audit-trace");
+  if (!auditVisible()) return target.replaceChildren();
+  const caseId = state.caseId;
+  if (!caseId) return target.replaceChildren(el("p", { class: "small muted", text: t("traceNoCase") }));
+  try {
+    const steps = await traceOf(caseId);
+    if (state.caseId === caseId && auditVisible()) target.replaceChildren(timeline(steps));
+  } catch (e) {
+    target.replaceChildren(el("p", { class: "small error", text: errorText(t, e) }));
+  }
+}
+
+async function renderTrace(caseId) {
+  const target = $("view-trace");
+  try {
+    const steps = await traceOf(caseId);
+    target.replaceChildren(
+      el("div", { class: "page-head" },
+        el("a", { class: "back", href: "#/aclaraciones", text: t("backClarifications") }),
+        el("div", { class: "row" }, el("h1", { text: t("traceTitle") }), el("span", { class: "sim", text: "demo" }))),
+      el("section", { class: "card" },
+        el("span", { class: "tiny muted mono", text: `${t("caseLabel")} ${caseId}` }),
+        el("p", { class: "small muted", text: t("traceNote") }),
+        timeline(steps)));
+  } catch (e) {
+    failure(target, e);
+  }
 }
 
 // ---- views --------------------------------------------------------------------------------
@@ -256,6 +318,16 @@ async function route() {
       return;
     }
   }
+  const traced = traceCase(location.hash);
+  if (traced) {
+    if (!auditVisible()) {
+      location.hash = "#/aclaraciones";
+      return;
+    }
+    show("trace");
+    refreshNotifications();
+    return renderTrace(traced);
+  }
   const view = VIEWS[location.hash] || "home";
   show(view);
   refreshNotifications();
@@ -265,12 +337,13 @@ async function route() {
 }
 
 function show(view) {
-  for (const name of ["login", "home", "movements", "chat", "clarifications"]) {
+  for (const name of ["login", "home", "movements", "chat", "clarifications", "trace"]) {
     $(`view-${name}`).hidden = name !== view;
   }
   for (const a of document.querySelectorAll("#tabs a")) {
-    if (a.dataset.view === view) a.setAttribute("aria-current", "page");
-    else a.removeAttribute("aria-current");
+    if (a.dataset.view === view || (view === "trace" && a.dataset.view === "clarifications")) {
+      a.setAttribute("aria-current", "page");
+    } else a.removeAttribute("aria-current");
   }
   if (view === "login") loginForm($("login-form"), async () => {
     await loadMe();
@@ -505,6 +578,9 @@ async function renderClarifications() {
             statusPill(c)),
           due,
           infoBlock(c),
+          auditVisible() && c.case_id
+            ? el("div", {}, el("a", { class: "btn small", href: traceHref(c.case_id), text: t("seeTrace") }))
+            : null,
           closedNote(t, c)
             ? el("div", { class: "info-request" },
               el("p", { class: "small", text: closedNote(t, c) }),
@@ -650,6 +726,7 @@ function drawTurn(r) {
 function renderTurn(r) {
   $("last-trace").textContent = r.trace_id;
   state.lastTurn = { r, node: bubble("bot", ...drawTurn(r)) };
+  loadPanelTrace();
 }
 
 function redrawLastTurn() {
@@ -700,6 +777,7 @@ function newConversation() {
   setCase(null);
   greet();
   drawComposer();
+  loadPanelTrace();
 }
 
 function openByButton(transactionId, text) {
@@ -726,6 +804,12 @@ $("composer").addEventListener("submit", (event) => {
 });
 
 $("new-case").addEventListener("click", newConversation);
+
+$("audit-switch").addEventListener("click", () => {
+  state.audit = !state.audit;
+  api.store.write(AUDIT_KEY, state.audit ? "on" : null);
+  drawAudit();
+});
 
 $("cross-access").addEventListener("click", () => {
   // Names someone else in the body: the API ignores it for data and stops the case for
