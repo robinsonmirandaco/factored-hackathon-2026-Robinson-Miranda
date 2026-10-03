@@ -89,15 +89,22 @@ def get_trace(session: Session, case_id: str) -> list[TraceEventOut]:
         case_id: Case whose trace to read.
 
     Returns:
-        The audit rows; empty if the case has none.
+        The audit rows of the case.
+
+    Raises:
+        AppError: 404 case_not_found, or 503 db_unavailable if the database fails.
     """
-    rows = (
-        session.execute(
-            select(AuditRecord).where(AuditRecord.case_id == case_id).order_by(AuditRecord.id)
+    try:
+        _require_case(session, case_id)
+        rows = (
+            session.execute(
+                select(AuditRecord).where(AuditRecord.case_id == case_id).order_by(AuditRecord.id)
+            )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
+    except SQLAlchemyError as exc:
+        raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
     return [
         TraceEventOut(
             id=r.id,

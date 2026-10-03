@@ -220,3 +220,29 @@ def test_an_answer_line_tells_the_redacted_answer() -> None:
 def test_an_injection_stop_is_not_told_as_another_customers_data() -> None:
     line = describe("agent", "security_event", {"reason": "instruction_in_text"}, {}, "1", "es")
     assert "instrucción" in line and "otro cliente" not in line
+
+
+@pytest.mark.parametrize(
+    ("payload", "result", "es", "pt"),
+    [
+        (
+            {"decision": "reject", "reason": "wrong_charge"},
+            {},
+            "La analista decidió rechazar: cargo equivocado.",
+            "A analista decidiu rejeitar: cobrança errada.",
+        ),
+        (
+            {"decision": "reject", "reason": "wrong_charge", "kind": "audit_sample"},
+            {},
+            "La analista revirtió la muestra de auditoría: cargo equivocado.",
+            "A analista reverteu a amostra de auditoria: cobrança errada.",
+        ),
+    ],
+)
+def test_a_decision_told_without_the_user_name_says_the_analyst(
+    payload: dict, result: dict, es: str, pt: str
+) -> None:
+    # The customer's trace leaves the analyst's user name out (TRZ-34 CA4, decision D1).
+    assert describe("human", "decision", payload, result, None, "es").startswith(es[:-1])
+    assert describe("human", "decision", payload, result, None, "pt").startswith(pt[:-1])
+    assert "?" not in describe("human", "decision", payload, result, None, "es")

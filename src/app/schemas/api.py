@@ -336,6 +336,28 @@ class HistoryEntryOut(BaseModel):
     text: str
 
 
+class TraceStepOut(BaseModel):
+    """One step of the customer's own case in the audit view of the demo (TRZ-34 CA4).
+
+    The text is the line of the analyst's history, without the analyst's user name. No date is
+    sent: the audit log keeps the real clock, and the customer screens show only dates of the
+    simulated clock (design 10.2, rule 7).
+
+    Attributes:
+        id: Audit row id.
+        trace_id: Request that wrote the step.
+        actor: Who acted.
+        action: What was done.
+        text: The step in the requested language.
+    """
+
+    id: int
+    trace_id: str
+    actor: str
+    action: str
+    text: str
+
+
 QueueFilter = Literal["high_priority", "over_1000_usd", "no_match", "verification_failed", "audit"]
 
 

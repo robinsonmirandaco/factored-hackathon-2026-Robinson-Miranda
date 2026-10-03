@@ -50,6 +50,7 @@ from app.schemas.api import (
     QueueOut,
     TokenOut,
     TraceEventOut,
+    TraceStepOut,
 )
 from app.schemas.dossier import Dossier
 from app.services import (
@@ -287,6 +288,22 @@ def get_clarifications(
 
 
 @router.get(
+    "/me/clarifications/{case_id}/trace",
+    response_model=list[TraceStepOut],
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def get_case_trace(
+    case_id: str,
+    _demo: DemoDep,
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    lang: Annotated[Lang, Query()] = "es",
+) -> list[TraceStepOut]:
+    """Returns the steps of one of the customer's cases; the route exists only in demo mode."""
+    return me.case_trace(session, customer.subject, case_id, lang)
+
+
+@router.get(
     "/me/notifications",
     response_model=NotificationsOut,
     responses={**_AUTH, 503: _ERRORS[503]},
@@ -314,7 +331,11 @@ def get_case(case_id: str, session: AnalystSessionDep) -> CaseOut:
     return cases.get_case(session, case_id)
 
 
-@router.get("/cases/{case_id}/trace", response_model=list[TraceEventOut], responses=_AUTH)
+@router.get(
+    "/cases/{case_id}/trace",
+    response_model=list[TraceEventOut],
+    responses={**_AUTH, 404: _ERRORS[404], 503: _ERRORS[503]},
+)
 def get_trace(case_id: str, session: AnalystSessionDep) -> list[TraceEventOut]:
     """Returns every audit row of a case in write order."""
     return cases.get_trace(session, case_id)
