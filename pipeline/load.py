@@ -61,6 +61,8 @@ DB_PORT = 5442
 API_PORT = 8010
 MOCK_PORT = 8790
 SEED = 42
+# Synthetic customers of the load stack, as many as the cohort; docker-compose.load.yml seeds them.
+CUSTOMERS = 5000
 
 LEVELS = (1, 2, 4, 8, 16, 32)
 REAL_LEVELS = (1, 2, 4, 8)
@@ -221,12 +223,12 @@ class Charge:
 
 
 def charges(settings: Settings) -> list[Charge]:
-    """The approved purchases of the active synthetic customers, one customer after another.
+    """One approved purchase of each active synthetic customer of the load stack.
 
-    Without the deliberately invalid rows of the fixture, which the seed sends to quarantine.
-
-    The order takes one charge of each customer before a second of any, so the cases in progress
-    at once belong to different customers while the concurrency is below the customer count.
+    One case per customer: a customer with a case still open has any new dispute escalated
+    (open_dispute_last_90d of the policy), so reusing customers would turn every later case
+    into an escalation and change the work of a turn as the test goes on. Without the
+    deliberately invalid rows of the fixture, which the seed sends to quarantine.
 
     Args:
         settings: Settings with the simulated now the fixture was seeded with.
@@ -234,26 +236,23 @@ def charges(settings: Settings) -> list[Charge]:
     Returns:
         The charges in the order the virtual customers take them.
     """
-    customers, _products, transactions = generate(settings.trazo_now, seed=SEED, dirty=False)
+    customers, _products, transactions = generate(
+        settings.trazo_now, seed=SEED, n_customers=CUSTOMERS, dirty=False
+    )
     active = {c["customer_id"]: c for c in customers if c["customer_status"] == "Active"}
-    by_customer: dict[str, list[dict[str, Any]]] = {cid: [] for cid in active}
+    first: dict[str, dict[str, Any]] = {}
     for t in transactions:
-        if t["customer_id"] in active and t["transaction_status"] == "Approved":
-            by_customer[t["customer_id"]].append(t)
-    rounds = max(len(ts) for ts in by_customer.values())
-    out = []
-    for r in range(rounds):
-        for cid, ts in by_customer.items():
-            if r < len(ts):
-                t, c = ts[r], active[cid]
-                out.append(
-                    Charge(
-                        c["document_type"],
-                        c["document_number"],
-                        message_for(t["amount"], t["currency"], t["merchant_name"]),
-                    )
-                )
-    return out
+        cid = t["customer_id"]
+        if cid in active and cid not in first and t["transaction_status"] == "Approved":
+            first[cid] = t
+    return [
+        Charge(
+            active[cid]["document_type"],
+            active[cid]["document_number"],
+            message_for(t["amount"], t["currency"], t["merchant_name"]),
+        )
+        for cid, t in first.items()
+    ]
 
 
 @dataclass
@@ -914,8 +913,11 @@ def report(path: Path = RUNS_PATH, out: Path = REPORT_PATH) -> str:
         "- **Login limits lifted in that stack only.** Every virtual customer logs in from the "
         "same address, so the per-address limit (30 per 15 minutes in the public URL) and the "
         "per-document limit are raised to 1,000,000 there. The public URL keeps both.",
-        "- **Data.** The synthetic fixture (seed 42): 200 customers, 25 transactions each. "
-        "Not the cohort of 5,000 customers of design 11.7; see the note on the fixture below.",
+        f"- **Data.** The synthetic fixture (seed 42) with {CUSTOMERS:,} customers, as many as "
+        "the cohort of design 11.7, and 25 transactions each; not the cohort itself, see the "
+        "note on the fixture below. Each case is a customer of its own: a customer with a case "
+        "open has any new dispute escalated (`open_dispute_last_90d`), so reusing customers "
+        "would turn every later case into an escalation and change the work of a turn.",
         f"- **A case.** Log in with the demo code, report a charge of one's own, press \"still not "
         f'recognized", confirm each pending action (register, block the card) or pick the first '
         f"option, then log out. Think time between turns: {THINK_SECONDS[0]} to "
@@ -951,7 +953,7 @@ def report(path: Path = RUNS_PATH, out: Path = REPORT_PATH) -> str:
     lines += [
         "## Note on the fixture",
         "",
-        "The fixture has fewer customers than the cohort, which matters little here: the work of "
+        "The fixture is synthetic, not the cohort, which matters little here: the work of "
         "a turn depends on the rows of one customer, not on the size of the tables. Each query "
         "of a turn filters by the customer of the session (row level security), and the tables "
         "it reads have an index on the customer (`ix_transactions_customer_date`, "

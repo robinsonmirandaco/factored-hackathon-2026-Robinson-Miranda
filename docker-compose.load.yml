@@ -4,6 +4,12 @@
 # Only here, the per-address and per-document login limits are lifted: every simulated customer
 # logs in from the same address, and the public URL keeps its limits.
 services:
+  # As many synthetic customers as the cohort of design 11.7, so each case can be a customer of
+  # its own (see pipeline/load.py).
+  migrate:
+    command: >
+      sh -c "python -m app.cli.migrate &&
+             python -m app.cli.seed synthetic --seed 42 --customers 5000 --if-empty"
   api:
     environment:
       IP_REQUEST_LIMIT: "1000000"

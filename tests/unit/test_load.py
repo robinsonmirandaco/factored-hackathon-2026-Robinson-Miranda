@@ -165,19 +165,16 @@ def test_the_ceiling_of_each_rate_limit() -> None:
     assert load.ceiling(limits, usage, 0) is None
 
 
-def test_the_charges_take_one_per_active_customer_before_a_second() -> None:
+def test_each_charge_belongs_to_a_customer_of_its_own() -> None:
     settings = Settings(database_url="postgresql+psycopg://unused@localhost:1/x")
     charges = load.charges(settings)
-    customers, _products, transactions = generate(settings.trazo_now, seed=load.SEED, dirty=False)
-    active = {c["customer_id"] for c in customers if c["customer_status"] == "Active"}
-    expected = [
-        t
-        for t in transactions
-        if t["customer_id"] in active and t["transaction_status"] == "Approved"
-    ]
-    assert len(charges) == len(expected)
-    first_round = [c.document_number for c in charges[: len(active)]]
-    assert len(set(first_round)) == len(active)
+    customers, _products, _transactions = generate(
+        settings.trazo_now, seed=load.SEED, n_customers=load.CUSTOMERS, dirty=False
+    )
+    active = [c for c in customers if c["customer_status"] == "Active"]
+    assert len({c.document_number for c in charges}) == len(charges)
+    # Every active customer of the fixture has an approved purchase.
+    assert len(charges) == len(active)
     assert all(c.message.startswith("No reconozco un cargo de ") for c in charges)
 
 
