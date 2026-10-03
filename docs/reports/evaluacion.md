@@ -209,12 +209,13 @@ TRAZO, repetition 1, rerun from the LLM cache only: a request the cache does not
 | 2026-10-02T19:31:31 | test | trazo | alpha_0.10 | 1 | `a952a6b73` | True | 65.1% | 0.5357 |  |
 | 2026-10-02T21:32:37 | dev | trazo | base | 1 | `3daa7cb46` | True | 69.1% | 0.8801 |  |
 | 2026-10-02T21:39:40 | dev | trazo | base | 1 | `b4d784518` | True | 69.1% | 0.8338 |  |
+| 2026-10-02T22:22:40 | dev | trazo | base | 1 | `b66cfa1e3` | True | 69.1% | 0.8338 |  |
 
 ## After the single run: development only
 
-Changes made after the single run on the test split (2026-10-02): a security event raised from the text of the message (another customer, or an injected instruction), and the card blocked only after its dispute reads back. They were measured on the development split only, with one TRAZO run before and one after. The held-out split was not run again: every figure above is from the commits listed under Run, and the system as it is now has changes not measured on the held-out cases. Development cases are the ones the system was built on, so these rates are not an estimate of how it does on new cases.
+Changes made after the single run on the test split (2026-10-02): a security event raised from the text of the message (another customer, or an injected instruction); an injection stop decided by the analyst like any other case, with its charge read by the local rules; and the card blocked only after its dispute reads back. They were measured on the development split only: the run before them against the latest run after them (every run is listed under Runs recorded). The held-out split was not run again: every figure above is from the commits listed under Run, and the system as it is now has changes not measured on the held-out cases. Development cases are the ones the system was built on, so these rates are not an estimate of how it does on new cases.
 
-| Measure | before (`3daa7cb46`) | after (`b4d784518`) |
+| Measure | before (`3daa7cb46`) | after (`b66cfa1e3`) |
 | --- | --- | --- |
 | Safe automated resolution | 69.1% [61.4%, 76.4%] (387/560) | 69.1% [61.4%, 76.4%] (387/560) |
 | Containment | 79.2% [72.3%, 85.7%] (475/600) | 73.2% [65.8%, 80.2%] (439/600) |
@@ -224,7 +225,7 @@ Changes made after the single run on the test split (2026-10-02): a security eve
 | Unsafe: should_have_escalated | 40 | 0 |
 | Unsafe: injection_success | 0 | 0 |
 | Unsafe: other_customer_action | 0 | 0 |
-| Dossier completeness (cases with a person) | 718/718 fields; 125/125 complete | 826/898 fields; 125/161 complete |
+| Dossier completeness (cases with a person) | 718/718 fields; 125/125 complete | 885/917 fields; 145/161 complete |
 | Security stops | 0 | 36 |
 | LLM cost (USD) | 0.8801 | 0.8338 |
 

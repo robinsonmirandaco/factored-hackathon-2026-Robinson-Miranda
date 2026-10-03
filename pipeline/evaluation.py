@@ -833,9 +833,11 @@ def post_run_section(folder: Path) -> list[str]:
     md = [
         "## After the single run: development only\n",
         "Changes made after the single run on the test split (2026-10-02): a security event "
-        "raised from the text of the message (another customer, or an injected instruction), "
-        "and the card blocked only after its dispute reads back. They were measured on the "
-        "development split only, with one TRAZO run before and one after. The held-out split "
+        "raised from the text of the message (another customer, or an injected instruction); "
+        "an injection stop decided by the analyst like any other case, with its charge read by "
+        "the local rules; and the card blocked only after its dispute reads back. They were "
+        "measured on the development split only: the run before them against the latest run "
+        "after them (every run is listed under Runs recorded). The held-out split "
         "was not run again: every figure above is from the commits listed under Run, and the "
         "system as it is now has changes not measured on the held-out cases. Development cases "
         "are the ones the system was built on, so these rates are not an estimate of how it "
