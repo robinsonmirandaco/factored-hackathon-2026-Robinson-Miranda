@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { translator } from "../../web/assets/i18n.js";
-import { AUDIT_KEY, auditOn, auditSwitchView, traceCase, traceHref, traceLines } from "../../web/assets/view.js";
+import { AUDIT_KEY, auditOn, auditSwitchView, traceCase, traceHref, traceLines, traceRoute } from "../../web/assets/view.js";
 
 test("the audit view is off until the customer turns it on in this tab", () => {
   assert.equal(AUDIT_KEY, "trazo.customer.audit");
@@ -26,12 +26,13 @@ test("Ver traza opens the route of its case and only that route is a trace", () 
   assert.equal(traceCase(""), null);
 });
 
-test("the steps are shown as the API wrote them, with who did what", () => {
+test("the steps are shown as the API wrote them, without internal codes", () => {
   const steps = [{
     id: 7, trace_id: "t-1", actor: "policy", action: "decide",
     text: "A política v2026.09.5, regra «approval.autonomy_a1», decidiu pedir a aprovação de uma analista (nível L3).",
   }];
-  assert.deepEqual(traceLines(steps), [{ text: steps[0].text, meta: "policy · decide", traceId: "t-1" }]);
+  // QA: "policy · decide" under each line was an internal code the customer does not read.
+  assert.deepEqual(traceLines(steps), [{ text: steps[0].text, traceId: "t-1" }]);
   assert.deepEqual(traceLines(undefined), []);
 });
 
@@ -44,4 +45,17 @@ test("every text of the trace exists in Spanish and Portuguese", () => {
   assert.notEqual(translator("pt")("seeTrace"), translator("es")("seeTrace"));
   assert.match(translator("es")("traceNote"), /^\[simulado\]/);
   assert.match(translator("pt")("traceNote"), /^\[simulado\]/);
+});
+
+test("with the audit view off, a trace route goes back to Mis aclaraciones without asking", () => {
+  // QA CP-13: the route must never reach the API while the switch is off.
+  assert.deepEqual(traceRoute("#/traza/CASE-1", false), { redirect: "#/aclaraciones" });
+  assert.deepEqual(traceRoute("#/traza/CASE-1", true), { caseId: "CASE-1" });
+  assert.equal(traceRoute("#/aclaraciones", false), null);
+});
+
+test("a case the trace cannot find goes back to Mis aclaraciones, not to a new conversation", () => {
+  // QA CP-13: "#/traza/CASO" answered 404 case_not_found and the screen offered a new chat.
+  assert.deepEqual(traceRoute("#/traza/CASO", true, { status: 404, code: "case_not_found" }), { redirect: "#/aclaraciones" });
+  assert.equal(traceRoute("#/traza/CASO", true, { status: 503, code: "db_unavailable" }), null);
 });

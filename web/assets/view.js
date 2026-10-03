@@ -306,7 +306,18 @@ export function traceCase(hash) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-// The steps as the API tells them; the screen adds no figure and no date of its own.
+// The steps as the API tells them; the screen adds no figure, no date and no internal code.
 export function traceLines(steps) {
-  return (steps || []).map((s) => ({ text: s.text, meta: `${s.actor} · ${s.action}`, traceId: s.trace_id }));
+  return (steps || []).map((s) => ({ text: s.text, traceId: s.trace_id }));
+}
+
+// Where a trace route goes. With the audit view off it goes back to Mis aclaraciones before any
+// request; a case the API does not find for this customer goes back there too (QA CP-13). Any
+// other failure stays on the screen with its message.
+export function traceRoute(hash, visible, error) {
+  const caseId = traceCase(hash);
+  if (caseId === null) return null;
+  if (!visible) return { redirect: "#/aclaraciones" };
+  if (error) return error.status === 404 ? { redirect: "#/aclaraciones" } : null;
+  return { caseId };
 }

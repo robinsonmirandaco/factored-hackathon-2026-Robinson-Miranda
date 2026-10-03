@@ -8,7 +8,7 @@ import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   AUDIT_KEY, auditOn, auditSwitchView,
   buttonMessage, canSend, clarificationLines, closedNote, codeStep, composerState, createConversation,
-  deadlineKind, traceCase, traceHref, traceLines,
+  deadlineKind, traceHref, traceLines, traceRoute,
   errorText,
   infoRequestViews, movementDetail, openQuestions, reviewLine, statusKey, statusTone, turnModel,
   unreadBadge,
@@ -250,9 +250,7 @@ function timeline(steps) {
   if (!lines.length) return el("p", { class: "small muted", text: t("traceEmpty") });
   return el("ol", { class: "timeline" }, lines.map((l) => el("li", {},
     el("span", { class: "rail" }),
-    el("div", { class: "body" },
-      el("span", { class: "title", text: l.text }),
-      el("span", { class: "when", text: l.meta })))));
+    el("div", { class: "body" }, el("span", { class: "title", text: l.text })))));
 }
 
 const traceOf = (caseId) => api.call(
@@ -293,7 +291,9 @@ async function renderTrace(caseId) {
         el("p", { class: "small muted", text: t("traceNote") }),
         timeline(steps)));
   } catch (e) {
-    failure(target, e);
+    const next = traceRoute(location.hash, auditVisible(), e);
+    if (next?.redirect) location.replace(next.redirect);
+    else failure(target, e);
   }
 }
 
@@ -318,15 +318,15 @@ async function route() {
       return;
     }
   }
-  const traced = traceCase(location.hash);
+  const traced = traceRoute(location.hash, auditVisible());
+  if (traced?.redirect) {
+    location.replace(traced.redirect);
+    return;
+  }
   if (traced) {
-    if (!auditVisible()) {
-      location.hash = "#/aclaraciones";
-      return;
-    }
     show("trace");
     refreshNotifications();
-    return renderTrace(traced);
+    return renderTrace(traced.caseId);
   }
   const view = VIEWS[location.hash] || "home";
   show(view);
