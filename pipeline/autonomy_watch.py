@@ -268,6 +268,7 @@ def replay(
     seed: int = SIM_SEED,
     streams: int = SCENARIO_STREAMS,
     cases: int = SCENARIO_CASES,
+    count_handovers: bool = True,
 ) -> ScenarioResult:
     """Runs the watch of design 6.7 over streams resampled from the outcomes of one cell.
 
@@ -282,6 +283,9 @@ def replay(
         seed: Seed; stream i draws from Random(f"{seed}:{i}").
         streams: Streams to simulate.
         cases: Cases per stream.
+        count_handovers: Whether the reviews of handovers count in the Wilson bound, as the
+            service does; False counts only the reviews of what the system did alone, the
+            improvement TRZ-49 simulates.
 
     Returns:
         The streams' detections, final levels and unsafe outcomes with and without the watch.
@@ -293,7 +297,7 @@ def replay(
         with_watch = without = 0
         for j in range(1, cases + 1):
             o = rng.choice(pool)
-            if o.kind == "other":
+            if o.kind == "other" or (o.kind == "review" and not count_handovers):
                 continue
             reviewed = True
             if o.kind == "auto":
