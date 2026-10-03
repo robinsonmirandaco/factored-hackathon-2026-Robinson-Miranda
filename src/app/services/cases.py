@@ -391,7 +391,9 @@ def get_metrics(session: Session, initial_level: AutonomyLevel) -> MetricsOut:
         containment=round(len(contained) / len(cases), 4) if cases else None,
         handed_to_person=by_outcome,
         turns=len(turns),
-        turn_latency_ms=None if p50 is None else LatencyOut(p50=float(p50), p95=float(p95)),
+        turn_latency_ms=(
+            None if p50 is None else LatencyOut(p50=round(float(p50), 1), p95=round(float(p95), 1))
+        ),
         input_tokens=int(input_tokens),
         output_tokens=int(output_tokens),
         cost_usd=round(float(cost), 6),
