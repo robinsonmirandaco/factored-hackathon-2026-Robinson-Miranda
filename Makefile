@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity eval-degradation eval-analysis density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -81,6 +81,13 @@ eval-degradation:
 # recorded runs and the reading cache only: no LLM call. Writes docs/reports/analisis.md.
 eval-analysis:
 	uv run --frozen python -m pipeline.analysis
+
+# Ablations of TRZ-50, evaluated once on the held-out split: comprehension of four systems,
+# TF-IDF + logistic regression for the intent and a ranker against the manual score, trained on
+# development and calibrated on calibration. Writes eval/ablations.json; refuses to run again
+# unless REASON="..." is given. No LLM call: readings come from the cache.
+eval-ablations:
+	uv run --frozen python -m pipeline.ablations $(if $(REASON),--reason "$(REASON)")
 
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:
