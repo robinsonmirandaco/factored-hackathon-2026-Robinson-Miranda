@@ -306,11 +306,15 @@ def get_case_trace(
 @router.get(
     "/me/notifications",
     response_model=NotificationsOut,
-    responses={**_AUTH, 503: _ERRORS[503]},
+    responses={**_AUTH, 422: _ERRORS[422], 503: _ERRORS[503]},
 )
-def get_notifications(customer: CustomerDep, session: CustomerSessionDep) -> NotificationsOut:
-    """Returns the session customer's notifications, newest first, with the unread count."""
-    return notifications.list_notifications(session, customer.subject)
+def get_notifications(
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    lang: Annotated[Lang | None, Query()] = None,
+) -> NotificationsOut:
+    """Returns the session customer's notifications, newest first, in the screen's language."""
+    return notifications.list_notifications(session, customer.subject, lang)
 
 
 @router.post(

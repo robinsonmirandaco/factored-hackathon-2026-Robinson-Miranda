@@ -8,7 +8,7 @@ import {
   auditLabel, automationView, caseHeading, dialogKey, decisionDone, decisionPanel, queueRow, reasonLabel,
 } from "../../web/assets/analyst-view.js";
 import { translator } from "../../web/assets/i18n.js";
-import { closedNote, statusKey, statusTone, unreadBadge } from "../../web/assets/view.js";
+import { closedNote, notificationsPath, statusKey, statusTone, unreadBadge } from "../../web/assets/view.js";
 
 const es = translator("es");
 const pt = translator("pt");
@@ -108,4 +108,10 @@ test("the switch is centered in the header like the other controls", () => {
   const rule = css.slice(css.indexOf(".pill.switch {"), css.indexOf("}", css.indexOf(".pill.switch {")));
   assert.match(rule, /align-self: center;/);
   assert.match(css, /\.pill\.switch:focus-visible \{ outline: 2px solid var\(--primary\); outline-offset: 2px; \}/);
+});
+
+test("the notifications are asked for in the language of the screen", () => {
+  // QA of TRZ-31/34/37: a Portuguese case was notified in Portuguese on a Spanish screen.
+  assert.equal(notificationsPath("es"), "/me/notifications?lang=es");
+  assert.equal(notificationsPath("pt"), "/me/notifications?lang=pt");
 });

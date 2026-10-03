@@ -321,3 +321,8 @@ export function traceRoute(hash, visible, error) {
   if (error) return error.status === 404 ? { redirect: "#/aclaraciones" } : null;
   return { caseId };
 }
+
+// The notifications in the language of the screen, as every other text (QA of TRZ-31/34/37).
+export function notificationsPath(lang) {
+  return `/me/notifications?lang=${encodeURIComponent(lang)}`;
+}

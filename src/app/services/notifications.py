@@ -4,7 +4,9 @@ Code writes every text from a fixed template in the language of the case, with t
 decision: the folio it registered or the day the answer is due. The text passes the fact
 checker before it is stored; a text the checker does not back is replaced by one with no
 figures. The LLM takes no part, and the analyst's free text never enters a notification: the
-question is read in Mis aclaraciones.
+question is read in Mis aclaraciones. When the screen is in the other language, the text is
+written again in that language from the facts of the decision in the audit log, and checked
+again.
 """
 
 from datetime import date
@@ -15,7 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import write_audit
-from app.adapters.db.models import Case, Notification
+from app.adapters.db.models import AuditRecord, Case, Notification
 from app.core.errors import AppError
 from app.core.time import utcnow
 from app.domain.fact_check import VerifiedFacts, unsupported
@@ -159,12 +161,15 @@ def notify(
     )
 
 
-def list_notifications(session: Session, customer_id: str) -> NotificationsOut:
+def list_notifications(
+    session: Session, customer_id: str, language: str | None = None
+) -> NotificationsOut:
     """The customer's notifications, newest first, with the number not read yet.
 
     Args:
         session: Session bound to the customer of the JWT.
         customer_id: Customer of the session.
+        language: Language of the screen, es or pt; None keeps the stored texts.
 
     Returns:
         The notifications and the unread count.
@@ -182,11 +187,41 @@ def list_notifications(session: Session, customer_id: str) -> NotificationsOut:
             .scalars()
             .all()
         )
+        other = [n.source_key for n in rows if language and n.language != language]
+        decisions = {
+            r.idempotency_key: r
+            for r in session.execute(
+                select(AuditRecord).where(AuditRecord.idempotency_key.in_(other))
+            ).scalars()
+        }
     except SQLAlchemyError as exc:
         raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
-    return NotificationsOut(
-        items=[_out(n) for n in rows], unread=sum(1 for n in rows if n.read_at is None)
+    items = []
+    for n in rows:
+        out = _out(n)
+        if language and n.language != language:
+            out.text = _retold(n, decisions.get(n.source_key), language)
+        items.append(out)
+    return NotificationsOut(items=items, unread=sum(1 for n in rows if n.read_at is None))
+
+
+def _retold(n: Notification, decision: AuditRecord | None, language: str) -> str:
+    """The notification in another language, from the facts its decision wrote in the audit log.
+
+    Without the decision row the text is the one with no figures: nothing in it can be wrong.
+    """
+    if decision is None:
+        return _FALLBACK[language if language in _FALLBACK else "es"]
+    payload, result = decision.payload or {}, decision.result or {}
+    due = result.get("due_on")
+    text, _ = compose(
+        n.kind,  # type: ignore[arg-type]
+        language,
+        folio=result.get("folio"),
+        reason=payload.get("reason"),
+        due=date.fromisoformat(due) if due else None,
     )
+    return text
 
 
 def mark_read(session: Session, customer_id: str, notification_id: int) -> NotificationOut:

@@ -10,7 +10,7 @@ import {
   buttonMessage, canSend, clarificationLines, closedNote, codeStep, composerState, createConversation,
   deadlineKind, traceHref, traceLines, traceRoute,
   errorText,
-  infoRequestViews, movementDetail, openQuestions, reviewLine, statusKey, statusTone, turnModel,
+  infoRequestViews, movementDetail, notificationsPath, openQuestions, reviewLine, statusKey, statusTone, turnModel,
   unreadBadge,
 } from "./view.js";
 
@@ -94,7 +94,7 @@ function showChrome(loggedIn) {
 async function refreshNotifications() {
   if (!api.hasSession()) return;
   try {
-    state.notes = await api.call("/me/notifications");
+    state.notes = await api.call(notificationsPath(state.lang));
   } catch {
     return;
   }
