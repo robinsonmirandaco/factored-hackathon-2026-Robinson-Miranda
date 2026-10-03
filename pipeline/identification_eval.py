@@ -944,7 +944,39 @@ def held_out_summary(preps: Sequence[Prepared], params: Params) -> dict[str, Any
                 for lang in ("es", "pt")
             },
         },
+        "reliability_by": {
+            group: {
+                key: reliability([o for o in outs if TEST_GROUPS[group](o.case) == key])
+                for key in sorted({TEST_GROUPS[group](o.case) for o in outs})
+            }
+            for group in ("variant", "segment")
+        },
     }
+
+
+def reliability_chart(title: str, rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """A reliability diagram as a Mermaid chart: accuracy bars against the mean confidence line.
+
+    The bars meet the line where the top candidate is right as often as its confidence says.
+
+    Args:
+        title: Chart title.
+        rows: Non-empty confidence bins, as `reliability` returns them.
+
+    Returns:
+        The lines of a fenced Mermaid block.
+    """
+    labels = ", ".join(f'"{r["low"]:.1f}-{r["high"]:.1f} (n={r["n"]})"' for r in rows)
+    return [
+        "```mermaid",
+        "xychart-beta",
+        f'    title "{title}"',
+        f"    x-axis [{labels}]",
+        '    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1',
+        f"    bar [{', '.join(f'{r["accuracy"]:.3f}' for r in rows)}]",
+        f"    line [{', '.join(f'{r["confidence"]:.3f}' for r in rows)}]",
+        "```",
+    ]
 
 
 def report_command(
@@ -1555,6 +1587,37 @@ def _test_section(results: dict[str, Any], names: list[str], meta: dict[str, Any
                     f"{_fmt([g['brier'] for g in gs], digits=4)} | "
                     f"{_fmt([g['ece'] for g in gs], digits=4)} |"
                 )
+    lines += [
+        "",
+        "### Reliability diagram (added after the single run)",
+        "",
+        "Added on 2026-10-02, after the single run on the test split, to complete TRZ-15 CA8. "
+        "It required one more read of the test labels, with the LLM readings of that run taken "
+        "from the cache (no new LLM call, budget 0) and the parameters above unchanged; nothing "
+        "was fitted or chosen on it, and no figure above changed. Bars: share of cases whose top "
+        "candidate is the true one; line: its mean probability. Bins with no case are left out; "
+        "n is the number of cases in the bin. LLM: run 0.",
+        "",
+    ]
+    labels = {"all": "all languages", "es": "Spanish", "pt": "Portuguese"}
+    for name in names:
+        for lang, rows in results[name]["test"][0]["reliability"].items():
+            lines += [*reliability_chart(f"{name}, {labels[lang]}", rows), ""]
+    lines += [
+        "Reliability by variant and segment, test split (LLM: run 0). Segments with fewer than "
+        "10 base cases are small: their bins do not support a conclusion.",
+        "",
+        "| Comprehension | Group | Bin | Cases | Mean confidence | Accuracy |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for name in names:
+        for by in results[name]["test"][0]["reliability_by"].values():
+            for key, rows in by.items():
+                for row in rows:
+                    lines.append(
+                        f"| {name} | {key} | {row['low']:.1f} to {row['high']:.1f} | "
+                        f"{row['n']} | {row['confidence']:.3f} | {row['accuracy']:.3f} |"
+                    )
     lines.append("")
     return lines
 

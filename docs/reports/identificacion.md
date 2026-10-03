@@ -430,3 +430,161 @@ Reliability of the top candidate by confidence bin, test split (LLM: run 0).
 | rules | handwritten | 52 (13) | 100.0% | 1.62 | 61.5% | 0.2339 | 0.0207 |
 | llm | generator_b | 252 (63) | 97.5% [97.2%, 97.6%] | 1.38 [1.38, 1.38] | 67.3% [67.1%, 67.5%] | 0.1850 [0.1850, 0.1850] | 0.0642 [0.0642, 0.0642] |
 | llm | handwritten | 52 (13) | 100.0% [100.0%, 100.0%] | 1.67 [1.67, 1.67] | 61.5% [61.5%, 61.5%] | 0.2510 [0.2510, 0.2510] | 0.1881 [0.1881, 0.1881] |
+
+### Reliability diagram (added after the single run)
+
+Added on 2026-10-02, after the single run on the test split, to complete TRZ-15 CA8. It required one more read of the test labels, with the LLM readings of that run taken from the cache (no new LLM call, budget 0) and the parameters above unchanged; nothing was fitted or chosen on it, and no figure above changed. Bars: share of cases whose top candidate is the true one; line: its mean probability. Bins with no case are left out; n is the number of cases in the bin. LLM: run 0.
+
+```mermaid
+xychart-beta
+    title "rules, all languages"
+    x-axis ["0.1-0.2 (n=8)", "0.2-0.3 (n=15)", "0.3-0.4 (n=14)", "0.4-0.5 (n=52)", "0.5-0.6 (n=12)", "0.6-0.7 (n=2)", "0.8-0.9 (n=7)", "0.9-1.0 (n=194)"]
+    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1
+    bar [0.125, 0.067, 0.143, 0.596, 0.583, 0.500, 1.000, 0.979]
+    line [0.146, 0.233, 0.332, 0.494, 0.500, 0.657, 0.896, 0.998]
+```
+
+```mermaid
+xychart-beta
+    title "rules, Spanish"
+    x-axis ["0.1-0.2 (n=6)", "0.2-0.3 (n=12)", "0.3-0.4 (n=11)", "0.4-0.5 (n=38)", "0.5-0.6 (n=9)", "0.6-0.7 (n=2)", "0.8-0.9 (n=5)", "0.9-1.0 (n=145)"]
+    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1
+    bar [0.167, 0.083, 0.182, 0.605, 0.556, 0.500, 1.000, 0.979]
+    line [0.147, 0.233, 0.332, 0.494, 0.500, 0.657, 0.896, 0.998]
+```
+
+```mermaid
+xychart-beta
+    title "rules, Portuguese"
+    x-axis ["0.1-0.2 (n=2)", "0.2-0.3 (n=3)", "0.3-0.4 (n=3)", "0.4-0.5 (n=14)", "0.5-0.6 (n=3)", "0.8-0.9 (n=2)", "0.9-1.0 (n=49)"]
+    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1
+    bar [0.000, 0.000, 0.000, 0.571, 0.667, 1.000, 0.980]
+    line [0.143, 0.233, 0.333, 0.495, 0.500, 0.896, 0.999]
+```
+
+```mermaid
+xychart-beta
+    title "llm, all languages"
+    x-axis ["0.1-0.2 (n=4)", "0.2-0.3 (n=10)", "0.3-0.4 (n=16)", "0.4-0.5 (n=53)", "0.5-0.6 (n=12)", "0.6-0.7 (n=6)", "0.9-1.0 (n=203)"]
+    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1
+    bar [0.000, 0.100, 0.250, 0.717, 0.333, 0.167, 1.000]
+    line [0.143, 0.220, 0.350, 0.497, 0.529, 0.660, 0.996]
+```
+
+```mermaid
+xychart-beta
+    title "llm, Spanish"
+    x-axis ["0.1-0.2 (n=3)", "0.2-0.3 (n=8)", "0.3-0.4 (n=12)", "0.4-0.5 (n=38)", "0.5-0.6 (n=9)", "0.6-0.7 (n=5)", "0.9-1.0 (n=153)"]
+    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1
+    bar [0.000, 0.125, 0.250, 0.711, 0.333, 0.200, 1.000]
+    line [0.143, 0.219, 0.350, 0.497, 0.529, 0.660, 0.996]
+```
+
+```mermaid
+xychart-beta
+    title "llm, Portuguese"
+    x-axis ["0.1-0.2 (n=1)", "0.2-0.3 (n=2)", "0.3-0.4 (n=4)", "0.4-0.5 (n=15)", "0.5-0.6 (n=3)", "0.6-0.7 (n=1)", "0.9-1.0 (n=50)"]
+    y-axis "Accuracy (bars), mean confidence (line)" 0 --> 1
+    bar [0.000, 0.000, 0.250, 0.733, 0.333, 0.000, 1.000]
+    line [0.143, 0.225, 0.350, 0.497, 0.529, 0.662, 0.996]
+```
+
+Reliability by variant and segment, test split (LLM: run 0). Segments with fewer than 10 base cases are small: their bins do not support a conclusion.
+
+| Comprehension | Group | Bin | Cases | Mean confidence | Accuracy |
+| --- | --- | --- | --- | --- | --- |
+| rules | es-AR | 0.1 to 0.2 | 2 | 0.143 | 0.000 |
+| rules | es-AR | 0.2 to 0.3 | 5 | 0.240 | 0.000 |
+| rules | es-AR | 0.3 to 0.4 | 4 | 0.333 | 0.250 |
+| rules | es-AR | 0.4 to 0.5 | 12 | 0.494 | 0.667 |
+| rules | es-AR | 0.5 to 0.6 | 3 | 0.500 | 0.667 |
+| rules | es-AR | 0.8 to 0.9 | 1 | 0.897 | 1.000 |
+| rules | es-AR | 0.9 to 1.0 | 49 | 0.998 | 0.980 |
+| rules | es-CO | 0.1 to 0.2 | 1 | 0.143 | 0.000 |
+| rules | es-CO | 0.2 to 0.3 | 2 | 0.225 | 0.000 |
+| rules | es-CO | 0.3 to 0.4 | 3 | 0.333 | 0.000 |
+| rules | es-CO | 0.4 to 0.5 | 14 | 0.495 | 0.571 |
+| rules | es-CO | 0.5 to 0.6 | 2 | 0.500 | 0.500 |
+| rules | es-CO | 0.8 to 0.9 | 3 | 0.896 | 1.000 |
+| rules | es-CO | 0.9 to 1.0 | 51 | 1.000 | 0.980 |
+| rules | es-MX | 0.1 to 0.2 | 3 | 0.151 | 0.333 |
+| rules | es-MX | 0.2 to 0.3 | 5 | 0.230 | 0.200 |
+| rules | es-MX | 0.3 to 0.4 | 4 | 0.329 | 0.250 |
+| rules | es-MX | 0.4 to 0.5 | 12 | 0.494 | 0.583 |
+| rules | es-MX | 0.5 to 0.6 | 4 | 0.500 | 0.500 |
+| rules | es-MX | 0.6 to 0.7 | 2 | 0.657 | 0.500 |
+| rules | es-MX | 0.8 to 0.9 | 1 | 0.897 | 1.000 |
+| rules | es-MX | 0.9 to 1.0 | 45 | 0.997 | 0.978 |
+| rules | pt-BR | 0.1 to 0.2 | 2 | 0.143 | 0.000 |
+| rules | pt-BR | 0.2 to 0.3 | 3 | 0.233 | 0.000 |
+| rules | pt-BR | 0.3 to 0.4 | 3 | 0.333 | 0.000 |
+| rules | pt-BR | 0.4 to 0.5 | 14 | 0.495 | 0.571 |
+| rules | pt-BR | 0.5 to 0.6 | 3 | 0.500 | 0.667 |
+| rules | pt-BR | 0.8 to 0.9 | 2 | 0.896 | 1.000 |
+| rules | pt-BR | 0.9 to 1.0 | 49 | 0.999 | 0.980 |
+| rules | Basic | 0.2 to 0.3 | 11 | 0.227 | 0.000 |
+| rules | Basic | 0.3 to 0.4 | 9 | 0.331 | 0.111 |
+| rules | Basic | 0.4 to 0.5 | 30 | 0.500 | 0.600 |
+| rules | Basic | 0.5 to 0.6 | 4 | 0.500 | 0.750 |
+| rules | Basic | 0.6 to 0.7 | 2 | 0.657 | 0.500 |
+| rules | Basic | 0.8 to 0.9 | 3 | 0.896 | 1.000 |
+| rules | Basic | 0.9 to 1.0 | 137 | 0.998 | 1.000 |
+| rules | Plus | 0.1 to 0.2 | 7 | 0.143 | 0.000 |
+| rules | Plus | 0.2 to 0.3 | 4 | 0.250 | 0.250 |
+| rules | Plus | 0.3 to 0.4 | 4 | 0.333 | 0.000 |
+| rules | Plus | 0.4 to 0.5 | 14 | 0.480 | 0.643 |
+| rules | Plus | 0.5 to 0.6 | 4 | 0.500 | 1.000 |
+| rules | Plus | 0.9 to 1.0 | 47 | 1.000 | 0.915 |
+| rules | Premium | 0.1 to 0.2 | 1 | 0.167 | 1.000 |
+| rules | Premium | 0.3 to 0.4 | 1 | 0.333 | 1.000 |
+| rules | Premium | 0.4 to 0.5 | 4 | 0.500 | 0.000 |
+| rules | Premium | 0.5 to 0.6 | 4 | 0.500 | 0.000 |
+| rules | Premium | 0.8 to 0.9 | 4 | 0.897 | 1.000 |
+| rules | Premium | 0.9 to 1.0 | 6 | 1.000 | 1.000 |
+| rules | Student | 0.4 to 0.5 | 4 | 0.500 | 1.000 |
+| rules | Student | 0.9 to 1.0 | 4 | 1.000 | 1.000 |
+| llm | es-AR | 0.1 to 0.2 | 1 | 0.143 | 0.000 |
+| llm | es-AR | 0.2 to 0.3 | 2 | 0.225 | 0.000 |
+| llm | es-AR | 0.3 to 0.4 | 4 | 0.350 | 0.250 |
+| llm | es-AR | 0.4 to 0.5 | 13 | 0.496 | 0.769 |
+| llm | es-AR | 0.5 to 0.6 | 3 | 0.529 | 0.333 |
+| llm | es-AR | 0.6 to 0.7 | 2 | 0.677 | 0.000 |
+| llm | es-AR | 0.9 to 1.0 | 51 | 0.996 | 1.000 |
+| llm | es-CO | 0.1 to 0.2 | 1 | 0.143 | 0.000 |
+| llm | es-CO | 0.2 to 0.3 | 2 | 0.225 | 0.000 |
+| llm | es-CO | 0.3 to 0.4 | 4 | 0.350 | 0.250 |
+| llm | es-CO | 0.4 to 0.5 | 12 | 0.496 | 0.667 |
+| llm | es-CO | 0.5 to 0.6 | 3 | 0.529 | 0.333 |
+| llm | es-CO | 0.6 to 0.7 | 1 | 0.670 | 0.000 |
+| llm | es-CO | 0.9 to 1.0 | 53 | 0.995 | 1.000 |
+| llm | es-MX | 0.1 to 0.2 | 1 | 0.143 | 0.000 |
+| llm | es-MX | 0.2 to 0.3 | 4 | 0.213 | 0.250 |
+| llm | es-MX | 0.3 to 0.4 | 4 | 0.350 | 0.250 |
+| llm | es-MX | 0.4 to 0.5 | 13 | 0.500 | 0.692 |
+| llm | es-MX | 0.5 to 0.6 | 3 | 0.529 | 0.333 |
+| llm | es-MX | 0.6 to 0.7 | 2 | 0.637 | 0.500 |
+| llm | es-MX | 0.9 to 1.0 | 49 | 0.996 | 1.000 |
+| llm | pt-BR | 0.1 to 0.2 | 1 | 0.143 | 0.000 |
+| llm | pt-BR | 0.2 to 0.3 | 2 | 0.225 | 0.000 |
+| llm | pt-BR | 0.3 to 0.4 | 4 | 0.350 | 0.250 |
+| llm | pt-BR | 0.4 to 0.5 | 15 | 0.497 | 0.733 |
+| llm | pt-BR | 0.5 to 0.6 | 3 | 0.529 | 0.333 |
+| llm | pt-BR | 0.6 to 0.7 | 1 | 0.662 | 0.000 |
+| llm | pt-BR | 0.9 to 1.0 | 50 | 0.996 | 1.000 |
+| llm | Basic | 0.2 to 0.3 | 9 | 0.222 | 0.000 |
+| llm | Basic | 0.3 to 0.4 | 8 | 0.333 | 0.000 |
+| llm | Basic | 0.4 to 0.5 | 31 | 0.500 | 0.742 |
+| llm | Basic | 0.6 to 0.7 | 5 | 0.655 | 0.200 |
+| llm | Basic | 0.9 to 1.0 | 143 | 0.997 | 1.000 |
+| llm | Plus | 0.1 to 0.2 | 4 | 0.143 | 0.000 |
+| llm | Plus | 0.2 to 0.3 | 1 | 0.200 | 1.000 |
+| llm | Plus | 0.3 to 0.4 | 8 | 0.366 | 0.500 |
+| llm | Plus | 0.4 to 0.5 | 14 | 0.490 | 0.786 |
+| llm | Plus | 0.5 to 0.6 | 8 | 0.543 | 0.500 |
+| llm | Plus | 0.6 to 0.7 | 1 | 0.685 | 0.000 |
+| llm | Plus | 0.9 to 1.0 | 44 | 1.000 | 1.000 |
+| llm | Premium | 0.4 to 0.5 | 4 | 0.500 | 0.000 |
+| llm | Premium | 0.5 to 0.6 | 4 | 0.500 | 0.000 |
+| llm | Premium | 0.9 to 1.0 | 12 | 0.970 | 1.000 |
+| llm | Student | 0.4 to 0.5 | 4 | 0.500 | 1.000 |
+| llm | Student | 0.9 to 1.0 | 4 | 1.000 | 1.000 |

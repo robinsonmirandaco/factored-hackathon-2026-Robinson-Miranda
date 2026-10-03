@@ -30,6 +30,7 @@ from pipeline.identification_eval import (
     prepare,
     probabilities,
     reliability,
+    reliability_chart,
     threshold_curve,
     top_total,
     weight_grid,
@@ -197,6 +198,15 @@ def test_reliability_bins_and_ece_by_hand() -> None:
     assert [(r["low"], r["n"], r["accuracy"]) for r in rows] == [(0.4, 2, 0.5), (0.9, 2, 1.0)]
     # Bin 0.4: |0.45 - 0.5| = 0.05; bin 0.9: |0.95 - 1.0| = 0.05; weighted mean 0.05.
     assert ece(outs) == pytest.approx(0.05)
+
+
+def test_reliability_chart_draws_accuracy_bars_against_the_confidence_line() -> None:
+    outs = [_out(0.95, True), _out(0.95, True), _out(0.45, True), _out(0.45, False)]
+    chart = reliability_chart("rules, all languages", reliability(outs))
+    assert chart[0] == "```mermaid" and chart[-1] == "```"
+    assert '    x-axis ["0.4-0.5 (n=2)", "0.9-1.0 (n=2)"]' in chart
+    assert "    bar [0.500, 1.000]" in chart
+    assert "    line [0.450, 0.950]" in chart
 
 
 def test_the_committed_config_names_its_splits() -> None:
