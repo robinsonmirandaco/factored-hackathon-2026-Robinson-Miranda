@@ -492,14 +492,72 @@ class InfoReplyOut(BaseModel):
     answered_at: datetime
 
 
-class MetricsOut(BaseModel):
-    """Operational counters read from the cases table and the audit log."""
+class LatencyOut(BaseModel):
+    """Percentiles of the duration of a customer turn, in milliseconds."""
 
-    cases_by_status: dict[str, int]
-    cases_by_level: dict[str, int]
+    p50: float
+    p95: float
+
+
+class CellMetricsOut(BaseModel):
+    """State of one intent x language cell, rebuilt from the audit log (TRZ-37).
+
+    Attributes:
+        level: Autonomy level in force.
+        block_reviews: Reviews in the open block.
+        block_reversals: Reversals among them.
+        good_blocks: Consecutive closed blocks under the promotion threshold.
+    """
+
+    intent: str
+    language: str
+    level: str
+    block_reviews: int
+    block_reversals: int
+    good_blocks: int
+
+
+class SimulatedMetricsOut(BaseModel):
+    """The share of the figures that comes from cases the demo state created (TRZ-38).
+
+    They are already counted in the totals; this block says how many of them are simulated.
+    """
+
+    label: Literal["[simulado]"] = "[simulado]"
+    cases: int
+    contained: int
+    handed_to_person: int
+
+
+class MetricsOut(BaseModel):
+    """Operational metrics of design 11.6, every one computed from the audit log (TRZ-37).
+
+    Attributes:
+        cases: Cases with at least one customer turn.
+        contained: Those no turn handed to a person.
+        containment: contained / cases; None without cases.
+        handed_to_person: Cases handed to a person, by the outcome of the turn that handed them
+            over first: escalated, pending_analyst_approval, security_blocked or failed.
+        turns: Customer turns.
+        turn_latency_ms: p50 and p95 of the turns; None without turns.
+        input_tokens: LLM input tokens of every step.
+        output_tokens: LLM output tokens of every step.
+        cost_usd: LLM cost of every step.
+        simulated: How much of the above comes from simulated cases.
+        autonomy: State of every cell with at least one review.
+    """
+
+    cases: int
+    contained: int
+    containment: float | None
+    handed_to_person: dict[str, int]
     turns: int
-    avg_turn_latency_ms: float
-    human_decisions: int
+    turn_latency_ms: LatencyOut | None
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    simulated: SimulatedMetricsOut
+    autonomy: list[CellMetricsOut]
 
 
 # ---- the customer's own screens (TRZ-34) ------------------------------------------------

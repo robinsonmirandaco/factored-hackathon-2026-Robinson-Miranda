@@ -5,7 +5,8 @@ the unrecognized charge x ES cell. With 10 reversals the cell goes down to A1 (C
 the block is in the audit log with r, W, N, the threshold and the reversed cases (CA8). The next
 case of the cell then waits for an analyst's approval, and its trace says why (CA6, CA9). At A2
 the system records what it would have recommended without showing it, and the analyst's decision
-is compared against it (CA7). The level lives in the database: a new app keeps it.
+is compared against it (CA7). The level lives in the database: a new app keeps it. The metrics
+rebuild the same cells from the audit log alone (TRZ-37 CA2).
 """
 
 from collections.abc import Iterator
@@ -215,6 +216,38 @@ def test_the_next_case_of_a_cell_at_a1_waits_for_approval_and_its_trace_says_why
         # C3 has an open dispute now, which would escalate first: C4 has none.
         later = _handed(again, customer_headers(again, "C4"), "C4N")
         assert later["outcome"] == "pending_analyst_approval", later
+
+
+def test_the_metrics_rebuild_every_cell_from_the_audit_log_as_autonomy_cells_keeps_it(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    # TRZ-37 CA2: a closed block that changed the level, then one review of the next block.
+    _nineteen_then(client, "reject")
+    analyst = analyst_headers(client)
+    _decide(
+        client,
+        analyst,
+        _handed(client, customer_headers(client, "C3"), "C3N")["case_id"],
+        decision="approve",
+    )
+    metrics = client.get("/metrics", headers=analyst).json()["autonomy"]
+    stored = _query(
+        schema,
+        "SELECT intent, language, level, block_reviews, block_reversals, good_blocks "
+        "FROM autonomy_cells ORDER BY 1, 2",
+    )
+    rebuilt = [
+        (
+            c["intent"],
+            c["language"],
+            c["level"],
+            c["block_reviews"],
+            c["block_reversals"],
+            c["good_blocks"],
+        )
+        for c in metrics
+    ]
+    assert rebuilt == stored == [("unrecognized_charge", "es", "A1", 1, 0, 0)]
 
 
 def test_the_same_decision_sent_again_is_not_counted_twice(

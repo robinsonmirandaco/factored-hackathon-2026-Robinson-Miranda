@@ -420,10 +420,10 @@ def put_automation(
     return automation.set_switch(session, analyst.subject, body.all_to_human)
 
 
-@router.get("/metrics", response_model=MetricsOut, responses=_AUTH)
-def metrics(session: AnalystSessionDep) -> MetricsOut:
-    """Returns operational counters from the cases table and the audit log."""
-    return cases.get_metrics(session)
+@router.get("/metrics", response_model=MetricsOut, responses={**_AUTH, 503: _ERRORS[503]})
+def metrics(session: AnalystSessionDep, runtime: RuntimeDep) -> MetricsOut:
+    """Returns containment, handoffs, latency, cost and the autonomy cells, from the audit log."""
+    return cases.get_metrics(session, runtime.agent.policy.config.autonomy.initial_level)
 
 
 @router.get("/demo", response_model=DemoStateOut, responses={**_AUTH, 404: _ERRORS[404]})
