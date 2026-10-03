@@ -10,6 +10,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     ARRAY,
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -227,6 +228,22 @@ class AutomationSwitch(Base):
     all_to_human: Mapped[bool] = mapped_column(Boolean, default=False)
     changed_by: Mapped[str | None] = mapped_column(Text)
     changed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class AutonomyCell(Base):
+    """Autonomy level of one intent x language cell and its open block of reviews (TRZ-30)."""
+
+    __tablename__ = "autonomy_cells"
+
+    intent: Mapped[str] = mapped_column(Text, primary_key=True)
+    language: Mapped[str] = mapped_column(Text, primary_key=True)
+    level: Mapped[str] = mapped_column(Text)
+    block_reviews: Mapped[int] = mapped_column(Integer, default=0)
+    block_reversals: Mapped[int] = mapped_column(Integer, default=0)
+    block_after: Mapped[int | None] = mapped_column(BigInteger)
+    good_blocks: Mapped[int] = mapped_column(Integer, default=0)
+    last_change: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class CardBlock(Base):

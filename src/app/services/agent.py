@@ -50,7 +50,6 @@ from app.domain.language import decide as decide_language
 from app.domain.out_of_scope import topic as out_of_scope_topic
 from app.domain.pii import redact
 from app.domain.policy import (
-    AutonomyLookup,
     Language,
     PolicyContext,
     PolicyDecision,
@@ -65,6 +64,7 @@ from app.schemas.comprehension import Comprehension, ComprehensionContext, evide
 from app.services import tools as T
 from app.services.audit_sample import sample
 from app.services.automation import all_to_human
+from app.services.autonomy import CellReader, CellStatus
 from app.services.cases import HANDOFF_STATUSES, REGISTERS, VERIFICATION_FAILED_REASON
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
 from app.services.identification import (
@@ -169,7 +169,7 @@ class AgentDeps:
         llm: LLM client with fallbacks.
         clock: Simulated clock for data windows, relative dates and deadlines.
         identification: Fitted identification parameters by comprehension, rules and llm.
-        autonomy: Autonomy level of each intent x language cell.
+        autonomy: Reads the autonomy level of an intent x language cell (TRZ-30).
         passages: Demo policy passages by rule, which back the response deadline.
         calendars: Bank holiday calendars by country code.
         fact_check: False turns the fact checker into an observer (ablation, TRZ-20 CA6).
@@ -179,7 +179,7 @@ class AgentDeps:
     llm: LLMClient
     clock: SimulatedClock
     identification: Mapping[str, Params]
-    autonomy: AutonomyLookup
+    autonomy: CellReader
     passages: Mapping[str, Passage]
     calendars: Mapping[str, HolidayCalendar]
     fact_check: bool = True
@@ -755,8 +755,9 @@ def _decide_on_charge(
         clarifications_exhausted=clarifications_exhausted,
         automation_disabled=all_to_human(session),
     )
-    decision = deps.policy.decide(ctx, deps.autonomy)
-    _audit_decision(session, case, {**asdict(ctx), **(note or {})}, decision)
+    cell = deps.autonomy(session, case.intent, language)
+    decision = deps.policy.decide(ctx, lambda _i, _l: cell.level)
+    _audit_decision(session, case, {**asdict(ctx), **(note or {})}, decision, cell)
     return _apply(session, deps, case, decision, tx)
 
 
@@ -891,7 +892,11 @@ def _sla(deps: AgentDeps, priority: Priority) -> float:
 
 
 def _audit_decision(
-    session: Session, case: Case, context: dict[str, Any], d: PolicyDecision
+    session: Session,
+    case: Case,
+    context: dict[str, Any],
+    d: PolicyDecision,
+    cell: CellStatus | None = None,
 ) -> None:
     write_audit(
         session,
@@ -909,6 +914,8 @@ def _audit_decision(
             "redirect": d.redirect,
             "recommended": d.recommended,
             "autonomy_level": d.autonomy_level,
+            # Why the cell is at that level: the block that last changed it (TRZ-30).
+            "autonomy_change": cell.last_change if cell and d.autonomy_level else None,
         },
     )
 
@@ -1030,7 +1037,8 @@ def _read_beside_instruction(
         duplicate_twin=twin,
         automation_disabled=all_to_human(session),
     )
-    d = deps.policy.decide(ctx, deps.autonomy)
+    cell = deps.autonomy(session, case.intent, ctx.language)
+    d = deps.policy.decide(ctx, lambda _i, _l: cell.level)
     recommended = d.action if d.action in REGISTERS else d.recommended
     case.transaction_id = charge.transaction_id
     case.recommended_action = recommended if recommended in REGISTERS else None

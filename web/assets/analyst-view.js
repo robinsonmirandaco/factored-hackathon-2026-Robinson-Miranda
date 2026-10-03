@@ -330,11 +330,27 @@ export function clueChips(extraction) {
 
 // The recommended action of a dossier, or why there is none.
 export function recommendationText(d) {
+  if (d.recommendation_hidden) {
+    return "Sin propuesta: la celda está en A2 (solo analista). Aprobar registra la aclaración sobre el cargo identificado.";
+  }
   if (d.recommended_action) return actionLabel(d.recommended_action);
   if (d.case_kind !== "security_event" && d.charge_identified === false) {
     return "Sin acción recomendada: no se identificó ningún cargo.";
   }
   return "Sin acción recomendada.";
+}
+
+const comma = (x, digits) => Number(x).toFixed(digits).replace(".", ",");
+
+// Why the cell of the case is at its level: r, W and N of the block that set it (TRZ-30).
+export function cellEvidence(rule) {
+  const c = rule?.autonomy_change;
+  if (!c || !rule.autonomy_level) return null;
+  let crossed = "";
+  if (c.threshold === "demote_if_wilson_lower_gte") crossed = ` ≥ ${comma(c.threshold_value, 2)}`;
+  if (c.threshold === "promote_if_rate_lt") crossed = `, bloques seguidos con r < ${comma(c.threshold_value, 2)}`;
+  return `Celda en ${rule.autonomy_level} desde un bloque de ${c.n} revisiones con ${c.reversals} reversiones: ` +
+    `r = ${comma(c.r, 2)}, W = ${comma(c.w, 3)}${crossed} (N = ${c.n}). Antes estaba en ${c.level_before}.`;
 }
 
 // Candidates with their probability: percentages are for the analyst only (rule 3).

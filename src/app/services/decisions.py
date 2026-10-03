@@ -12,11 +12,12 @@ An audit sample (TRZ-29) is a case the system already resolved: the analyst conf
 changes nothing for the customer, or reverses it with a reason of the closed list. A reversal
 puts the clarification in review by an analyst and notifies the customer; the registered dispute
 is not annulled, since no tool annuls one (design 3.2). Its audit row says it is a review of an
-automatic action, whether it is a reversal, the reason and the intent x language cell, which is
-what the Wilson rule of TRZ-30 counts. An approval or a rejection of a case the system handed
-over with a registration recommended on an identified charge carries the same block: approving
-agrees with the system, rejecting reverses it (design 6.7). A case with no charge identified,
-such as one no charge matched, is not a review whatever the analyst decides.
+automatic action, whether it is a reversal, the reason and the intent x language cell. An
+approval or a rejection of a case the system handed over with a registration recommended on an
+identified charge carries the same block: approving agrees with the system, rejecting reverses it
+(design 6.7). A case with no charge identified, such as one no charge matched, is not a review
+whatever the analyst decides. Each review is added to the block of its cell in the same
+transaction, which may change the cell's autonomy level (TRZ-30).
 
 Every decision the customer must hear about writes a notification (TRZ-32).
 """
@@ -37,6 +38,7 @@ from app.domain.policy_passages import PolicyDeadline, Unsupported, policy_deadl
 from app.schemas.api import DecisionOut, HumanDecisionIn
 from app.services import tools as T
 from app.services.agent import AgentDeps
+from app.services.autonomy import record_review
 from app.services.cases import (
     HANDOFF_STATUSES,
     REGISTERS,
@@ -134,6 +136,8 @@ def _record(
         idempotency_key=f"decision:{row.id}",
         customer_id=case.customer_id,
     )
+    if "review" in result:
+        record_review(session, deps.policy.config.autonomy, result["review"], case_id)
     if not security:
         _notify(session, case, body, result, f"decision:{row.id}")
     return _out(case_id, body.decision, result)
@@ -209,6 +213,7 @@ def _audit(
         idempotency_key=f"decision:{row.id}",
         customer_id=case.customer_id,
     )
+    record_review(session, deps.policy.config.autonomy, result["review"], case.id)
     if reversal:
         notify(session, case, "audit_reversed", f"decision:{row.id}")
     return _out(case.id, body.decision, result)

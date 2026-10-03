@@ -204,9 +204,67 @@ def _decide(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     action = _label(_ACTIONS, lang, r.get("action"))
     if lang == "es":
         cited = f", regla «{rule}»," if rule else ""
-        return f"La política v{version}{cited} decidió {action} (nivel {level})."
-    cited = f", regra «{rule}»," if rule else ""
-    return f"A política v{version}{cited} decidiu {action} (nível {level})."
+        line = f"La política v{version}{cited} decidió {action} (nivel {level})."
+    else:
+        cited = f", regra «{rule}»," if rule else ""
+        line = f"A política v{version}{cited} decidiu {action} (nível {level})."
+    if (change := r.get("autonomy_change")) and r.get("autonomy_level"):
+        line += " " + _cell_since(lang, str(r["autonomy_level"]), change)
+    return line
+
+
+def _num(x: Any, digits: int) -> str:
+    """A rate with a decimal comma, as both languages write it."""
+    return f"{float(x):.{digits}f}".replace(".", ",")
+
+
+def _block_figures(lang: Lang, b: Fields) -> str:
+    """Reversals of N, r and W of a closed block, with the threshold it crossed."""
+    figures = (
+        f"{b.get('reversals', '?')} de {b.get('n', '?')}, "
+        f"r = {_num(b.get('r', 0), 2)}, W = {_num(b.get('w', 0), 3)}"
+    )
+    value = b.get("threshold_value")
+    if b.get("threshold") == "demote_if_wilson_lower_gte" and value is not None:
+        figures += f" ≥ {_num(value, 2)}"
+        if not b.get("changed"):
+            figures += ", ya en el nivel más bajo" if lang == "es" else ", já no nível mais baixo"
+    elif b.get("threshold") == "promote_if_rate_lt" and value is not None:
+        figures += (
+            f", bloques seguidos con r < {_num(value, 2)}"
+            if lang == "es"
+            else f", blocos seguidos com r < {_num(value, 2)}"
+        )
+    return figures
+
+
+def _cell_since(lang: Lang, level: str, change: Fields) -> str:
+    """Why the cell of the case is at its level: the block that set it (TRZ-30)."""
+    if lang == "es":
+        return (
+            f"La celda está en {level} desde un bloque de revisiones con "
+            f"{_block_figures(lang, change)}."
+        )
+    return (
+        f"A célula está em {level} desde um bloco de revisões com {_block_figures(lang, change)}."
+    )
+
+
+def _autonomy_block(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    cell = p.get("cell") or {}
+    language = str(cell.get("language", "?")).upper()
+    name = f"{intent_label(cell.get('intent'), lang)} · {language}"
+    figures = _block_figures(lang, r)
+    before, after = r.get("level_before", "?"), r.get("level_after", "?")
+    if lang == "es":
+        line = f"Esta revisión cerró un bloque de la celda «{name}»: {figures}."
+        if r.get("changed"):
+            return f"{line} La celda pasa de {before} a {after}."
+        return f"{line} La celda sigue en {before}."
+    line = f"Esta revisão fechou um bloco da célula «{name}»: {figures}."
+    if r.get("changed"):
+        return f"{line} A célula passa de {before} para {after}."
+    return f"{line} A célula continua em {before}."
 
 
 _STALE: dict[Lang, dict[str, str]] = {
@@ -739,6 +797,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "turn_complete"): _turn_complete,
     ("policy", "decide"): _decide,
     ("human", "decision"): _human_decision,
+    ("system", "autonomy_block"): _autonomy_block,
     ("policy", "audit_draw"): _audit_draw,
     ("system", "notify"): _notify,
     ("system", "mark_simulated"): _mark_simulated,

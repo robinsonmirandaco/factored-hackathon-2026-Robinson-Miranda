@@ -72,7 +72,8 @@ def get_case(session: Session, case_id: str) -> CaseOut:
     Raises:
         AppError: 404 case_not_found.
     """
-    return _to_out(_require_case(session, case_id))
+    case = _require_case(session, case_id)
+    return _to_out(case, recommendation_hidden(session, case))
 
 
 def get_trace(session: Session, case_id: str) -> list[TraceEventOut]:
@@ -205,6 +206,33 @@ def approvable(case: Case) -> bool:
     )
 
 
+def recommendation_hidden(session: Session, case: Case) -> bool:
+    """Tells whether the system handed the case over without proposing an action.
+
+    At autonomy level A2 the system still computes and records what it would have recommended,
+    but does not show it; the analyst decides alone and the decision is compared against it
+    (design 6.7, TRZ-30 CA7).
+
+    Args:
+        session: Open session.
+        case: The case.
+
+    Returns:
+        True when the latest policy decision on the case consulted a cell at A2.
+    """
+    decide = session.execute(
+        select(AuditRecord.result)
+        .where(
+            AuditRecord.case_id == case.id,
+            AuditRecord.actor == "policy",
+            AuditRecord.action == "decide",
+        )
+        .order_by(AuditRecord.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return (decide or {}).get("autonomy_level") == "A2"
+
+
 def injection_stop(session: Session, case: Case) -> bool:
     """Tells whether the case was stopped for an instruction injected in its message.
 
@@ -252,7 +280,9 @@ def _queue_item(session: Session, q: QueueItem, c: Case, now: datetime) -> Queue
         overdue=q.sla_due_at is not None and q.sla_due_at < now,
         updated=q.updated,
         status=c.status,
-        recommended_action=None if security else c.recommended_action,
+        recommended_action=(
+            None if security or recommendation_hidden(session, c) else c.recommended_action
+        ),
         # Approving a security event closes it; any other case needs a registration to run.
         can_approve=security or approvable(c),
         created_at=q.created_at,
@@ -315,7 +345,7 @@ def _require_case(session: Session, case_id: str) -> Case:
     return case
 
 
-def _to_out(c: Case) -> CaseOut:
+def _to_out(c: Case, hidden: bool) -> CaseOut:
     return CaseOut(
         case_id=c.id,
         customer_id=c.customer_id,
@@ -323,7 +353,7 @@ def _to_out(c: Case) -> CaseOut:
         intent=c.intent,
         status=c.status,
         autonomy_level=c.autonomy_level,
-        recommended_action=c.recommended_action,
+        recommended_action=None if hidden else c.recommended_action,
         escalation_reason=c.escalation_reason,
         human_decision=c.human_decision,
         summary=c.summary,
