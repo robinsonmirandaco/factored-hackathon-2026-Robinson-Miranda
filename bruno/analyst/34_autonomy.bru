@@ -1,0 +1,32 @@
+meta {
+  name: TRZ-31 the autonomy tab lists every cell with its thresholds
+  type: http
+  seq: 34
+}
+
+get {
+  url: {{baseUrl}}/autonomy
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("200 with the thresholds of the policy", function() {
+    expect(res.getStatus()).to.equal(200);
+    const t = res.getBody().thresholds;
+    expect([t.window_n, t.z, t.demote_if_wilson_lower_gte, t.promote_if_rate_lt]).to.eql([20, 1.645, 0.3, 0.15]);
+  });
+  test("one row per dispute intent in ES and PT, each with its two groups of reversed cases", function() {
+    const cells = res.getBody().cells;
+    expect(cells.length).to.equal(6);
+    for (const c of cells) {
+      expect(["A0", "A1", "A2"]).to.include(c.level);
+      expect(c.reversed_last_block).to.be.an("array");
+      expect(c.reversed_open_block).to.be.an("array");
+    }
+  });
+}

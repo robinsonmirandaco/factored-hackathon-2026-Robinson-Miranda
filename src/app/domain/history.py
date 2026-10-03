@@ -1,7 +1,8 @@
 """Plain-language lines for the analyst's case history, written by code from audit rows.
 
 Each (actor, action) pair has one template per language. A template reads only non-personal
-fields (intent, rule, level, counts, outcome, the analyst's user name and closed-list reason):
+fields (intent, rule, level, counts, outcome, the analyst's user name and closed-list reason;
+without the user name a line says "the analyst"):
 never the redacted customer text, the reply, a product number or an operator note. The one
 exception is a request for information: its question and the customer's answer, both redacted
 before they are stored, are told so the answer can be read against its question (TRZ-28).
@@ -53,6 +54,15 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "recognized_closed": "el cliente reconoció el cargo, caso cerrado sin acción",
         "no_pending_recognition": "no había ningún cargo esperando respuesta",
         "no_pending_choice": "no había opciones esperando elección",
+        "existing_case": "el cargo ya tenía un caso, y el cliente siguió en ese caso",
+        "with_person": "el caso ya estaba con una analista: el mensaje se agregó al expediente",
+        "declined": "el cliente no aceptó registrar la aclaración, y no se hizo nada",
+        "block_declined": "el cliente no aceptó bloquear la tarjeta",
+        "block_not_run": (
+            "automatización desactivada: el bloqueo no se ejecutó y se indicó el canal del banco"
+        ),
+        "card_blocked": "tarjeta bloqueada",
+        "card_not_blocked": "la tarjeta no se bloqueó",
     },
     "pt": {
         "identifying": "buscando a cobrança com o cliente",
@@ -70,6 +80,15 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "recognized_closed": "o cliente reconheceu a cobrança, caso encerrado sem ação",
         "no_pending_recognition": "não havia nenhuma cobrança aguardando resposta",
         "no_pending_choice": "não havia opções aguardando escolha",
+        "existing_case": "a cobrança já tinha um caso, e o cliente seguiu nesse caso",
+        "with_person": "o caso já estava com uma analista: a mensagem foi incluída no dossiê",
+        "declined": "o cliente não aceitou registrar a contestação, e nada foi feito",
+        "block_declined": "o cliente não aceitou bloquear o cartão",
+        "block_not_run": (
+            "automação desativada: o bloqueio não foi executado e foi indicado o canal do banco"
+        ),
+        "card_blocked": "cartão bloqueado",
+        "card_not_blocked": "o cartão não foi bloqueado",
     },
 }
 
@@ -315,13 +334,19 @@ def _decline(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return f"O cliente não aceitou a ação oferecida: {action}. Nada foi feito."
 
 
+def _analyst(lang: Lang, r: Fields) -> str:
+    """ "La analista <usuario>", or "La analista" in a line told without her user name."""
+    who = r.get("analyst")
+    base = "La analista" if lang == "es" else "A analista"
+    return f"{base} {who}" if who else base
+
+
 def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if p.get("kind") == "audit_sample":
         return _audit_decision(lang, p, r)
     decision = _label(_DECISIONS, lang, p.get("decision"))
-    who = r.get("analyst") or "?"
     es = lang == "es"
-    line = f"La analista {who} decidió {decision}" if es else f"A analista {who} decidiu {decision}"
+    line = f"{_analyst(lang, r)} {'decidió' if es else 'decidiu'} {decision}"
     # Only a reason of the closed list is told: any other text is left out.
     if reason := REVERSAL_REASONS[lang].get(str(p.get("reason"))):
         line += ": " + reason
@@ -357,21 +382,19 @@ def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
 
 
 def _audit_decision(lang: Lang, p: Fields, r: Fields) -> str:
-    who = r.get("analyst") or "?"
+    who = _analyst(lang, r)
     if p.get("decision") != "reject":
         if lang == "es":
-            return (
-                f"La analista {who} confirmó la muestra de auditoría: nada cambia para el cliente."
-            )
-        return f"A analista {who} confirmou a amostra de auditoria: nada muda para o cliente."
+            return f"{who} confirmó la muestra de auditoría: nada cambia para el cliente."
+        return f"{who} confirmou a amostra de auditoria: nada muda para o cliente."
     reason = REVERSAL_REASONS[lang].get(str(p.get("reason")), "?")
     if lang == "es":
         return (
-            f"La analista {who} revirtió la muestra de auditoría: {reason}. La aclaración pasó a "
+            f"{who} revirtió la muestra de auditoría: {reason}. La aclaración pasó a "
             "revisión por una analista; la disputa registrada no se anula."
         )
     return (
-        f"A analista {who} reverteu a amostra de auditoria: {reason}. A contestação passou para "
+        f"{who} reverteu a amostra de auditoria: {reason}. A contestação passou para "
         "revisão por uma analista; a contestação registrada não é anulada."
     )
 
@@ -431,14 +454,14 @@ def _automation_disabled(lang: Lang, p: Fields, r: Fields, policy: str | None) -
 
 
 def _automation_switch(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
-    who = r.get("analyst") or "?"
+    who = _analyst(lang, r)
     if r.get("after"):
         if lang == "es":
-            return f"La analista {who} mandó todo a humano: la automatización quedó desactivada."
-        return f"A analista {who} mandou tudo para humanos: a automação ficou desativada."
+            return f"{who} mandó todo a humano: la automatización quedó desactivada."
+        return f"{who} mandou tudo para humanos: a automação ficou desativada."
     if lang == "es":
-        return f"La analista {who} reactivó la automatización."
-    return f"A analista {who} reativou a automação."
+        return f"{who} reactivó la automatización."
+    return f"{who} reativou a automação."
 
 
 def _mark_simulated(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -590,6 +613,8 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "forbidden_request": "pedido prohibido",
         "contact_promise": "promesa de contacto",
         "action_claim": "acción no realizada",
+        "vague_deadline": "plazo impreciso",
+        "relative_date": "fecha relativa",
     },
     "pt": {
         "folio": "protocolo",
@@ -603,6 +628,8 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "forbidden_request": "pedido proibido",
         "contact_promise": "promessa de contato",
         "action_claim": "ação não realizada",
+        "vague_deadline": "prazo impreciso",
+        "relative_date": "data relativa",
     },
 }
 

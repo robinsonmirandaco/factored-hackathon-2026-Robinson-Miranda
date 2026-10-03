@@ -2,7 +2,8 @@
 
 Every function runs on a session bound to the customer of the JWT, so row level security already
 limits each read to that customer; the explicit customer filter repeats the rule in code (design
-11.4). Nothing here writes: viewing a screen is not a step of a case and leaves no audit row.
+11.4). Nothing here writes: viewing a screen is not a step of a case and leaves no audit row. The
+trace of a case is the audit view of the demo (TRZ-34 CA4).
 """
 
 from collections.abc import Mapping
@@ -10,6 +11,7 @@ from datetime import date
 from typing import Any
 
 from sqlalchemy import select, text, tuple_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.adapters.db.models import AuditRecord, Case, Customer, Dispute, Product, Transaction
@@ -18,6 +20,7 @@ from app.core.errors import AppError
 from app.domain.business_days import HolidayCalendar
 from app.domain.clock import SimulatedClock
 from app.domain.fx import display_amount, local_currency
+from app.domain.history import Lang, describe
 from app.domain.identification import DISPUTABLE_STATUSES, DISPUTABLE_TYPES
 from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, policy_deadline
 from app.schemas.api import (
@@ -26,6 +29,7 @@ from app.schemas.api import (
     MovementOut,
     MovementsOut,
     ProductOut,
+    TraceStepOut,
 )
 from app.services.info_requests import all_requests, latest_request
 from app.services.tools import read_open_claims
@@ -289,6 +293,61 @@ def list_clarifications(
         if c["source"] == "complaints"
     ]
     return out
+
+
+_TRACE = text(
+    "SELECT id, trace_id, actor, action, payload, result, policy_version "
+    "FROM case_history WHERE case_id = :case_id ORDER BY id"
+)
+
+
+def case_trace(session: Session, customer_id: str, case_id: str, lang: Lang) -> list[TraceStepOut]:
+    """The steps of one of the customer's cases: rule, set, checks and cell (TRZ-34 CA4).
+
+    Each step is the line the analyst's history writes from its audit row, in the customer's
+    language. The analyst is not named: the line says "the analyst" (Robinson's decision D1).
+    The lines carry no identification probability (design 10.2, rule 3) and no date of the real
+    clock (rule 7). Row level security returns only the customer's own rows, so the rows of a
+    closed autonomy block, which belong to no customer, are left out; the policy line of the
+    case already cites the cell with r, W and N.
+
+    Args:
+        session: Open session bound to the customer of the JWT.
+        customer_id: The customer of the session.
+        case_id: The case.
+        lang: Language of the lines.
+
+    Returns:
+        One step per audit row of the case, in write order.
+
+    Raises:
+        AppError: 404 case_not_found when the case is not the customer's, 503 db_unavailable if
+            the database fails.
+    """
+    try:
+        case = session.get(Case, case_id)
+        if case is None or case.customer_id != customer_id:
+            raise AppError("case_not_found", f"Case {case_id} not found.", 404)
+        rows = session.execute(_TRACE, {"case_id": case_id}).mappings().all()
+    except SQLAlchemyError as exc:
+        raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
+    return [
+        TraceStepOut(
+            id=r["id"],
+            trace_id=r["trace_id"],
+            actor=r["actor"],
+            action=r["action"],
+            text=describe(
+                r["actor"],
+                r["action"],
+                r["payload"],
+                {**(r["result"] or {}), "analyst": None},
+                r["policy_version"],
+                lang,
+            ),
+        )
+        for r in rows
+    ]
 
 
 def _rejection_reason(session: Session, case: Case) -> str | None:

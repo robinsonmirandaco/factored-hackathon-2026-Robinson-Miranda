@@ -22,6 +22,7 @@ from app.schemas.api import (
     AnalystLoginIn,
     AutomationIn,
     AutomationOut,
+    AutonomyOut,
     CaseOut,
     ChargeOut,
     ChatIn,
@@ -49,11 +50,13 @@ from app.schemas.api import (
     QueueOut,
     TokenOut,
     TraceEventOut,
+    TraceStepOut,
 )
 from app.schemas.dossier import Dossier
 from app.services import (
     auth,
     automation,
+    autonomy,
     cases,
     decisions,
     demo,
@@ -285,13 +288,33 @@ def get_clarifications(
 
 
 @router.get(
+    "/me/clarifications/{case_id}/trace",
+    response_model=list[TraceStepOut],
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
+)
+def get_case_trace(
+    case_id: str,
+    _demo: DemoDep,
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    lang: Annotated[Lang, Query()] = "es",
+) -> list[TraceStepOut]:
+    """Returns the steps of one of the customer's cases; the route exists only in demo mode."""
+    return me.case_trace(session, customer.subject, case_id, lang)
+
+
+@router.get(
     "/me/notifications",
     response_model=NotificationsOut,
-    responses={**_AUTH, 503: _ERRORS[503]},
+    responses={**_AUTH, 422: _ERRORS[422], 503: _ERRORS[503]},
 )
-def get_notifications(customer: CustomerDep, session: CustomerSessionDep) -> NotificationsOut:
-    """Returns the session customer's notifications, newest first, with the unread count."""
-    return notifications.list_notifications(session, customer.subject)
+def get_notifications(
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    lang: Annotated[Lang | None, Query()] = None,
+) -> NotificationsOut:
+    """Returns the session customer's notifications, newest first, in the screen's language."""
+    return notifications.list_notifications(session, customer.subject, lang)
 
 
 @router.post(
@@ -312,7 +335,11 @@ def get_case(case_id: str, session: AnalystSessionDep) -> CaseOut:
     return cases.get_case(session, case_id)
 
 
-@router.get("/cases/{case_id}/trace", response_model=list[TraceEventOut], responses=_AUTH)
+@router.get(
+    "/cases/{case_id}/trace",
+    response_model=list[TraceEventOut],
+    responses={**_AUTH, 404: _ERRORS[404], 503: _ERRORS[503]},
+)
 def get_trace(case_id: str, session: AnalystSessionDep) -> list[TraceEventOut]:
     """Returns every audit row of a case in write order."""
     return cases.get_trace(session, case_id)
@@ -420,10 +447,19 @@ def put_automation(
     return automation.set_switch(session, analyst.subject, body.all_to_human)
 
 
-@router.get("/metrics", response_model=MetricsOut, responses=_AUTH)
-def metrics(session: AnalystSessionDep) -> MetricsOut:
-    """Returns operational counters from the cases table and the audit log."""
-    return cases.get_metrics(session)
+@router.get("/autonomy", response_model=AutonomyOut, responses={**_AUTH, 503: _ERRORS[503]})
+def get_autonomy(session: AnalystSessionDep, runtime: RuntimeDep) -> AutonomyOut:
+    """Returns the autonomy of every cell with its thresholds and reversed cases (TRZ-31)."""
+    policy = runtime.agent.policy.config
+    return autonomy.autonomy_status(
+        session, policy.autonomy, policy.dispute_intents, runtime.settings.demo_mode
+    )
+
+
+@router.get("/metrics", response_model=MetricsOut, responses={**_AUTH, 503: _ERRORS[503]})
+def metrics(session: AnalystSessionDep, runtime: RuntimeDep) -> MetricsOut:
+    """Returns containment, handoffs, latency, cost and the autonomy cells, from the audit log."""
+    return cases.get_metrics(session, runtime.agent.policy.config.autonomy.initial_level)
 
 
 @router.get("/demo", response_model=DemoStateOut, responses={**_AUTH, 404: _ERRORS[404]})

@@ -3,9 +3,11 @@ Portuguese, written by code and without personal data."""
 
 import ast
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
+from app.domain.fact_check import Kind as ClaimKind
 from app.domain.history import LANGS, REVERSAL_REASONS, TEMPLATES, describe
 from app.domain.policy import load_policy
 
@@ -220,3 +222,78 @@ def test_an_answer_line_tells_the_redacted_answer() -> None:
 def test_an_injection_stop_is_not_told_as_another_customers_data() -> None:
     line = describe("agent", "security_event", {"reason": "instruction_in_text"}, {}, "1", "es")
     assert "instrucción" in line and "otro cliente" not in line
+
+
+@pytest.mark.parametrize(
+    ("payload", "result", "es", "pt"),
+    [
+        (
+            {"decision": "reject", "reason": "wrong_charge"},
+            {},
+            "La analista decidió rechazar: cargo equivocado.",
+            "A analista decidiu rejeitar: cobrança errada.",
+        ),
+        (
+            {"decision": "reject", "reason": "wrong_charge", "kind": "audit_sample"},
+            {},
+            "La analista revirtió la muestra de auditoría: cargo equivocado.",
+            "A analista reverteu a amostra de auditoria: cobrança errada.",
+        ),
+    ],
+)
+def test_a_decision_told_without_the_user_name_says_the_analyst(
+    payload: dict, result: dict, es: str, pt: str
+) -> None:
+    # The customer's trace leaves the analyst's user name out (TRZ-34 CA4, decision D1).
+    assert describe("human", "decision", payload, result, None, "es").startswith(es[:-1])
+    assert describe("human", "decision", payload, result, None, "pt").startswith(pt[:-1])
+    assert "?" not in describe("human", "decision", payload, result, None, "es")
+
+
+def _outcomes() -> set[str]:
+    """Every outcome literal the agent writes: assigned to facts["outcome"], returned under
+    "outcome", or named by a module constant that holds one."""
+    tree = ast.parse((SRC / "app" / "services" / "agent.py").read_text())
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if isinstance(key, ast.Constant) and key.value == "outcome":
+                    if isinstance(value, ast.Constant):
+                        found.add(value.value)
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            target = node.targets[0]
+            is_outcome = (
+                isinstance(target, ast.Subscript)
+                and getattr(target.slice, "value", None) == "outcome"
+            )
+            if is_outcome or getattr(target, "id", None) == "WITH_PERSON":
+                found.add(node.value.value)
+    return found
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_every_outcome_of_a_turn_is_told_in_words(lang: str) -> None:
+    # The customer's trace shows these lines (TRZ-34 CA4): no internal code may reach it.
+    outcomes = _outcomes()
+    assert {"existing_case", "with_person", "registered_verified"} <= outcomes
+    for outcome in sorted(outcomes):
+        line = describe("agent", "turn_complete", None, {"outcome": outcome}, None, lang)
+        assert outcome not in line, line
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_every_action_of_the_policy_is_told_in_words(lang: str) -> None:
+    actions = set(load_policy("config/policy.yaml").action_level) | {"block"}
+    for action in sorted(actions):
+        line = describe("policy", "decide", None, {"action": action, "level": "L1"}, "1", lang)
+        assert action not in line, line
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_every_kind_the_fact_checker_flags_is_told_in_words(lang: str) -> None:
+    for kind in get_args(ClaimKind):
+        result = {"unsupported": [{"kind": kind}], "sent": False}
+        line = describe("agent", "fact_check", None, result, None, lang)
+        # "folio" is the Spanish word itself, not a code.
+        assert kind not in line or (lang, kind) == ("es", "folio"), line

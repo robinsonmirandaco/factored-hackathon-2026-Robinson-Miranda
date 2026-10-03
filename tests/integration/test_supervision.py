@@ -315,6 +315,52 @@ def test_a_rejection_notifies_its_reason_in_plain_words(
     assert (mine["status"], mine["reason"]) == ("rejected", "insufficient_data")
 
 
+def test_notifications_follow_the_language_of_the_screen(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    # QA of TRZ-31/34/37: the text was always in the language of the case, whatever the screen.
+    c2, analyst = customer_headers(client, "C2"), analyst_headers(client)
+    approval = _pending(client, c2, LIVERPOOL)
+    large = _pending(client, c2, SEARS)
+    folio = _decide(client, analyst, approval["case_id"], decision="approve").json()[
+        "dispute_folio"
+    ]
+    _decide(client, analyst, large["case_id"], decision="need_info", question="¿Cuándo?")
+
+    def texts(lang: str | None) -> dict[str, str]:
+        params = {"lang": lang} if lang else {}
+        r = client.get("/me/notifications", params=params, headers=c2)
+        assert r.status_code == 200, r.text
+        return {n["kind"]: n["text"] for n in r.json()["items"]}
+
+    pt = texts("pt")
+    assert pt["approved"] == (
+        f"Uma analista aprovou a sua contestação: foi registrada com o protocolo {folio}."
+    )
+    assert pt["info_requested"] == (
+        "Uma analista precisa de mais um dado sobre a sua contestação. "
+        "Responda em Minhas contestações até 24 de junho de 2026."
+    )
+    es = texts("es")
+    assert (
+        es["approved"].startswith("Una analista aprobó tu aclaración") and folio in es["approved"]
+    )
+    # Without a language the text is the one stored, in the language of the case.
+    assert texts(None) == es
+    assert client.get("/me/notifications", params={"lang": "en"}, headers=c2).status_code == 422
+
+
+def test_a_rejection_in_the_other_language_keeps_its_reason(client: TestClient) -> None:
+    c2, analyst = customer_headers(client, "C2"), analyst_headers(client)
+    large = _pending(client, c2, SEARS)
+    _decide(client, analyst, large["case_id"], decision="reject", reason="insufficient_data")
+    [note] = client.get("/me/notifications", params={"lang": "pt"}, headers=c2).json()["items"]
+    assert note["text"] == (
+        "Uma analista revisou a sua contestação e ela não foi aceita: "
+        "não houve dados suficientes para o registro."
+    )
+
+
 def test_opening_a_notification_marks_it_read_once(client: TestClient, schema: SchemaUrls) -> None:
     c1, analyst = customer_headers(client, "C1"), analyst_headers(client)
     case_id = _registered(client, c1)["case_id"]

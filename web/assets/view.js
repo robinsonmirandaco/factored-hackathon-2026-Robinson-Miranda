@@ -282,3 +282,47 @@ export function unreadBadge(t, unread) {
   const n = Number(unread) || 0;
   return { hidden: n === 0, text: n > 9 ? "9+" : String(n), title: t("notificationsUnread", { n }) };
 }
+
+// ---- the trace of a case in the audit view of the demo (TRZ-34 CA4) ------------------------
+
+// The switch of the audit view: off until the customer turns it on, in this tab only.
+export const AUDIT_KEY = "trazo.customer.audit";
+
+export function auditOn(stored) {
+  return stored === "on";
+}
+
+export function auditSwitchView(t, on) {
+  return { text: `${t("auditSwitch")}: ${t(on ? "auditSwitchOn" : "auditSwitchOff")}`, checked: on };
+}
+
+export function traceHref(caseId) {
+  return `#/traza/${encodeURIComponent(caseId)}`;
+}
+
+// The case of a trace route, or null for any other route.
+export function traceCase(hash) {
+  const match = /^#\/traza\/(.+)$/.exec(hash || "");
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+// The steps as the API tells them; the screen adds no figure, no date and no internal code.
+export function traceLines(steps) {
+  return (steps || []).map((s) => ({ text: s.text, traceId: s.trace_id }));
+}
+
+// Where a trace route goes. With the audit view off it goes back to Mis aclaraciones before any
+// request; a case the API does not find for this customer goes back there too (QA CP-13). Any
+// other failure stays on the screen with its message.
+export function traceRoute(hash, visible, error) {
+  const caseId = traceCase(hash);
+  if (caseId === null) return null;
+  if (!visible) return { redirect: "#/aclaraciones" };
+  if (error) return error.status === 404 ? { redirect: "#/aclaraciones" } : null;
+  return { caseId };
+}
+
+// The notifications in the language of the screen, as every other text (QA of TRZ-31/34/37).
+export function notificationsPath(lang) {
+  return `/me/notifications?lang=${encodeURIComponent(lang)}`;
+}

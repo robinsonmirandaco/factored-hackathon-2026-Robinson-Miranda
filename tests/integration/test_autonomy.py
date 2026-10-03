@@ -5,19 +5,24 @@ the unrecognized charge x ES cell. With 10 reversals the cell goes down to A1 (C
 the block is in the audit log with r, W, N, the threshold and the reversed cases (CA8). The next
 case of the cell then waits for an analyst's approval, and its trace says why (CA6, CA9). At A2
 the system records what it would have recommended without showing it, and the analyst's decision
-is compared against it (CA7). The level lives in the database: a new app keeps it.
+is compared against it (CA7). The level lives in the database: a new app keeps it. The metrics
+rebuild the same cells from the audit log alone (TRZ-37 CA2), and the Estado de autonomía tab
+shows each cell, its thresholds and its reversed cases (TRZ-31).
 """
 
+import re
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from app.adapters.db.session import Database, SchemaUrls
+from app.api.deps import get_analyst_session
 from app.core.config import Settings
 from app.main import create_app
 from tests.agent_support import still_not_recognized
@@ -217,6 +222,38 @@ def test_the_next_case_of_a_cell_at_a1_waits_for_approval_and_its_trace_says_why
         assert later["outcome"] == "pending_analyst_approval", later
 
 
+def test_the_metrics_rebuild_every_cell_from_the_audit_log_as_autonomy_cells_keeps_it(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    # TRZ-37 CA2: a closed block that changed the level, then one review of the next block.
+    _nineteen_then(client, "reject")
+    analyst = analyst_headers(client)
+    _decide(
+        client,
+        analyst,
+        _handed(client, customer_headers(client, "C3"), "C3N")["case_id"],
+        decision="approve",
+    )
+    metrics = client.get("/metrics", headers=analyst).json()["autonomy"]
+    stored = _query(
+        schema,
+        "SELECT intent, language, level, block_reviews, block_reversals, good_blocks "
+        "FROM autonomy_cells ORDER BY 1, 2",
+    )
+    rebuilt = [
+        (
+            c["intent"],
+            c["language"],
+            c["level"],
+            c["block_reviews"],
+            c["block_reversals"],
+            c["good_blocks"],
+        )
+        for c in metrics
+    ]
+    assert rebuilt == stored == [("unrecognized_charge", "es", "A1", 1, 0, 0)]
+
+
 def test_the_same_decision_sent_again_is_not_counted_twice(
     client: TestClient, schema: SchemaUrls
 ) -> None:
@@ -286,3 +323,147 @@ def test_a_customer_session_reads_the_cell_but_cannot_change_it(
     finally:
         db.dispose()
     assert _cell(schema) == [("A1", 0, 0, 0)]
+
+
+# ---- the Estado de autonomía tab (TRZ-31) ---------------------------------------------------
+
+
+def _tab(client: TestClient) -> dict[str, Any]:
+    r = client.get("/autonomy", headers=analyst_headers(client))
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _es(tab: dict[str, Any]) -> dict[str, Any]:
+    return next(c for c in tab["cells"] if (c["intent"], c["language"]) == CELL)
+
+
+def test_the_tab_lists_every_cell_with_the_thresholds_before_any_review(
+    client: TestClient,
+) -> None:
+    tab = _tab(client)
+    # CA2: the thresholds of the policy.
+    assert tab["thresholds"] == {
+        "window_n": 20,
+        "z": 1.645,
+        "demote_if_wilson_lower_gte": 0.3,
+        "promote_if_rate_lt": 0.15,
+        "promote_after_consecutive_windows": 2,
+        "audit_sample_rate": 0.1,
+    }
+    # CA1: one row per dispute intent and language, at the initial level with no row yet.
+    assert [(c["intent"], c["language"]) for c in tab["cells"]] == [
+        (i, lang)
+        for i in ("unrecognized_charge", "billing_error_amount", "billing_error_duplicate")
+        for lang in ("es", "pt")
+    ]
+    cell = _es(tab)
+    assert (cell["level"], cell["block_reviews"], cell["rate"], cell["last_block"]) == (
+        "A0",
+        0,
+        None,
+        None,
+    )
+
+
+def test_the_tab_shows_the_open_block_and_then_the_block_that_changed_the_level(
+    client: TestClient, schema: SchemaUrls
+) -> None:
+    analyst = analyst_headers(client)
+    c1, c2 = customer_headers(client, "C1"), customer_headers(client, "C2")
+    for tx in REJECTED[:9]:
+        _decide(
+            client,
+            analyst,
+            _handed(client, c2, tx)["case_id"],
+            decision="reject",
+            reason="wrong_charge",
+        )
+    for tx in APPROVED:
+        _decide(client, analyst, _handed(client, c1, tx)["case_id"], decision="approve")
+
+    # Nineteen reviews: r of the open block, no W yet (CA1), its nine reversals (CA3).
+    cell = _es(_tab(client))
+    assert (cell["level"], cell["block_reviews"], cell["block_reversals"]) == ("A0", 19, 9)
+    assert cell["rate"] == 0.4737 and cell["last_block"] is None
+    assert len(cell["reversed_open_block"]) == 9 and cell["reversed_last_block"] == []
+
+    # CA4: the twentieth review closes the block; the next read shows the change.
+    last = _handed(client, c2, REJECTED[9])["case_id"]
+    _decide(client, analyst, last, decision="reject", reason="should_not_act")
+    cell = _es(_tab(client))
+    assert (cell["level"], cell["block_reviews"], cell["rate"]) == ("A1", 0, None)
+    block = cell["last_block"]
+    assert block == cell["last_change"]
+    assert (block["closed_by"], block["n"], block["reversals"], block["r"], block["w"]) == (
+        last,
+        20,
+        10,
+        0.5,
+        0.3274,
+    )
+    assert (block["level_before"], block["level_after"], block["changed"]) == ("A0", "A1", True)
+    reversed_cases = [
+        c
+        for (c,) in _query(
+            schema, "SELECT id FROM cases WHERE customer_id = 'C2' ORDER BY created_at"
+        )
+    ]
+    assert [r["case_id"] for r in cell["reversed_last_block"]] == reversed_cases
+    assert [r["reason"] for r in cell["reversed_last_block"]] == ["wrong_charge"] * 9 + [
+        "should_not_act"
+    ]
+    assert not any(r["simulated"] for r in cell["reversed_last_block"])
+    assert cell["reversed_open_block"] == []
+
+    # CA3: a reversal in the new block is listed apart from those of the closed block.
+    next_case = _handed(client, customer_headers(client, "C3"), "C3N")["case_id"]
+    _decide(client, analyst, next_case, decision="reject", reason="insufficient_data")
+    cell = _es(_tab(client))
+    assert (cell["level"], cell["block_reviews"], cell["block_reversals"]) == ("A1", 1, 1)
+    assert cell["reversed_open_block"] == [
+        {"case_id": next_case, "reason": "insufficient_data", "simulated": False}
+    ]
+    assert len(cell["reversed_last_block"]) == 10
+
+
+def test_the_tab_returns_no_real_clock_date(client: TestClient) -> None:
+    _nineteen_then(client, "reject")
+    body = client.get("/autonomy", headers=analyst_headers(client)).text
+    # Design 10.2 rule 7: the audit log's created_at is the real clock.
+    assert "created_at" not in body and "updated_at" not in body
+    assert re.search(r"\d{4}-\d{2}-\d{2}", body) is None
+
+
+def test_outside_demo_mode_the_tab_is_not_labeled_simulated(
+    schema: SchemaUrls, database_url: str, client: TestClient
+) -> None:
+    settings = Settings(
+        database_url=database_url, llm_enabled=False, log_level="WARNING", demo_mode=False
+    )
+    with TestClient(create_app(settings), raise_server_exceptions=False) as c:
+        assert _tab(c)["simulated"] is False
+    assert _tab(client)["simulated"] is True
+
+
+def test_the_tab_is_for_the_analyst_only(client: TestClient) -> None:
+    assert client.get("/autonomy").status_code == 401
+    r = client.get("/autonomy", headers=customer_headers(client, "C1"))
+    assert r.status_code == 403 and r.json()["error_code"] == "forbidden"
+
+
+class _BrokenSession:
+    info: dict[str, Any] = {}
+
+    def execute(self, *_args: object) -> None:
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    scalars = execute
+
+
+def test_the_tab_with_the_database_down_is_503(client: TestClient) -> None:
+    app: FastAPI = client.app  # type: ignore[assignment]
+    app.dependency_overrides[get_analyst_session] = lambda: _BrokenSession()
+    r = client.get("/autonomy")
+    app.dependency_overrides.clear()
+    assert r.status_code == 503 and r.json()["error_code"] == "db_unavailable"

@@ -8,8 +8,10 @@ autonomy takes one block and earning it back takes several, on purpose. Pure fun
 the service stores the state and the evaluation simulates with the same code.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from math import sqrt
+from typing import Any
 
 from app.domain.policy import Autonomy, AutonomyLevel
 
@@ -128,3 +130,42 @@ def apply_review(
         good_blocks=good,
     )
     return CellState(level=after, good_blocks=good), closed
+
+
+def cells_from_audit(
+    rows: Iterable[tuple[str, dict[str, Any] | None, dict[str, Any] | None]],
+    initial: AutonomyLevel,
+) -> dict[tuple[str, str], CellState]:
+    """Rebuilds the state of every cell from the audit log alone (TRZ-37 CA2).
+
+    The level and the good blocks are the ones the last closed block of the cell wrote; the open
+    block is the reviews of the cell decided after it. The service keeps the same state in
+    autonomy_cells, so both must agree.
+
+    Args:
+        rows: In write order, the analyst decisions that carry a review, as ("decision", payload,
+            result), and the closed blocks, as ("autonomy_block", payload, result).
+        initial: `autonomy.initial_level` of the policy, the level of a cell with no closed block.
+
+    Returns:
+        The state of each (intent, language) cell that has at least one review.
+    """
+    cells: dict[tuple[str, str], CellState] = {}
+    for action, payload, result in rows:
+        if action == "autonomy_block":
+            cell = (payload or {})["cell"]
+            key = (cell["intent"], cell["language"])
+            r = result or {}
+            cells[key] = CellState(level=r["level_after"], good_blocks=r.get("good_blocks", 0))
+            continue
+        review = (result or {}).get("review")
+        if not review:
+            continue
+        key = (review["cell"]["intent"], review["cell"]["language"])
+        state = cells.get(key, CellState(initial))
+        cells[key] = replace(
+            state,
+            reviews=state.reviews + 1,
+            reversals=state.reversals + int(bool(review["reversal"])),
+        )
+    return cells

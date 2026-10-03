@@ -336,6 +336,28 @@ class HistoryEntryOut(BaseModel):
     text: str
 
 
+class TraceStepOut(BaseModel):
+    """One step of the customer's own case in the audit view of the demo (TRZ-34 CA4).
+
+    The text is the line of the analyst's history, without the analyst's user name. No date is
+    sent: the audit log keeps the real clock, and the customer screens show only dates of the
+    simulated clock (design 10.2, rule 7).
+
+    Attributes:
+        id: Audit row id.
+        trace_id: Request that wrote the step.
+        actor: Who acted.
+        action: What was done.
+        text: The step in the requested language.
+    """
+
+    id: int
+    trace_id: str
+    actor: str
+    action: str
+    text: str
+
+
 QueueFilter = Literal["high_priority", "over_1000_usd", "no_match", "verification_failed", "audit"]
 
 
@@ -492,14 +514,157 @@ class InfoReplyOut(BaseModel):
     answered_at: datetime
 
 
-class MetricsOut(BaseModel):
-    """Operational counters read from the cases table and the audit log."""
+class LatencyOut(BaseModel):
+    """Percentiles of the duration of a customer turn, in milliseconds."""
 
-    cases_by_status: dict[str, int]
-    cases_by_level: dict[str, int]
+    p50: float
+    p95: float
+
+
+class CellMetricsOut(BaseModel):
+    """State of one intent x language cell, rebuilt from the audit log (TRZ-37).
+
+    Attributes:
+        level: Autonomy level in force.
+        block_reviews: Reviews in the open block.
+        block_reversals: Reversals among them.
+        good_blocks: Consecutive closed blocks under the promotion threshold.
+    """
+
+    intent: str
+    language: str
+    level: str
+    block_reviews: int
+    block_reversals: int
+    good_blocks: int
+
+
+class SimulatedMetricsOut(BaseModel):
+    """The share of the figures that comes from cases the demo state created (TRZ-38).
+
+    They are already counted in the totals; this block says how many of them are simulated.
+    """
+
+    label: Literal["[simulado]"] = "[simulado]"
+    cases: int
+    contained: int
+    handed_to_person: int
+
+
+class MetricsOut(BaseModel):
+    """Operational metrics of design 11.6, every one computed from the audit log (TRZ-37).
+
+    Attributes:
+        cases: Cases with at least one customer turn.
+        contained: Those no turn handed to a person.
+        containment: contained / cases; None without cases.
+        handed_to_person: Cases handed to a person, by the outcome of the turn that handed them
+            over first: escalated, pending_analyst_approval, security_blocked or failed.
+        turns: Customer turns.
+        turn_latency_ms: p50 and p95 of the turns; None without turns.
+        input_tokens: LLM input tokens of every step.
+        output_tokens: LLM output tokens of every step.
+        cost_usd: LLM cost of every step.
+        simulated: How much of the above comes from simulated cases.
+        autonomy: State of every cell with at least one review.
+    """
+
+    cases: int
+    contained: int
+    containment: float | None
+    handed_to_person: dict[str, int]
     turns: int
-    avg_turn_latency_ms: float
-    human_decisions: int
+    turn_latency_ms: LatencyOut | None
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    simulated: SimulatedMetricsOut
+    autonomy: list[CellMetricsOut]
+
+
+class ThresholdsOut(BaseModel):
+    """The autonomy settings of the policy the console shows above the cells (TRZ-31 CA2)."""
+
+    window_n: int
+    z: float
+    demote_if_wilson_lower_gte: float
+    promote_if_rate_lt: float
+    promote_after_consecutive_windows: int
+    audit_sample_rate: float
+
+
+class ReversedCaseOut(BaseModel):
+    """A review the analyst reversed, with its reason of the closed list.
+
+    Attributes:
+        simulated: The case was created by the demo state, not by a customer.
+    """
+
+    case_id: str
+    reason: str
+    simulated: bool
+
+
+class ClosedBlockOut(BaseModel):
+    """A closed block of N reviews and what it decided (design 6.7).
+
+    Attributes:
+        audit_id: Its autonomy_block row.
+        closed_by: The case whose review closed it.
+        threshold: Policy key of the threshold it crossed, or None.
+    """
+
+    audit_id: int
+    closed_by: str | None
+    n: int
+    reversals: int
+    r: float
+    w: float
+    threshold: str | None
+    threshold_value: float | None
+    level_before: str
+    level_after: str
+    changed: bool
+
+
+class AutonomyCellOut(BaseModel):
+    """One intent x language cell of the Estado de autonomía tab (TRZ-31 CA1, CA3).
+
+    Attributes:
+        level: Level in force.
+        block_reviews: Reviews in the open block.
+        block_reversals: Reversals among them.
+        rate: r of the open block; None while it has no review.
+        last_block: The last closed block, whose W the tab shows; None before the first one.
+        last_change: The closed block that set the level; None while it never changed.
+        reversed_last_block: The reversed cases of the last closed block.
+        reversed_open_block: The reversed cases of the open block.
+    """
+
+    intent: str
+    language: str
+    level: str
+    block_reviews: int
+    block_reversals: int
+    rate: float | None
+    last_block: ClosedBlockOut | None
+    last_change: ClosedBlockOut | None
+    reversed_last_block: list[ReversedCaseOut]
+    reversed_open_block: list[ReversedCaseOut]
+
+
+class AutonomyOut(BaseModel):
+    """The Estado de autonomía tab (TRZ-31).
+
+    Attributes:
+        cells: Every dispute intent in Spanish and Portuguese, read from autonomy_cells.
+        simulated: Some review comes from a simulated case, or the app runs in demo mode: the
+            tab says the reversals are simulated (CA5).
+    """
+
+    thresholds: ThresholdsOut
+    cells: list[AutonomyCellOut]
+    simulated: bool
 
 
 # ---- the customer's own screens (TRZ-34) ------------------------------------------------

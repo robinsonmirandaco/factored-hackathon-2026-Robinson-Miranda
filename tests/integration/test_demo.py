@@ -320,6 +320,19 @@ def test_the_cell_gets_its_reviews_and_reversals_from_real_decisions(
     assert rows == [("approve", "pt", False), ("reject", "pt", True), ("approve", "pt", False)]
 
 
+def test_the_autonomy_tab_marks_the_seeded_reversals_simulated(seeded: TestClient) -> None:
+    # TRZ-31 CA3, CA5: the seeded reviews of the PT-BR cell are on simulated cases.
+    tab = seeded.get("/autonomy", headers=analyst_headers(seeded)).json()
+    [cell] = [
+        c for c in tab["cells"] if (c["intent"], c["language"]) == ("unrecognized_charge", "pt")
+    ]
+    assert (cell["level"], cell["block_reviews"], cell["block_reversals"]) == ("A0", 3, 1)
+    assert [(r["reason"], r["simulated"]) for r in cell["reversed_open_block"]] == [
+        ("wrong_charge", True)
+    ]
+    assert tab["simulated"] is True
+
+
 def test_a_customer_case_is_not_simulated(seeded: TestClient, schema: SchemaUrls) -> None:
     headers = customer_headers_for_demo(seeded)
     r = seeded.post(

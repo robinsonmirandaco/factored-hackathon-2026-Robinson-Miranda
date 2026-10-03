@@ -1,10 +1,12 @@
-"""Wilson lower bound and the autonomy level of a cell (TRZ-30, design 6.7)."""
+"""Wilson lower bound and the autonomy level of a cell (TRZ-30, design 6.7), and the same state
+rebuilt from the audit log (TRZ-37)."""
 
+import random
 from typing import Any
 
 import pytest
 
-from app.domain.autonomy import CellState, apply_review, wilson_lower
+from app.domain.autonomy import CellState, apply_review, cells_from_audit, wilson_lower
 from app.domain.policy import load_policy
 
 PARAMS = load_policy("config/policy.yaml").autonomy
@@ -101,3 +103,49 @@ def test_a_change_of_level_resets_the_streak() -> None:
     assert state.good_blocks == 1
     state, _ = _block(state, 10)
     assert state == CellState(level="A2")
+
+
+def _audit_rows(cells: list[tuple[str, str]], reviews: int, seed: int) -> tuple[list, dict]:
+    """Reviews in random cells as the service writes them: the decision row, then the block row
+    when the decision closed one. Returns the rows and the state the service would keep."""
+    rng = random.Random(seed)
+    states = {c: CellState(PARAMS.initial_level) for c in cells}
+    rows: list[tuple[str, Any, Any]] = []
+    for _ in range(reviews):
+        cell = rng.choice(cells)
+        reversal = rng.random() < 0.35
+        intent, language = cell
+        review = {"cell": {"intent": intent, "language": language}, "reversal": reversal}
+        rows.append(("decision", {"decision": "approve"}, {"review": review}))
+        states[cell], closed = apply_review(states[cell], reversal, PARAMS)
+        if closed is not None:
+            result = {"level_after": closed.level_after, "good_blocks": closed.good_blocks}
+            rows.append(("autonomy_block", {"cell": review["cell"]}, result))
+    return rows, states
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_the_audit_rows_rebuild_the_state_the_service_keeps(seed: int) -> None:
+    cells = [
+        ("unrecognized_charge", "es"),
+        ("unrecognized_charge", "pt"),
+        ("billing_error_amount", "es"),
+    ]
+    rows, states = _audit_rows(cells, 400, seed)
+    assert cells_from_audit(rows, PARAMS.initial_level) == states
+
+
+def test_a_decision_without_a_review_does_not_count() -> None:
+    rows = [("decision", {"decision": "need_info"}, {"status": "awaiting_customer"})]
+    assert cells_from_audit(rows, PARAMS.initial_level) == {}
+
+
+def test_an_open_block_counts_only_the_reviews_after_the_last_closed_block() -> None:
+    cell = {"intent": "unrecognized_charge", "language": "pt"}
+    review = {"review": {"cell": cell, "reversal": True}}
+    rows = [("decision", {}, review)] * 20
+    rows += [("autonomy_block", {"cell": cell}, {"level_after": "A1", "good_blocks": 0})]
+    rows += [("decision", {}, review)] * 2
+    assert cells_from_audit(rows, PARAMS.initial_level) == {
+        ("unrecognized_charge", "pt"): CellState("A1", reviews=2, reversals=2)
+    }
