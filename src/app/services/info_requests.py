@@ -18,6 +18,7 @@ from app.adapters.db.models import AuditRecord, Case, Customer, InfoRequest, Que
 from app.core.errors import AppError
 from app.core.time import utcnow
 from app.domain.clock import SimulatedClock
+from app.domain.email import EmailConfig
 from app.domain.pii import redact
 from app.schemas.api import InfoReplyOut, InfoRequestOut
 from app.services.notifications import notify
@@ -137,7 +138,7 @@ def is_overdue(due_on: date, as_of: date) -> bool:
     return as_of > due_on
 
 
-def expire_overdue(session: Session, as_of: date) -> list[str]:
+def expire_overdue(session: Session, as_of: date, email: EmailConfig | None = None) -> list[str]:
     """Closes for lack of information every case whose request is past its deadline (CA3).
 
     Each request is locked and skipped if another run holds it, so two runs at once never close
@@ -149,6 +150,7 @@ def expire_overdue(session: Session, as_of: date) -> list[str]:
     Args:
         session: Session with the analyst role, which sees every customer's request.
         as_of: Day of the simulated clock to compare deadlines with.
+        email: Email settings of the notification (TRZ-33); None while the flag is off.
 
     Returns:
         The cases closed, in the order of their requests.
@@ -181,7 +183,7 @@ def expire_overdue(session: Session, as_of: date) -> list[str]:
             idempotency_key=key,
             customer_id=case.customer_id,
         )
-        notify(session, case, "info_expired", key, due=request.due_on)
+        notify(session, case, "info_expired", key, due=request.due_on, email=email)
         closed.append(case.id)
     session.flush()
     return closed

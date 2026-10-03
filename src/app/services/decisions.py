@@ -33,6 +33,7 @@ from app.adapters.db.audit import write_audit
 from app.adapters.db.models import AuditRecord, Case, Customer, InfoRequest, QueueItem
 from app.core.errors import AppError
 from app.core.time import utcnow
+from app.domain.email import EmailConfig
 from app.domain.pii import redact
 from app.domain.policy_passages import PolicyDeadline, Unsupported, policy_deadline
 from app.schemas.api import DecisionOut, HumanDecisionIn
@@ -139,21 +140,27 @@ def _record(
     if "review" in result:
         record_review(session, deps.policy.config.autonomy, result["review"], case_id)
     if not security:
-        _notify(session, case, body, result, f"decision:{row.id}")
+        _notify(session, case, body, result, f"decision:{row.id}", deps.email)
     return _out(case_id, body.decision, result)
 
 
 def _notify(
-    session: Session, case: Case, body: HumanDecisionIn, result: dict[str, Any], key: str
+    session: Session,
+    case: Case,
+    body: HumanDecisionIn,
+    result: dict[str, Any],
+    key: str,
+    email: EmailConfig | None,
 ) -> None:
-    """Tells the customer what was decided. An approval whose read-back failed is back with a
-    person and is not told yet."""
+    """Tells the customer what was decided, in the app and, with the flag on, by email. An
+    approval whose read-back failed is back with a person and is not told yet."""
     if case.status == "approved" and result.get("folio"):
-        notify(session, case, "approved", key, folio=str(result["folio"]))
+        notify(session, case, "approved", key, folio=str(result["folio"]), email=email)
     elif case.status == "rejected":
-        notify(session, case, "rejected", key, reason=body.reason)
+        notify(session, case, "rejected", key, reason=body.reason, email=email)
     elif case.status == "awaiting_customer":
-        notify(session, case, "info_requested", key, due=date.fromisoformat(result["due_on"]))
+        due = date.fromisoformat(result["due_on"])
+        notify(session, case, "info_requested", key, due=due, email=email)
 
 
 def _review(of: str, case: Case, body: HumanDecisionIn) -> dict[str, Any]:
@@ -215,7 +222,7 @@ def _audit(
     )
     record_review(session, deps.policy.config.autonomy, result["review"], case.id)
     if reversal:
-        notify(session, case, "audit_reversed", f"decision:{row.id}")
+        notify(session, case, "audit_reversed", f"decision:{row.id}", email=deps.email)
     return _out(case.id, body.decision, result)
 
 

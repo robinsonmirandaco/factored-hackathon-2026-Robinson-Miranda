@@ -1,6 +1,7 @@
 """`make jobs` and its parts: the scheduled processes, each run once and then exits.
 
 python -m app.cli.jobs expire-info-requests [--as-of YYYY-MM-DD]
+python -m app.cli.jobs send-email
 python -m app.cli.jobs all
 
 They connect as trazo_app, never as the owner, so row level security applies to them as to the
@@ -13,28 +14,59 @@ import argparse
 from datetime import date
 
 from app.adapters.db.session import Database
+from app.adapters.email import EmailProvider, ResendProvider
 from app.core.config import Settings
 from app.core.logging import configure_logging, get_logger, new_trace_id
+from app.core.time import utcnow
+from app.domain.email import EmailConfig
+from app.services.email_outbox import config_from, send_due
 from app.services.info_requests import expire_overdue
 
 log = get_logger("jobs")
 
 
-def expire_info_requests(db: Database, as_of: date) -> list[str]:
+def expire_info_requests(db: Database, as_of: date, email: EmailConfig | None = None) -> list[str]:
     """Closes the cases whose request for information is past its deadline (TRZ-28 CA3).
 
     Args:
         db: Database of the service.
         as_of: Day of the simulated clock to compare deadlines with.
+        email: Email settings of the notification; None while the email flag is off.
 
     Returns:
         The cases closed.
     """
     new_trace_id()
     with db.session(role="analyst") as session:
-        closed = expire_overdue(session, as_of)
+        closed = expire_overdue(session, as_of, email)
     log.info("info_requests_expired", as_of=as_of.isoformat(), closed=len(closed))
     return closed
+
+
+def send_email(db: Database, provider: EmailProvider, config: EmailConfig) -> dict[str, int]:
+    """Sends the emails of the outbox whose attempt is due (TRZ-33).
+
+    Args:
+        db: Database of the service.
+        provider: The email provider.
+        config: Email settings.
+
+    Returns:
+        How many were sent, left for a retry and failed.
+    """
+    new_trace_id()
+    with db.session(role="analyst") as session:
+        counts = send_due(session, provider, config, utcnow())
+    log.info("email_sent", **counts)
+    return counts
+
+
+def _provider(settings: Settings) -> EmailProvider:
+    if not settings.resend_api_key:
+        raise SystemExit("EMAIL_ENABLED is on but RESEND_API_KEY is not set: nothing was sent")
+    return ResendProvider(
+        settings.resend_api_key, settings.email_from, settings.email_timeout_seconds
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code: 0 on success.
     """
     parser = argparse.ArgumentParser(prog="python -m app.cli.jobs")
-    parser.add_argument("job", choices=["expire-info-requests", "all"])
+    parser.add_argument("job", choices=["expire-info-requests", "send-email", "all"])
     parser.add_argument(
         "--as-of",
         type=date.fromisoformat,
@@ -56,9 +88,16 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     settings = Settings()
     configure_logging(settings.log_level)
+    email = config_from(settings)
     db = Database(settings.database_url)
     try:
-        expire_info_requests(db, args.as_of or settings.trazo_now.date())
+        if args.job in ("expire-info-requests", "all"):
+            expire_info_requests(db, args.as_of or settings.trazo_now.date(), email)
+        if args.job in ("send-email", "all"):
+            if email is None:
+                log.info("email_disabled")
+            else:
+                send_email(db, _provider(settings), email)
     finally:
         db.dispose()
     return 0

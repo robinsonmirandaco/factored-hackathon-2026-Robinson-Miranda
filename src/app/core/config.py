@@ -81,6 +81,19 @@ class Settings(BaseSettings):
     # Who the demo people are and which cases a reset creates (TRZ-38); read only in demo_mode.
     demo_config_path: Path = Path("config/demo.yaml")
 
+    # Transactional email (TRZ-33), off by default. When on, every notification also goes by
+    # email, and only ever to the test inbox, which must be in the allowlist (comma separated).
+    # The Resend key is a secret of the environment.
+    email_enabled: bool = False
+    email_test_inbox: str = ""
+    email_allowlist: str = ""
+    email_from: str = "onboarding@resend.dev"
+    resend_api_key: str = ""
+    email_timeout_seconds: float = 5.0
+    # Attempts per email, and minutes to wait after each failed one but the last.
+    email_max_attempts: int = 5
+    email_retry_minutes: list[int] = [1, 2, 4, 8]
+
     policy_path: str = "config/policy.yaml"
     # Demo policy passages and bank holidays: the response deadline of a dispute (TRZ-21).
     policy_passages_path: Path = Path("config/policy_passages.yaml")

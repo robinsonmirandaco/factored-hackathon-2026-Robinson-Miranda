@@ -96,6 +96,14 @@ def _seed_operational_rows(admin_url: str) -> None:
                 ),
                 params,
             )
+            conn.execute(
+                text(
+                    "INSERT INTO email_outbox (notification_id, case_id, customer_id, to_address, "
+                    "subject, body) SELECT id, :k, :c, 'qa@example.test', 's', 'b' "
+                    "FROM notifications WHERE source_key = :k"
+                ),
+                params,
+            )
     engine.dispose()
 
 
@@ -147,6 +155,7 @@ def test_every_customer_table_is_covered(two_customers: SchemaUrls) -> None:
         "complaints",
         "customers",
         "disputes",
+        "email_outbox",
         "info_requests",
         "notifications",
         "products",
@@ -154,8 +163,22 @@ def test_every_customer_table_is_covered(two_customers: SchemaUrls) -> None:
     ]
 
 
+# Tables no customer session reads, not even its own rows: the email outbox holds the address of
+# the test inbox (TRZ-33).
+ANALYST_ONLY = {"email_outbox"}
+
+
+def test_an_analyst_only_table_hides_even_the_customers_own_rows(
+    two_customers: SchemaUrls,
+) -> None:
+    for table in ANALYST_ONLY:
+        assert _count(two_customers.admin, table, f"customer_id = '{A}'") > 0, table
+        assert _count(two_customers.app, table, customer_id=A) == 0, table
+
+
 def test_customer_context_hides_every_row_of_another_customer(two_customers: SchemaUrls) -> None:
-    for table in [*_customer_tables(two_customers.admin), "case_history"]:
+    tables = [t for t in _customer_tables(two_customers.admin) if t not in ANALYST_ONLY]
+    for table in [*tables, "case_history"]:
         other = f"customer_id = '{B}'"
         assert _count(two_customers.admin, table, other) > 0, table  # control: B has rows
         assert _count(two_customers.app, table, other, customer_id=A) == 0, table

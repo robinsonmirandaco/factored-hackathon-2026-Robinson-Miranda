@@ -37,6 +37,7 @@ from app.domain.business_days import HolidayCalendar
 from app.domain.clock import SimulatedClock
 from app.domain.comprehension_rules import comprehend_rules
 from app.domain.comprehension_rules import recognizes as rules_recognize
+from app.domain.email import EmailConfig
 from app.domain.fx import display_amount, local_currency, to_usd
 from app.domain.identification import (
     Candidate,
@@ -175,6 +176,7 @@ class AgentDeps:
         passages: Demo policy passages by rule, which back the response deadline.
         calendars: Bank holiday calendars by country code.
         fact_check: False turns the fact checker into an observer (ablation, TRZ-20 CA6).
+        email: Email settings of the notifications (TRZ-33); None while the flag is off.
     """
 
     policy: PolicyEngine
@@ -185,6 +187,7 @@ class AgentDeps:
     passages: Mapping[str, Passage]
     calendars: Mapping[str, HolidayCalendar]
     fact_check: bool = True
+    email: EmailConfig | None = None
 
 
 @dataclass(frozen=True)

@@ -20,9 +20,11 @@ from app.adapters.db.audit import write_audit
 from app.adapters.db.models import AuditRecord, Case, Notification
 from app.core.errors import AppError
 from app.core.time import utcnow
+from app.domain.email import EmailConfig
 from app.domain.fact_check import VerifiedFacts, unsupported
 from app.domain.recognition import long_date
 from app.schemas.api import NotificationOut, NotificationsOut
+from app.services.email_outbox import enqueue
 
 Kind = Literal["approved", "rejected", "info_requested", "audit_reversed", "info_expired"]
 
@@ -129,8 +131,11 @@ def notify(
     folio: str | None = None,
     reason: str | None = None,
     due: date | None = None,
+    email: EmailConfig | None = None,
 ) -> None:
     """Stores the notification of a decision for the customer of the case, once per source.
+
+    With the email flag on, its email goes to the outbox in the same transaction (TRZ-33).
 
     Args:
         session: Session with the analyst role, in the transaction of the decision.
@@ -140,6 +145,7 @@ def notify(
         folio: For an approval, the folio registered and verified.
         reason: For a rejection, the reason of the closed list.
         due: For a request for information, the last day to answer.
+        email: Email settings; None while the email flag is off.
     """
     exists = session.execute(
         select(Notification.id).where(Notification.source_key == source_key)
@@ -148,17 +154,18 @@ def notify(
         return
     language = case.language if case.language in _TEMPLATES else "es"
     text, checked = compose(kind, language, folio, reason, due)
-    session.add(
-        Notification(
-            customer_id=case.customer_id,
-            case_id=case.id,
-            kind=kind,
-            language=language,
-            text=text,
-            checked=checked,
-            source_key=source_key,
-        )
+    notification = Notification(
+        customer_id=case.customer_id,
+        case_id=case.id,
+        kind=kind,
+        language=language,
+        text=text,
+        checked=checked,
+        source_key=source_key,
     )
+    session.add(notification)
+    if email is not None:
+        enqueue(session, notification, email)
     write_audit(
         session,
         "system",

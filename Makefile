@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -49,6 +49,9 @@ jobs:
 	uv run --frozen python -m app.cli.jobs all
 expire-info-requests:
 	uv run --frozen python -m app.cli.jobs expire-info-requests $(if $(AS_OF),--as-of $(AS_OF))
+# Sends the emails of the outbox that are due; does nothing while EMAIL_ENABLED is off.
+send-email:
+	uv run --frozen python -m app.cli.jobs send-email
 
 # The synthetic fixture instead of the cohort, as in CI and a fresh compose stack.
 seed-synthetic:

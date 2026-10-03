@@ -499,6 +499,28 @@ def _info_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     )
 
 
+_EMAIL_OUTCOMES: dict[Lang, dict[str, str]] = {
+    "es": {
+        "sent": "se envió a la bandeja de prueba",
+        "pending": "el proveedor falló y se reintentará",
+        "failed": "no se pudo enviar y no se reintentará",
+    },
+    "pt": {
+        "sent": "foi enviado à caixa de teste",
+        "pending": "o provedor falhou e haverá nova tentativa",
+        "failed": "não pôde ser enviado e não haverá nova tentativa",
+    },
+}
+
+
+def _email_attempt(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    outcome = _label(_EMAIL_OUTCOMES, lang, r.get("status", "pending"))
+    n = p.get("attempt", "?")
+    if lang == "es":
+        return f"[simulado] Correo del aviso, intento {n}: {outcome}."
+    return f"[simulado] E-mail do aviso, tentativa {n}: {outcome}."
+
+
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     # The one line that tells free text: the answer, stored redacted, next to its question.
     answer = p.get("redacted_text")
@@ -848,6 +870,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("human", "automation_switch"): _automation_switch,
     ("customer", "info_reply"): _info_reply,
     ("system", "info_expired"): _info_expired,
+    ("system", "email_attempt"): _email_attempt,
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,
     ("tool", "list_recent_transactions"): _recent,
