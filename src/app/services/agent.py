@@ -1231,6 +1231,8 @@ def _confirm(
     results: the same folio, no new rows (CA4). The action row is locked, so two confirmations
     sent at once run one after the other.
 
+    The dispute is registered and read back first; the card is blocked only when the dispute
+    verified, so a failed registration never leaves a blocked card without its dispute.
     Every action that reported success is read back (TRZ-19). When all match, the case is
     `registered_verified`. When one does not, the case is `failed` and escalated, and the
     customer gets no confirmation; without the card and without a verified block, the reply
@@ -1267,6 +1269,8 @@ def _confirm(
     if row.action == "block":
         return _confirm_block(session, deps, case, language, row, said)
     facts: Facts = {"intent": case.intent, "action": row.action, "actions_taken": []}
+    backed = _deadline(deps, customer, language)(deps.clock.now.date())
+    block = None
     try:
         # A foreign id found by a tool must leave nothing behind, not even the dispute.
         with session.begin_nested():
@@ -1279,28 +1283,26 @@ def _confirm(
                 row.transaction_id,
                 case.intent,
             )
-            block = (
-                T.block_card(
+            checks = [
+                verify_dispute(
+                    session,
+                    case.id,
+                    customer.customer_id,
+                    row.transaction_id,
+                    case.intent,
+                    deps.clock.now,
+                    backed.due if isinstance(backed, PolicyDeadline) else None,
+                    str(dispute.data.get("folio", "")),
+                )
+            ]
+            # The card is blocked only once its dispute reads back: a failed registration must
+            # not leave the card blocked without the dispute (TRZ-18 follow-up).
+            if BLOCKS_CARD[row.action] and checks[0].verified:
+                block = T.block_card(
                     session, customer.customer_id, case.id, row.transaction_id, case.intent
                 )
-                if BLOCKS_CARD[row.action]
-                else None
-            )
     except T.OwnershipError:
         return _security_stop(session, deps, case, language, said, "foreign_transaction_id")
-    backed = _deadline(deps, customer, language)(deps.clock.now.date())
-    checks = [
-        verify_dispute(
-            session,
-            case.id,
-            customer.customer_id,
-            row.transaction_id,
-            case.intent,
-            deps.clock.now,
-            backed.due if isinstance(backed, PolicyDeadline) else None,
-            str(dispute.data.get("folio", "")),
-        )
-    ]
     if block is not None and block.ok:
         checks.append(
             verify_block(
@@ -1311,8 +1313,10 @@ def _confirm(
             )
         )
     verified = [c.action for c in checks if c.verified]
-    if block is not None and "block_card" not in verified:
-        if not block.ok:
+    if BLOCKS_CARD[row.action] and "block_card" not in verified:
+        if block is None:
+            facts["card_not_blocked"] = "dispute_not_verified"
+        elif not block.ok:
             facts["card_not_blocked"] = block.message
         # Without the card and without a verified block, the customer still has to stop it.
         if case.card_in_possession is False:
