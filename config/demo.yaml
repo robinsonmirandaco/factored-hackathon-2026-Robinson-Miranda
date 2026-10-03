@@ -63,6 +63,20 @@ personas:
         expect: registered_verified
     # Step 4 (a charge that matches none, a question, then a person) is read by the LLM and
     # cannot be rehearsed with it off; queue_co_pt below shows a PT-BR escalation by rules.
+  - role: co_pt_next
+    country: CO
+    document: {type: CC, number: DEMO-CO-0002}
+    # Step 7 needs a PT-BR customer with no open dispute: the one co_pt registers in step 4b
+    # would escalate first by open_dispute_last_90d, which hides the reason of the cell.
+    walkthrough: "10.3 step 7 (the next PT-BR clarification after the cell goes down to A1)"
+    charges:
+      register: {type: Purchase, card: true, usd: [0, 500], same_merchant: 1, currency: COP}
+    rehearsals:
+      - turns:
+          - {button: register, say: "Não reconheço"}
+          - {recognition: not_recognized, say: "Continuo sem reconhecer"}
+          - {confirm: true, say: "Sim, confirmo"}
+        expect: registered_verified
 
 # Cases of the starting queue, created through the agent at every seed and reset and marked
 # simulated. None of them is registered by the agent, so none takes an audit sample draw: the

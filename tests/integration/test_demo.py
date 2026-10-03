@@ -211,6 +211,11 @@ def _state(schema: SchemaUrls) -> dict[str, Any]:
         "draw": _exec(schema, "SELECT last_value, is_called FROM audit_draw_seq"),
         "folio": _exec(schema, "SELECT last_value, is_called FROM dispute_folio_seq"),
         "switch": _exec(schema, "SELECT all_to_human FROM automation_switch"),
+        "cells": _exec(
+            schema,
+            "SELECT intent, language, level, block_reviews, block_reversals FROM autonomy_cells "
+            "ORDER BY 1, 2",
+        ),
     }
 
 
@@ -341,6 +346,8 @@ def test_the_reset_brings_back_the_seeded_state_after_a_walkthrough(
 ) -> None:
     before = _state(schema)
     assert before["draw"] == [(1, False)] and before["reviews"] == [(3, 1)]
+    # The seeded decisions are counted in their cell like any other review (TRZ-30).
+    assert before["cells"] == [("unrecognized_charge", "pt", "A0", 3, 1)]
     analyst = analyst_headers(seeded)
     # A walkthrough: the persona registers and blocks, the analyst decides, the switch moves.
     headers = customer_headers_for_demo(seeded)
@@ -380,6 +387,16 @@ def test_the_reset_brings_back_the_seeded_state_after_a_walkthrough(
     blocked = "SELECT product_status FROM products WHERE product_id = :p"
     assert _exec(schema, blocked, p=f"P{persona}") == [("Blocked",)]
     seeded.put("/automation", json={"all_to_human": True}, headers=analyst)
+    # The analyst rejects the case of the queue: one more review, in the ES cell.
+    queued = _roles(schema)["queue_mx"][0]
+    [(queued_case,)] = _exec(schema, "SELECT id FROM cases WHERE customer_id = :c", c=queued)
+    r = seeded.post(
+        f"/cases/{queued_case}/decision",
+        json={"decision": "reject", "reason": "other"},
+        headers=analyst,
+    )
+    assert r.status_code == 200, r.text
+    assert ("unrecognized_charge", "es", "A0", 1, 1) in _state(schema)["cells"]
     assert _state(schema) != before
 
     r = _reset(seeded)

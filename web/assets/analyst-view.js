@@ -415,7 +415,9 @@ export function demoResetView() {
     title: "¿Reiniciar el demo?",
     confirm: "Se borran los casos, la cola, las disputas, los bloqueos, las notificaciones y el "
       + "audit log del demo, las tarjetas bloqueadas vuelven a su estado y se crean de nuevo los "
-      + "casos [simulado] de la cola. Las sesiones de los clientes se cierran.",
+      + "casos [simulado] de la cola. La celda PT-BR vuelve a 19 revisiones con 9 reversiones, "
+      + "en A0, y las demás celdas de autonomía empiezan de cero. Las sesiones de los clientes "
+      + "se cierran.",
     confirmLabel: "Reiniciar demo",
     cancelLabel: "Cancelar",
   };

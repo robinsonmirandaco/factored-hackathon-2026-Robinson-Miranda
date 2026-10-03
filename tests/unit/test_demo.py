@@ -27,7 +27,11 @@ def test_the_repository_config_is_valid_and_seeds_19_reviews_with_9_reversals() 
     config.check_reasons(
         PolicyEngine.from_file(ROOT / "config" / "policy.yaml").config.autonomy.reversal_reasons
     )
-    assert {p.document.number for p in config.personas} == {"DEMO-MX-0001", "DEMO-CO-0001"}
+    assert {p.document.number for p in config.personas} == {
+        "DEMO-MX-0001",
+        "DEMO-CO-0001",
+        "DEMO-CO-0002",
+    }
 
 
 def test_the_personas_keep_a_document_type_of_their_country() -> None:
