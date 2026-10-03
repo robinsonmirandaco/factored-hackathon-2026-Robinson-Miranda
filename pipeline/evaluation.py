@@ -683,6 +683,9 @@ DECLARATIONS = (
     "which is requested when an analyst opens the dossier.",
     "Cases run one at a time with the LLM on, so requests stay under the account rate limit; "
     "a run is complete only when no request waited for the pace or was refused by the cap.",
+    "Later format change, after the run on the test split (2026-10-03): the line of opens of "
+    "the held-out files now sums the recorded runs; it first showed one run's count. No "
+    "measure changed.",
 )
 
 
@@ -807,9 +810,16 @@ def report(split: str = "test", out: Path = REPORT_PATH) -> None:
         f"{BOOTSTRAP_SEED} ({BOOTSTRAP_REPS} resamples of base cases). The simulated client and "
         "the harness use no random draw."
     )
-    opens = {k: v for line in lines.values() for k, v in line.get("test_file_opens", {}).items()}
+    test_lines = [line for line in read_log() if line["split"] == "test"]
+    opens: Counter[str] = Counter()
+    for line in test_lines:
+        opens.update(line.get("test_file_opens", {}))
     if split == "test":
-        w(f"- Opens of the held-out files during the runs: {opens or 'none recorded'}")
+        w(
+            f"- Opens of the held-out files, summed over the {len(test_lines)} recorded runs on "
+            f"the test split: {dict(sorted(opens.items())) or 'none recorded'}. Each run reads "
+            "each file once to load the split."
+        )
     w("")
     run_ids = {x.case.case_id for v in data.values() for x in v}
     case_list = [c for c in cases.values() if c.case_id in run_ids]
