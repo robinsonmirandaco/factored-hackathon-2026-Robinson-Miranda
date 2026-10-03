@@ -170,7 +170,7 @@ export function movementDetail(t, m) {
 // The color of a status: done (registered, approved), in review, or rejected.
 export function statusTone(status) {
   if (status === "registered" || status === "approved" || status === "answered") return "ok";
-  if (status === "rejected") return "bad";
+  if (status === "rejected" || status === "closed_no_info") return "bad";
   return "warn";
 }
 
@@ -224,19 +224,24 @@ export function infoRequestViews(t, lang, item) {
   return list.map((r, i) => requestView(t, lang, item, r, i === list.length - 1));
 }
 
+// The marker the purge of old conversations writes (TRZ-41), in the database's Spanish; the
+// screen shows it in its own language.
+const PURGED = "[eliminado por retención]";
+const shownText = (t, text) => (text === PURGED ? t("purgedText") : text);
+
 function requestView(t, lang, item, r, last) {
   if (r.status !== "open") {
     // Only the latest answer is under review, and only while the case is not decided.
     const closed = item.status === "rejected" || item.status === "approved";
     return {
-      question: r.question,
-      answer: r.answer,
+      question: shownText(t, r.question),
+      answer: shownText(t, r.answer),
       answered: last && !closed ? t("answered") : null,
       canAnswer: false,
     };
   }
   return {
-    question: r.question,
+    question: shownText(t, r.question),
     due: t(r.overdue ? "answerOverdue" : "answerBy", { date: day(lang, r.due_on) }),
     overdue: r.overdue,
     canAnswer: true,
@@ -254,7 +259,7 @@ export function openQuestions(items) {
 // the deadline to answer, in its question (TRZ-28); a rejected one is closed and shows none.
 export function deadlineKind(item) {
   if (item.info_request?.status === "open") return "answer";
-  if (item.status === "rejected") return "closed";
+  if (item.status === "rejected" || item.status === "closed_no_info") return "closed";
   if (item.review_hours != null) return "review";
   if (item.due_date) return "due";
   return "none";
@@ -264,6 +269,7 @@ export function deadlineKind(item) {
 // plain words from the closed list of reasons (TRZ-32 CA3), and what to do next. The analyst's
 // note is never shown (QA of TRZ-27/28).
 export function closedNote(t, item) {
+  if (item.status === "closed_no_info") return t("noInfoNote");
   if (item.status !== "rejected") return null;
   const why = item.reason ? label(t, "reason", item.reason) : null;
   return why && why !== item.reason

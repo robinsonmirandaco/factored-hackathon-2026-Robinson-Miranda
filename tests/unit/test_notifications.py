@@ -20,6 +20,7 @@ DUE = date(2026, 6, 24)
         ("rejected", {"reason": "wrong_charge"}),
         ("info_requested", {"due": DUE}),
         ("audit_reversed", {}),
+        ("info_expired", {"due": DUE}),
     ],
 )
 def test_every_notification_passes_the_fact_checker(
@@ -63,3 +64,11 @@ def test_a_reversed_audit_tells_the_review_without_promising_contact() -> None:
     for language in ("es", "pt"):
         text, checked = compose("audit_reversed", language)
         assert checked and not unsupported(text, VerifiedFacts())
+
+
+def test_a_case_closed_for_lack_of_information_states_the_day_it_was_due() -> None:
+    # TRZ-28 CA3.
+    es, _ = compose("info_expired", "es", due=DUE)
+    pt, _ = compose("info_expired", "pt", due=DUE)
+    assert "hasta el 24 de junio de 2026" in es and "falta de información" in es
+    assert "até 24 de junho de 2026" in pt and "falta de informação" in pt

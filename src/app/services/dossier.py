@@ -34,6 +34,7 @@ from app.adapters.llm import LLMClient
 from app.core.errors import AppError
 from app.domain.history import Lang, intent_label
 from app.domain.money import money_text
+from app.domain.retention import PURGED_TEXT, shown
 from app.domain.window_text import window_text
 from app.schemas.comprehension import DateClue
 from app.schemas.dossier import (
@@ -58,7 +59,14 @@ from app.services.clues import CLUE_FIELDS, last_clues
 # A dossier opens while the case is with a person, waits for the customer's answer, or was
 # decided by an analyst, who reads there what the decision did; also for a case the audit sample
 # selected (TRZ-29), and for one whose audit an analyst reversed.
-DOSSIER_STATUSES = (*HANDOFF_STATUSES, "awaiting_customer", "approved", "rejected", "in_review")
+DOSSIER_STATUSES = (
+    *HANDOFF_STATUSES,
+    "awaiting_customer",
+    "approved",
+    "rejected",
+    "in_review",
+    "closed_no_info",
+)
 
 # The closed list of what the system could not confirm, in the analyst's language.
 _QUESTIONS: dict[Lang, dict[str, str]] = {
@@ -197,7 +205,7 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         Clue(
             field=k,
             value=_value(getattr(clues.clues, k)),
-            evidence=getattr(clues.clues, k).evidence,
+            evidence=shown(getattr(clues.clues, k).evidence, lang) or "",
             read_in=clues.sources[k],
         )
         for k in CLUE_FIELDS
@@ -218,12 +226,16 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         else [],
         simulated=case.simulated,
         language=case.language,
-        original_message=original,
+        original_message=shown(original, lang),
         machine_translation=(
             _translation(session, llm, case, rows, read[0].id, original)
             # The message with an injected instruction never goes to the LLM, not even to be
             # translated.
-            if case.language == "pt" and read and original and not injection
+            if case.language == "pt"
+            and read
+            and original
+            and original != PURGED_TEXT
+            and not injection
             else None
         ),
         request_summary=_summary(case, extraction, lang),
@@ -242,13 +254,13 @@ def _build(session: Session, llm: LLMClient, case_id: str, lang: Lang) -> Dossie
         charge_identified=charge,
         later_messages=[
             LaterMessage(
-                text=(r.payload or {}).get("redacted_text", ""),
+                text=shown((r.payload or {}).get("redacted_text", ""), lang) or "",
                 source=Source(table="audit_log", id=str(r.id)),
             )
             for r in rows
             if (r.actor, r.action) == ("agent", "customer_note")
         ],
-        info_exchanges=_info_exchanges(session, case),
+        info_exchanges=_info_exchanges(session, case, lang),
         audit_draw=(
             AuditDraw(
                 seed=drawn.payload["seed"],
@@ -280,16 +292,16 @@ def _autonomy_change(change: dict[str, Any] | None) -> AutonomyChange | None:
     )
 
 
-def _info_exchanges(session: Session, case: Case) -> list[InfoExchange]:
+def _info_exchanges(session: Session, case: Case, lang: Lang) -> list[InfoExchange]:
     """Each question of an analyst with the customer's answer, in the order they were asked."""
     return [
         InfoExchange(
-            question=r.question,
+            question=shown(r.question, lang) or "",
             asked_by=r.asked_by,
             asked_on=r.asked_on,
             due_on=r.due_on,
             status=r.status,
-            answer=r.answer,
+            answer=shown(r.answer, lang),
             source=Source(table="info_requests", id=str(r.id)),
         )
         for r in session.execute(

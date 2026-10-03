@@ -2,10 +2,12 @@
 
 The answer is PII-redacted before it is stored or audited, goes to the dossier and puts the case
 back in the queue, with a new row marked updated and a new SLA of its priority. The customer
-comes from the session; row level security keeps every other customer's case out of reach.
+comes from the session; row level security keeps every other customer's case out of reach. A
+request left unanswered past its deadline closes the case for lack of information, and the
+customer is told (CA3).
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,8 +18,13 @@ from app.adapters.db.models import AuditRecord, Case, Customer, InfoRequest, Que
 from app.core.errors import AppError
 from app.core.time import utcnow
 from app.domain.clock import SimulatedClock
+from app.domain.email import EmailConfig
 from app.domain.pii import redact
 from app.schemas.api import InfoReplyOut, InfoRequestOut
+from app.services.notifications import notify
+
+# Status of a case closed because the customer did not answer the analyst in time (CA3).
+CLOSED_NO_INFO = "closed_no_info"
 
 
 def reply(
@@ -116,6 +123,70 @@ def _replay(session: Session, case_id: str) -> InfoReplyOut | None:
         .limit(1)
     ).scalar_one_or_none()
     return InfoReplyOut.model_validate(last.result) if last and last.result else None
+
+
+def is_overdue(due_on: date, as_of: date) -> bool:
+    """Tells whether a request is past its deadline: the customer has the whole due day.
+
+    Args:
+        due_on: Last business day to answer.
+        as_of: Day of the simulated clock the process runs for.
+
+    Returns:
+        True from the day after the due day.
+    """
+    return as_of > due_on
+
+
+def expire_overdue(session: Session, as_of: date, email: EmailConfig | None = None) -> list[str]:
+    """Closes for lack of information every case whose request is past its deadline (CA3).
+
+    Each request is locked and skipped if another run holds it, so two runs at once never close
+    a case twice. The request becomes expired, the case closed_no_info, the customer gets the
+    in-app notification and one audit row says which simulated day decided it. A second run
+    finds nothing open and changes nothing. It is not a decision of an analyst, so it is not a
+    review of the autonomy cell.
+
+    Args:
+        session: Session with the analyst role, which sees every customer's request.
+        as_of: Day of the simulated clock to compare deadlines with.
+        email: Email settings of the notification (TRZ-33); None while the flag is off.
+
+    Returns:
+        The cases closed, in the order of their requests.
+    """
+    overdue = session.execute(
+        select(InfoRequest)
+        .where(InfoRequest.status == "open", InfoRequest.due_on < as_of)
+        .order_by(InfoRequest.id)
+        .with_for_update(skip_locked=True)
+    ).scalars()
+    closed = []
+    for request in overdue:
+        case = session.get(Case, request.case_id)
+        if case is None:
+            continue
+        request.status = "expired"
+        before, case.status = case.status, CLOSED_NO_INFO
+        key = f"info_expired:{request.id}"
+        write_audit(
+            session,
+            "system",
+            "info_expired",
+            case.id,
+            {"info_request_id": request.id, "as_of": as_of.isoformat()},
+            {
+                "status_before": before,
+                "status": CLOSED_NO_INFO,
+                "due_on": request.due_on.isoformat(),
+            },
+            idempotency_key=key,
+            customer_id=case.customer_id,
+        )
+        notify(session, case, "info_expired", key, due=request.due_on, email=email)
+        closed.append(case.id)
+    session.flush()
+    return closed
 
 
 def all_requests(session: Session, clock: SimulatedClock, case_id: str) -> list[InfoRequestOut]:

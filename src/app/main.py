@@ -27,6 +27,7 @@ from app.domain.policy_passages import load_passages
 from app.services.agent import AgentDeps
 from app.services.auth import check_secrets
 from app.services.autonomy import cell_reader
+from app.services.email_outbox import config_from as email_config_from
 
 log = get_logger("api")
 
@@ -99,6 +100,7 @@ def build_runtime(settings: Settings) -> Runtime:
             ),
             calendars=load_calendars(settings.holidays_path),
             fact_check=settings.fact_check_enabled,
+            email=email_config_from(settings),
         ),
         demo=demo,
     )

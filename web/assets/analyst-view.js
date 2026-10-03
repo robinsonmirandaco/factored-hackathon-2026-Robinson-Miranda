@@ -59,6 +59,7 @@ const STATUS = {
   rejected: "Rechazado",
   registered_verified: "Registrado y verificado",
   in_review: "En revisión por una analista",
+  closed_no_info: "Cerrado por falta de información",
 };
 
 const ACTION = {
@@ -384,7 +385,7 @@ export function identificationTable(identification) {
 // The heading of a dossier: the kind of case while it is with a person, its status once an
 // analyst decided it or asked the customer (regression of the queue QA).
 export function caseHeading(kind, status, caseId) {
-  const decided = ["approved", "rejected", "awaiting_customer", "in_review"].includes(status);
+  const decided = ["approved", "rejected", "awaiting_customer", "in_review", "closed_no_info"].includes(status);
   const parts = kind === "security_event"
     ? [kindLabel(kind), decided ? statusLabel(status) : null]
     : [decided ? statusLabel(status) : kindLabel(kind)];

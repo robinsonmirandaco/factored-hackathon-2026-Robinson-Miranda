@@ -48,6 +48,7 @@ FOLLOWED_STATUSES = (
     "awaiting_customer",
     "approved",
     "rejected",
+    "closed_no_info",
 )
 
 

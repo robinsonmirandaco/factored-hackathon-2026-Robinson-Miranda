@@ -13,6 +13,8 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any, Literal
 
+from app.domain.retention import shown
+
 Lang = Literal["es", "pt"]
 LANGS: tuple[Lang, ...] = ("es", "pt")
 
@@ -353,7 +355,7 @@ def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
     # The question is told so the answer that follows it can be read against it; it was
     # redacted before it was stored.
     if p.get("decision") == "need_info" and p.get("question"):
-        line += f": «{p['question']}»"
+        line += f": «{shown(p['question'], lang)}»"
     if r.get("folio"):
         line += (
             f". Se registró {r['folio']} y se verificó"
@@ -421,12 +423,14 @@ _NOTICES: dict[Lang, dict[str, str]] = {
         "rejected": "el rechazo con su motivo",
         "info_requested": "la pregunta de la analista con su plazo",
         "audit_reversed": "que su aclaración está en revisión",
+        "info_expired": "el cierre por falta de información",
     },
     "pt": {
         "approved": "a aprovação com o protocolo",
         "rejected": "a rejeição com o motivo",
         "info_requested": "a pergunta da analista com o prazo",
         "audit_reversed": "que a contestação está em revisão",
+        "info_expired": "o encerramento por falta de informação",
     },
 }
 
@@ -484,9 +488,61 @@ def _demo_reset(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     return f"[simulado] {who} reiniciou a demo: foram criados {cases} casos simulados."
 
 
+def _info_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    due = _day(lang, r["due_on"]) if r.get("due_on") else "?"
+    if lang == "es":
+        return (
+            f"El cliente no respondió a la pregunta de la analista hasta el {due}: el caso se "
+            "cerró por falta de información."
+        )
+    return (
+        f"O cliente não respondeu à pergunta da analista até {due}: o caso foi encerrado por "
+        "falta de informação."
+    )
+
+
+_EMAIL_OUTCOMES: dict[Lang, dict[str, str]] = {
+    "es": {
+        "sent": "se envió a la bandeja de prueba",
+        "pending": "el proveedor falló y se reintentará",
+        "failed": "no se pudo enviar y no se reintentará",
+    },
+    "pt": {
+        "sent": "foi enviado à caixa de teste",
+        "pending": "o provedor falhou e haverá nova tentativa",
+        "failed": "não pôde ser enviado e não haverá nova tentativa",
+    },
+}
+
+
+def _email_attempt(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    outcome = _label(_EMAIL_OUTCOMES, lang, r.get("status", "pending"))
+    n = p.get("attempt", "?")
+    if lang == "es":
+        return f"[simulado] Correo del aviso, intento {n}: {outcome}."
+    return f"[simulado] E-mail do aviso, tentativa {n}: {outcome}."
+
+
+def _retention_purge(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    days, rows, asked = (
+        p.get("retention_days", "?"),
+        r.get("audit_rows", 0),
+        r.get("info_requests", 0),
+    )
+    if lang == "es":
+        return (
+            f"Purga de retención ({days} días): se eliminó el texto de la conversación de {rows} "
+            f"filas del registro y {asked} solicitudes de información; las filas se conservan."
+        )
+    return (
+        f"Expurgo de retenção ({days} dias): o texto da conversa foi eliminado de {rows} linhas "
+        f"do registro e {asked} pedidos de informação; as linhas são mantidas."
+    )
+
+
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     # The one line that tells free text: the answer, stored redacted, next to its question.
-    answer = p.get("redacted_text")
+    answer = shown(p.get("redacted_text"), lang)
     if lang == "es":
         said = f": «{answer}»; el caso" if answer else ": el caso"
         return f"El cliente respondió a la pregunta de la analista{said} volvió a la cola."
@@ -832,6 +888,9 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "automation_disabled"): _automation_disabled,
     ("human", "automation_switch"): _automation_switch,
     ("customer", "info_reply"): _info_reply,
+    ("system", "info_expired"): _info_expired,
+    ("system", "email_attempt"): _email_attempt,
+    ("system", "retention_purge"): _retention_purge,
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,
     ("tool", "list_recent_transactions"): _recent,

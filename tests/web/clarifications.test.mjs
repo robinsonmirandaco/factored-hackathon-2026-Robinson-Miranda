@@ -115,3 +115,34 @@ test("the customer sees every question of the analyst with its answer, in order 
   // Only the open question carries the note that an analyst reviews answers once it is sent.
   assert.equal(views[0].answered, null);
 });
+
+test("a case closed for lack of information says so and invites a new message (TRZ-28 CA3)", async () => {
+  const { closedNote, deadlineKind } = await import("../../web/assets/view.js");
+  const { translator } = await import("../../web/assets/i18n.js");
+  const { statusLabel } = await import("../../web/assets/analyst-view.js");
+  const item = { source: "cases", status: "closed_no_info", info_request: { status: "expired" } };
+  assert.equal(deadlineKind(item), "closed");
+  const es = translator("es");
+  const pt = translator("pt");
+  assert.equal(es("status_closed_no_info"), "Cerrada por falta de información");
+  assert.equal(pt("status_closed_no_info"), "Encerrada por falta de informação");
+  assert.match(closedNote(es, item), /^No recibimos tu respuesta a tiempo/);
+  assert.match(closedNote(pt, item), /^Não recebemos sua resposta a tempo/);
+  assert.equal(statusLabel("closed_no_info"), "Cerrado por falta de información");
+  const { statusTone } = await import("../../web/assets/view.js");
+  assert.equal(statusTone("closed_no_info"), "bad");
+});
+
+test("a question or answer the purge replaced is shown in the language of the screen (TRZ-41)", async () => {
+  const { infoRequestViews } = await import("../../web/assets/view.js");
+  const { translator } = await import("../../web/assets/i18n.js");
+  const purged = "[eliminado por retención]";
+  const item = { source: "cases", status: "closed_no_info", info_requests: [{ status: "expired", question: purged, answer: purged }] };
+  const [pt] = infoRequestViews(translator("pt"), "pt", item);
+  assert.equal(pt.question, "[removido por retenção]");
+  assert.equal(pt.answer, "[removido por retenção]");
+  const [es] = infoRequestViews(translator("es"), "es", item);
+  assert.equal(es.question, purged);
+  const other = { ...item, info_requests: [{ status: "expired", question: "¿Compraste?", answer: null }] };
+  assert.equal(infoRequestViews(translator("pt"), "pt", other)[0].question, "¿Compraste?");
+});

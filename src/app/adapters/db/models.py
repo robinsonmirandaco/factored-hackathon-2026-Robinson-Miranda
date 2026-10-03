@@ -219,6 +219,27 @@ class Notification(Base):
     read_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class EmailOutbox(Base):
+    """The email of a notification waiting to be sent, with its attempts (TRZ-33)."""
+
+    __tablename__ = "email_outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    notification_id: Mapped[int] = mapped_column(Integer)
+    case_id: Mapped[str] = mapped_column(Text)
+    customer_id: Mapped[str] = mapped_column(Text)
+    to_address: Mapped[str] = mapped_column(Text)
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    # pending | sent | failed
+    status: Mapped[str] = mapped_column(Text, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_error: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class AutomationSwitch(Base):
     """The global automation switch (TRZ-35): one row, read on every decision."""
 

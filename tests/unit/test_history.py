@@ -297,3 +297,21 @@ def test_every_kind_the_fact_checker_flags_is_told_in_words(lang: str) -> None:
         line = describe("agent", "fact_check", None, result, None, lang)
         # "folio" is the Spanish word itself, not a code.
         assert kind not in line or (lang, kind) == ("es", "folio"), line
+
+
+@pytest.mark.parametrize(
+    ("lang", "marker"), [("es", "[eliminado por retención]"), ("pt", "[removido por retenção]")]
+)
+def test_purged_text_is_told_in_the_language_of_the_line(lang: str, marker: str) -> None:
+    # TRZ-41: the purge stores one marker; the customer's trace shows it in its language.
+    purged = "[eliminado por retención]"
+    answer = describe("customer", "info_reply", {"redacted_text": purged}, {}, None, lang)  # type: ignore[arg-type]
+    question = describe(
+        "human",
+        "decision",
+        {"decision": "need_info", "question": purged},
+        {},
+        None,
+        lang,  # type: ignore[arg-type]
+    )
+    assert f"«{marker}»" in answer and f"«{marker}»" in question

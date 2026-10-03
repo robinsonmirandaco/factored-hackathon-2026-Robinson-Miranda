@@ -2,18 +2,22 @@
 in Mis aclaraciones (CA1, without the notification of TRZ-32); the answer is redacted, added to
 the dossier and the case goes back to the queue marked updated (CA2); the full cycle of asking,
 answering and coming back to the queue (CA4). POST /me/clarifications/{case_id}/reply with
-success, validation and a failed dependency."""
+success, validation and a failed dependency. A request left unanswered past its deadline on the
+simulated clock closes the case for lack of information and tells the customer, once (CA3): the
+deadline of the case asked here is 2026-06-24, and the process runs with a made-up day."""
 
 import dataclasses
 from collections.abc import Iterator
+from datetime import date
 from typing import Any
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.adapters.db.session import SchemaUrls
+from app.adapters.db.session import Database, SchemaUrls
 from app.api.deps import get_customer_session
+from app.cli import jobs
 from app.core.config import Settings
 from app.main import create_app
 from app.services.agent import AgentDeps
@@ -219,3 +223,100 @@ def test_two_questions_are_shown_each_with_its_answer_in_order(
         (QUESTION, "No la hice"),
         (second, "Sí, la tengo"),
     ]
+
+
+# ---- CA3: a request left unanswered --------------------------------------------------------
+
+DUE = date(2026, 6, 24)
+
+
+def _expire(database_url: str, as_of: date) -> list[str]:
+    db = Database(database_url)
+    try:
+        return jobs.expire_info_requests(db, as_of)
+    finally:
+        db.dispose()
+
+
+def test_a_request_is_closed_the_day_after_its_deadline_and_the_customer_told(
+    client: TestClient, asked: str, schema: SchemaUrls, database_url: str
+) -> None:
+    # The customer has the whole due day.
+    assert _expire(database_url, DUE) == []
+    assert _expire(database_url, date(2026, 6, 25)) == [asked]
+
+    assert query(schema, "SELECT status FROM info_requests WHERE case_id = :c", c=asked) == [
+        ("expired",)
+    ]
+    assert query(schema, "SELECT status FROM cases WHERE id = :c", c=asked) == [("closed_no_info",)]
+    [(payload, result, customer_id)] = query(
+        schema,
+        "SELECT payload, result, customer_id FROM audit_log "
+        "WHERE actor = 'system' AND action = 'info_expired'",
+    )
+    assert payload["as_of"] == "2026-06-25"
+    assert (result["status_before"], result["due_on"], customer_id) == (
+        "awaiting_customer",
+        "2026-06-24",
+        "C1",
+    )
+
+    notes = client.get("/me/notifications", params={"lang": "es"}).json()["items"]
+    expired = [n for n in notes if n["kind"] == "info_expired"]
+    assert [n["text"] for n in expired] == [
+        "Cerramos tu aclaración por falta de información: no recibimos tu respuesta hasta "
+        "el 24 de junio de 2026. Si sigues sin reconocer el cargo, escríbenos de nuevo."
+    ]
+    pt = client.get("/me/notifications", params={"lang": "pt"}).json()["items"]
+    assert any(n["kind"] == "info_expired" and "até 24 de junho de 2026" in n["text"] for n in pt)
+    assert query(schema, "SELECT bool_and(checked) FROM notifications") == [(True,)]
+
+    mine = next(c for c in client.get("/me/clarifications").json() if c["case_id"] == asked)
+    assert (mine["status"], mine["info_request"]["status"]) == ("closed_no_info", "expired")
+    history = client.get(f"/cases/{asked}/history", headers=analyst_headers(client)).json()
+    assert any(
+        h["text"] == "El cliente no respondió a la pregunta de la analista hasta el 24 jun 2026: "
+        "el caso se cerró por falta de información."
+        for h in history
+    )
+
+
+def test_a_second_run_closes_and_tells_nothing_again(
+    asked: str, schema: SchemaUrls, database_url: str
+) -> None:
+    assert _expire(database_url, date(2026, 6, 25)) == [asked]
+    assert _expire(database_url, date(2026, 7, 30)) == []
+    assert query(schema, "SELECT count(*) FROM notifications WHERE kind = 'info_expired'") == [(1,)]
+    assert query(schema, "SELECT count(*) FROM audit_log WHERE action = 'info_expired'") == [(1,)]
+
+
+def test_an_answered_request_is_never_closed(
+    client: TestClient, asked: str, schema: SchemaUrls, database_url: str
+) -> None:
+    r = client.post(f"/me/clarifications/{asked}/reply", json={"text": "No compré nada"})
+    assert r.status_code == 200
+    assert _expire(database_url, date(2026, 7, 30)) == []
+    assert query(schema, "SELECT status FROM cases WHERE id = :c", c=asked) == [("escalated",)]
+
+
+def test_closing_is_not_a_review_of_the_autonomy_cell(
+    asked: str, schema: SchemaUrls, database_url: str
+) -> None:
+    reviews = "SELECT count(*) FROM audit_log WHERE result ? 'review'"
+    before = query(schema, reviews)
+    _expire(database_url, date(2026, 6, 25))
+    assert query(schema, reviews) == before
+    assert query(schema, "SELECT count(*) FROM autonomy_cells") == [(0,)]
+
+
+def test_the_command_takes_the_simulated_day_and_defaults_to_trazo_now(
+    asked: str, schema: SchemaUrls, database_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    # Without --as-of the day is TRAZO_NOW (2026-06-17): nothing is due yet.
+    assert jobs.main(["expire-info-requests"]) == 0
+    assert query(schema, "SELECT status FROM cases WHERE id = :c", c=asked) == [
+        ("awaiting_customer",)
+    ]
+    assert jobs.main(["expire-info-requests", "--as-of", "2026-06-25"]) == 0
+    assert query(schema, "SELECT status FROM cases WHERE id = :c", c=asked) == [("closed_no_info",)]

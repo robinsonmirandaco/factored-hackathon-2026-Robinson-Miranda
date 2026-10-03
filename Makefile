@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -42,6 +42,20 @@ seed:
 # make seed REPLACE=1, which empties the demo too.
 seed-demo:
 	uv run --frozen python -m app.cli.seed_demo
+
+# The scheduled processes, once each, against DATABASE_URL (trazo_app). The simulated clock is
+# fixed at TRAZO_NOW, so a deadline is reached only with a later AS_OF (YYYY-MM-DD).
+jobs:
+	uv run --frozen python -m app.cli.jobs all
+expire-info-requests:
+	uv run --frozen python -m app.cli.jobs expire-info-requests $(if $(AS_OF),--as-of $(AS_OF))
+# Sends the emails of the outbox that are due; does nothing while EMAIL_ENABLED is off.
+send-email:
+	uv run --frozen python -m app.cli.jobs send-email
+# Replaces the conversation text older than CONVERSATION_RETENTION_DAYS; NOW (naive UTC,
+# YYYY-MM-DDTHH:MM) runs it as of a later time, to see the purge without waiting.
+purge:
+	uv run --frozen python -m app.cli.jobs purge $(if $(NOW),--now $(NOW))
 
 # The synthetic fixture instead of the cohort, as in CI and a fresh compose stack.
 seed-synthetic:
