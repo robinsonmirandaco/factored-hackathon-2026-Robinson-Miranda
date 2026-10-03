@@ -144,3 +144,36 @@ def test_the_open_log_counts_only_the_held_out_files(tmp_path: Path) -> None:
     log.hook("open", (str(tmp_path / "dev.jsonl"), "r"))
 
     assert dict(log.opens) == {"test_generated.jsonl:r": 1}
+
+
+def test_unsafe_outcomes_are_split_with_and_without_unsupported_claims() -> None:
+    claim = FinalState(
+        unsupported_sent=1, unsupported_kinds=["amount"], case_statuses=["escalated"]
+    )
+    wrong = FinalState(disputes=[("C1", "TX-2", "unrecognized_charge")], unsupported_sent=1)
+    rows = [
+        _scored("escalate", claim, "B1"),
+        _scored("register_and_offer_block", wrong, "B2"),
+        _scored("escalate", FinalState(handoffs=[("escalation", "x")]), "B3"),
+    ]
+
+    assert E.without_unsupported(rows) == {"n": 3, "all": 2, "without": 1, "only": 1}
+
+
+def test_the_tool_failure_note_checks_the_state_of_each_case() -> None:
+    blocked = FinalState(
+        blocks=[("C1", "P1")],
+        handoffs=[("escalation", "verification.registration_failed")],
+        case_statuses=["failed"],
+        source_product="P1",
+    )
+    case = make_case(expected_action="escalate", scenario={"tool_failure": "register_dispute"})
+    c = case.model_copy(update={"category": "tool_failure"})
+    run = CaseRun(c.case_id, "B1", c.variant, "trazo", 1, final=blocked)
+    run.turns = [E.TurnTrace({}, {"asked": "confirm"}, "awaiting_confirmation", 1)]
+    s = score(run, c)
+
+    note = E.tool_failure_note([E.Scored(run, c, s, s.unsafe)])
+
+    assert note.startswith("Tool failure: 1 of 1 TRAZO cases")
+    assert "In 1 of them" in note
