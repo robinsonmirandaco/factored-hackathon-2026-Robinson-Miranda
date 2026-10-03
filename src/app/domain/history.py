@@ -13,6 +13,8 @@ from collections.abc import Callable
 from datetime import date
 from typing import Any, Literal
 
+from app.domain.retention import shown
+
 Lang = Literal["es", "pt"]
 LANGS: tuple[Lang, ...] = ("es", "pt")
 
@@ -353,7 +355,7 @@ def _human_decision(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str
     # The question is told so the answer that follows it can be read against it; it was
     # redacted before it was stored.
     if p.get("decision") == "need_info" and p.get("question"):
-        line += f": «{p['question']}»"
+        line += f": «{shown(p['question'], lang)}»"
     if r.get("folio"):
         line += (
             f". Se registró {r['folio']} y se verificó"
@@ -540,7 +542,7 @@ def _retention_purge(lang: Lang, p: Fields, r: Fields, policy: str | None) -> st
 
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     # The one line that tells free text: the answer, stored redacted, next to its question.
-    answer = p.get("redacted_text")
+    answer = shown(p.get("redacted_text"), lang)
     if lang == "es":
         said = f": «{answer}»; el caso" if answer else ": el caso"
         return f"El cliente respondió a la pregunta de la analista{said} volvió a la cola."

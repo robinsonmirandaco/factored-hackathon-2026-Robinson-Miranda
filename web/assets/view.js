@@ -224,19 +224,24 @@ export function infoRequestViews(t, lang, item) {
   return list.map((r, i) => requestView(t, lang, item, r, i === list.length - 1));
 }
 
+// The marker the purge of old conversations writes (TRZ-41), in the database's Spanish; the
+// screen shows it in its own language.
+const PURGED = "[eliminado por retención]";
+const shownText = (t, text) => (text === PURGED ? t("purgedText") : text);
+
 function requestView(t, lang, item, r, last) {
   if (r.status !== "open") {
     // Only the latest answer is under review, and only while the case is not decided.
     const closed = item.status === "rejected" || item.status === "approved";
     return {
-      question: r.question,
-      answer: r.answer,
+      question: shownText(t, r.question),
+      answer: shownText(t, r.answer),
       answered: last && !closed ? t("answered") : null,
       canAnswer: false,
     };
   }
   return {
-    question: r.question,
+    question: shownText(t, r.question),
     due: t(r.overdue ? "answerOverdue" : "answerBy", { date: day(lang, r.due_on) }),
     overdue: r.overdue,
     canAnswer: true,

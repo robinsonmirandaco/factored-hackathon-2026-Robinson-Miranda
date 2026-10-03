@@ -207,3 +207,23 @@ def test_the_command_runs_the_purge_as_of_the_time_given(
     later = (utcnow() + timedelta(days=91)).isoformat(timespec="minutes")
     assert jobs.main(["purge", "--now", later]) == 0
     assert not any(word in _text_of_every_row(schema) for word in WORDS)
+
+
+def test_the_marker_is_shown_in_the_language_asked_for(
+    client: TestClient, database_url: str
+) -> None:
+    case_id = _conversation(client)
+    _purge(database_url, utcnow() + timedelta(days=91))
+    who = customer_headers(client, "C1")
+    trace = client.get(f"/me/clarifications/{case_id}/trace", params={"lang": "pt"}, headers=who)
+    assert trace.status_code == 200, trace.text
+    assert "«[removido por retenção]»" in trace.text and PURGED_TEXT not in trace.text
+    dossier = client.get(
+        f"/cases/{case_id}/dossier", params={"lang": "pt"}, headers=analyst_headers(client)
+    ).json()
+    assert dossier["original_message"] == "[removido por retenção]"
+    [exchange] = dossier["info_exchanges"]
+    assert (exchange["question"], exchange["answer"]) == (
+        "[removido por retenção]",
+        "[removido por retenção]",
+    )

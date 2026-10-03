@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 
 # What replaces the conversation text of a purged row; migration 0022 writes the same string.
 PURGED_TEXT = "[eliminado por retención]"
+# How each screen shows it: the database keeps one marker, the screen says it in its language.
+_SHOWN = {"es": PURGED_TEXT, "pt": "[removido por retenção]"}
 
 
 def cutoff(now: datetime, days: int) -> datetime:
@@ -21,3 +23,16 @@ def cutoff(now: datetime, days: int) -> datetime:
         `now` minus the retention.
     """
     return now - timedelta(days=days)
+
+
+def shown(value: str | None, lang: str) -> str | None:
+    """A stored text as a screen in that language shows it: the purge marker is translated.
+
+    Args:
+        value: Text read from a row, possibly purged.
+        lang: es or pt.
+
+    Returns:
+        The marker in that language for a purged text; any other text unchanged.
+    """
+    return _SHOWN.get(lang, PURGED_TEXT) if value == PURGED_TEXT else value

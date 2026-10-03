@@ -132,3 +132,17 @@ test("a case closed for lack of information says so and invites a new message (T
   const { statusTone } = await import("../../web/assets/view.js");
   assert.equal(statusTone("closed_no_info"), "bad");
 });
+
+test("a question or answer the purge replaced is shown in the language of the screen (TRZ-41)", async () => {
+  const { infoRequestViews } = await import("../../web/assets/view.js");
+  const { translator } = await import("../../web/assets/i18n.js");
+  const purged = "[eliminado por retención]";
+  const item = { source: "cases", status: "closed_no_info", info_requests: [{ status: "expired", question: purged, answer: purged }] };
+  const [pt] = infoRequestViews(translator("pt"), "pt", item);
+  assert.equal(pt.question, "[removido por retenção]");
+  assert.equal(pt.answer, "[removido por retenção]");
+  const [es] = infoRequestViews(translator("es"), "es", item);
+  assert.equal(es.question, purged);
+  const other = { ...item, info_requests: [{ status: "expired", question: "¿Compraste?", answer: null }] };
+  assert.equal(infoRequestViews(translator("pt"), "pt", other)[0].question, "¿Compraste?");
+});
