@@ -1626,11 +1626,16 @@ def _verifier_lines(data: Loaded) -> list[str]:
     md += [
         f"TRAZO on the held-out split with the fact checker off: commit `{line['commit'][:9]}` "
         "(the commit of the single run, so the fact checker is the only change), model "
-        f"`{line['model']}`, repetition 1 of the base run's cache; new LLM spend "
-        f"{line['metrics']['efficiency']['cost_usd']:.4f} USD, refused requests "
-        f"{line['metrics']['efficiency']['llm_refused']}, complete: {line['complete']}. With "
-        "the checker off, the replies still go through it in observer mode, so the claims "
-        "without a source that reach the customer are counted.\n",
+        f"`{line['model']}`, repetition 1 of the base run's cache: "
+        f"{line['metrics']['efficiency']['llm_cache_hits']} of "
+        f"{line['metrics']['efficiency']['llm_calls']} LLM requests answered from the cache "
+        "(no new spend when they are all cached; the cost column of the run log is the cost "
+        f"first paid), refused requests {line['metrics']['efficiency']['llm_refused']}, "
+        f"complete: {line['complete']}. Reason recorded with the run: "
+        f"{line.get('rerun_reason')}. With the checker off, the replies still go through it in "
+        "observer mode, so the claims without a source that reach the customer are counted. "
+        "The run read the labels of the held-out split once more: "
+        f"{line.get('test_file_opens')}.\n",
         "| Measure | Checker on (base, rep. 1) | Checker off |",
         "| --- | --- | --- |",
         f"| Claims without a source sent | {c_on[0]} | {c_off[0]} |",
