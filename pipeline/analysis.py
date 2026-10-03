@@ -12,6 +12,7 @@ this command. The report holds counts, rates and case ids only, never a message 
 """
 
 import argparse
+import json
 import random
 import sys
 from collections import Counter, defaultdict
@@ -710,6 +711,7 @@ class Loaded:
     dev_rows: list[tuple[dict[str, Any], list[Scored]]]
     opens: dict[str, int]
     folder: Path
+    verifier_off: tuple[dict[str, Any], list[Scored]] | None = None
 
 
 def _readings(
@@ -760,13 +762,18 @@ def load(settings: Settings) -> Loaded:
     cases = {c.case_id: c for c in load_split(folder, "test", MANIFEST, CASES_CONFIG)}  # type: ignore[arg-type]
     opens.active = False
     runs, lines = {}, {}
+    verifier_off = None
     for (system, variant, rep), line in evaluation.latest("test").items():
-        if variant != "base":
+        if variant not in ("base", evaluation.VERIFIER_OFF):
             continue
         path = folder / "harness" / line["run_file"]
         if evaluation._sha256(path) != line["run_file_sha256"]:
             raise ValueError(f"{path.name} does not match the hash recorded in the run log")
-        runs[(system, rep)] = evaluation.scored(evaluation.load_runs(path), cases)
+        rows = evaluation.scored(evaluation.load_runs(path), cases)
+        if variant == evaluation.VERIFIER_OFF:
+            verifier_off = (line, rows)
+            continue
+        runs[(system, rep)] = rows
         lines[(system, rep)] = line
     readings, raw = _readings(list(cases.values()), folder, Path(settings.data_dir))
     dev_lines = [
@@ -784,7 +791,9 @@ def load(settings: Settings) -> Loaded:
         for line in (dev_lines[0], dev_lines[-1]):
             path = folder / "harness" / line["run_file"]
             dev_rows.append((line, evaluation.scored(evaluation.load_runs(path), dev)))
-    return Loaded(cases, runs, lines, readings, raw, dev_rows, dict(opens.opens), folder)
+    return Loaded(
+        cases, runs, lines, readings, raw, dev_rows, dict(opens.opens), folder, verifier_off
+    )
 
 
 # ---- report -------------------------------------------------------------------------------
@@ -1377,12 +1386,275 @@ def component_checks(data: Loaded) -> list[str]:
     return md
 
 
+ABLATIONS_PATH = Path("eval/ablations.json")
+COMPREHENSION_COLUMNS: tuple[tuple[str, Callable[[dict[str, Any]], float | None]], ...] = (
+    ("Intent F1", lambda r: r["intent_macro_f1"]),
+    ("OOS recall", lambda r: r["out_of_scope_recall"]["rate"]),
+    ("In-scope sent out", lambda r: r["in_scope_sent_out"]["rate"]),
+    ("Amount", lambda r: r["fields"]["amount"]["accuracy"]["rate"]),
+    ("Date", lambda r: r["fields"]["date"]["accuracy"]["rate"]),
+    ("Merchant", lambda r: r["fields"]["merchant"]["accuracy"]["rate"]),
+    ("Channel", lambda r: r["fields"]["channel"]["accuracy"]["rate"]),
+    ("Card possession", lambda r: r["fields"]["card_in_possession"]["accuracy"]["rate"]),
+    ("Faithful", lambda r: r["faithful"]["rate"]),
+)
+
+
+def _cell(values: Sequence[float | None], column: str) -> str:
+    xs = [v for v in values if v is not None]
+    if not xs:
+        return "n/a"
+    fmt = "{:.3f}" if column == "Intent F1" else "{:.1%}"
+    if len(set(xs)) == 1:
+        return fmt.format(xs[0])
+    return f"{fmt.format(sum(xs) / len(xs))} [{fmt.format(min(xs))}, {fmt.format(max(xs))}]"
+
+
+def comprehension_rows(results: dict[str, Any], group: str, key: str | None) -> list[str]:
+    """One table row per comprehension system for one group (overall, a language, a variant)."""
+    out = []
+    for name, label in (
+        ("rules", "rules"),
+        ("tfidf_lr", "TF-IDF + LR (intent only)"),
+        ("haiku", "Haiku 4.5 (3 runs)"),
+        ("sonnet", "Sonnet 5.5 (1 run)"),
+    ):
+        runs = results[name] if isinstance(results[name], list) else [results[name]]
+        picked = [r[group] if key is None else r[group][key] for r in runs]
+        cells = []
+        for column, get in COMPREHENSION_COLUMNS:
+            if name == "tfidf_lr" and column not in (
+                "Intent F1",
+                "OOS recall",
+                "In-scope sent out",
+            ):
+                cells.append("n/a")
+            else:
+                cells.append(_cell([get(p) for p in picked], column))
+        out.append(f"| {key or 'all'} | {label} | " + " | ".join(cells) + " |")
+    return out
+
+
+def ablations_section(data: Loaded) -> list[str]:
+    """TRZ-50: comprehension of four systems, TF-IDF + LR, ranker and the fact checker off."""
+    md = [
+        "## Ablations\n",
+        "Story TRZ-50, design 6.1, 6.2 and 13.1. **Declared: these ablations were run after "
+        "the single run on the test split and after its results were read.** Each one was "
+        "trained on the development split, calibrated on the calibration split and evaluated "
+        "once on the held-out split, with every setting committed before the evaluation; "
+        "nothing was adjusted after it. A second evaluation is refused by the command unless "
+        "a reason is given, and none was.\n",
+    ]
+    if not ABLATIONS_PATH.exists():
+        return [*md, "The ablations are not evaluated yet (`make eval-ablations`).\n"]
+    r = json.loads(ABLATIONS_PATH.read_text(encoding="utf-8"))
+    s = r["settings"]
+    md += [
+        f"- Evaluated on {r['date']}, commit `{r['commit'][:9]}`"
+        + (f", reason for a new evaluation: {r['reason']}" if r["reason"] else "")
+        + f"; split sha256 test_generated `{r['split_sha256']['test_generated'][:12]}...`, "
+        f"test_handwritten `{r['split_sha256']['test_handwritten'][:12]}...`, dev "
+        f"`{r['split_sha256']['dev'][:12]}...`, calibration "
+        f"`{r['split_sha256']['calibration'][:12]}...` (checked against the manifest when "
+        "loaded).",
+        f"- Seed {r['seed']}; scikit-learn {r['sklearn']}; LLM `{r['models']['haiku']}` and "
+        f"`{r['models']['sonnet']}`, prompt `{r['prompt_version']}`; policy "
+        f"`{r['policy_version']}`; identification `{r['identification_version']}`.",
+        f"- New LLM spend: {r['llm_spend_usd']:.4f} USD (readings from the cache of the "
+        f"single run). Opens of the held-out files: {r['test_file_opens']}.",
+        "",
+        "### Comprehension: four systems on the same held-out cases\n",
+        "Rules, Haiku and Sonnet as in `comprension_prueba.md` and `comprension_prueba_sonnet.md`"
+        ", recomputed from the same cache. TF-IDF + logistic regression reads only the intent. "
+        "Haiku: mean and [range] of 3 runs.\n",
+        "| Group | System | " + " | ".join(c for c, _ in COMPREHENSION_COLUMNS) + " |",
+        "| --- | --- | " + " | ".join("---" for _ in COMPREHENSION_COLUMNS) + " |",
+        *comprehension_rows(r["comprehension"], "overall", None),
+    ]
+    for language in ("es", "pt"):
+        md += comprehension_rows(r["comprehension"], "by_language", language)
+    for variant in VARIANTS:
+        md += comprehension_rows(r["comprehension"], "by_variant", variant)
+    t = r["tfidf"]
+    test_f1 = r["comprehension"]["tfidf_lr"]["overall"]["intent_macro_f1"]
+    rules_f1 = r["comprehension"]["rules"]["overall"]["intent_macro_f1"]
+    cal_f1 = t["calibration_split"]["intent_macro_f1"]
+    md += [
+        "",
+        "### TF-IDF + logistic regression for the intent (CA1)\n",
+        f"Character n-grams {tuple(s['tfidf']['ngram_range'])} (`{s['tfidf']['analyzer']}`, "
+        f"min_df {s['tfidf']['min_df']}, sublinear tf) and a logistic regression with C = "
+        f"{s['logistic_c']}, trained on the {t['dev_cases']} development cases (redacted "
+        "messages, as the service reads them). Softmax temperature fitted on the "
+        f"{t['calibration_cases']} calibration cases: {t['temperature']:.3f}.\n",
+        "| Measure | Calibration split | Test split |",
+        "| --- | --- | --- |",
+        f"| Intent macro F1 | {t['calibration_split']['intent_macro_f1']:.3f} | {test_f1:.3f} |",
+        f"| Brier of the intent probabilities, before and after the temperature | n/a | "
+        f"{t['test_uncalibrated']['brier']:.3f}, {t['test_calibrated']['brier']:.3f} |",
+        f"| ECE of the top intent, before and after the temperature | n/a | "
+        f"{t['test_uncalibrated']['ece']:.3f}, {t['test_calibrated']['ece']:.3f} |",
+        "",
+        f"- Finding: the cheap learned baseline falls from {cal_f1:.3f}"
+        f" on calibration to {test_f1:.3f} on the held-out split, below the rules "
+        f"({rules_f1:.3f}). The development and calibration splits come from generator A and "
+        "the test split from generator B and handwritten messages, so the probable cause is "
+        "that the n-grams learned the wording of one generator; these data cannot separate "
+        "that from other causes. On this held-out split the rules and the LLM do better than "
+        "this model, so it is not a cheaper alternative here.",
+        f"- The temperature fitted on calibration moves the test ECE from "
+        f"{t['test_uncalibrated']['ece']:.3f} to {t['test_calibrated']['ece']:.3f} and the "
+        f"Brier from {t['test_uncalibrated']['brier']:.3f} to {t['test_calibrated']['brier']:.3f}"
+        ": it was fitted on cases of the same generator as training.",
+        "",
+    ]
+    md += _ranker_lines(r)
+    md += _verifier_lines(data)
+    md += [
+        "### Gate of learned and statistical components\n",
+        "- Split hashes: every split was checked against the manifest when loaded; the test "
+        "split is the frozen one.",
+        "- No leak: TF-IDF and the ranker were trained on development only; calibration set "
+        "only the temperature of TF-IDF and the q-hat of each score; no test case reached a "
+        "weight, a temperature or a threshold.",
+        "- Same held-out cases and metrics as the rules baseline, by language and variant.",
+        "- Brier and ECE are reported for the identification probabilities of both scores and "
+        "for the TF-IDF intent probabilities.",
+        "- Deterministic parts: unit tests fit TF-IDF and the ranker twice with the same seed "
+        "and get the same model; the Wilson reference values are unchanged "
+        "(`tests/unit/test_wilson.py`).",
+        "- The real LLM: Haiku 3 runs; Sonnet 1 run, as decided in TRZ-12 CA10; the fact "
+        "checker off, 1 run (repetition 1 of the base, from its cache).",
+        "- Recorded: model, prompt version, policy version, seed and split hashes above.",
+        "- None of the ablations of design 13.1 was cut (CA4).",
+        "",
+    ]
+    return md
+
+
+def _ranker_lines(r: dict[str, Any]) -> list[str]:
+    ident = r["identification"]
+    manual, ranker = ident["manual"], ident["ranker"]
+    md = [
+        "### Ranker against the manual score (CA3)\n",
+        'Logistic regression of "this candidate is the true charge" on the five components '
+        "of the manual score, trained on the development cases of the identification "
+        f"population ({ident['population']['dev']}), with the LLM readings of run 0; its "
+        "coefficients divided by the sum of their absolute values and its temperature fitted "
+        "on development by the same search as the manual score. q-hat of each score on the "
+        f"calibration split ({ident['population']['calibration']} cases) at each alpha, with no "
+        "absolute rejection threshold for either, so the sets differ only by the scores. Test: "
+        f"{ident['population']['test']} cases.\n",
+        "| Score | " + " | ".join(manual["weights"]) + " | Temperature | Development NLL |",
+        "| --- | " + " | ".join("---" for _ in manual["weights"]) + " | --- | --- |",
+    ]
+    for name, x in (("manual", manual), ("ranker", ranker)):
+        md.append(
+            f"| {name} | "
+            + " | ".join(f"{x['weights'][k]:.3f}" for k in manual["weights"])
+            + f" | {x['temperature']:.3f} | {x['dev_nll']:.3f} |"
+        )
+    md += [
+        "",
+        "| Alpha | Score | q-hat | Covered (test) | Mean set size | Size one | Brier | ECE |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for m_row, r_row in zip(manual["curve"], ranker["curve"], strict=True):
+        for name, row in (("manual", m_row), ("ranker", r_row)):
+            md.append(
+                f"| {row['alpha']} | {name} | {row['qhat']:.3f} | "
+                f"{_wilson_cell(row['covered'], row['n'])} | {row['mean_size']:.2f} | "
+                f"{row['size_one']:.1%} | {row['brier']:.3f} | {row['ece']:.3f} |"
+            )
+    p = manual["production"]
+    md += [
+        "",
+        f"Reference, the manual score as the service runs it (alpha 0.05, its q-hat and "
+        f"rejection threshold): covered {_wilson_cell(p['covered'], p['n'])}, mean set size "
+        f"{p['mean_size']:.2f}.\n",
+        '```mermaid\nxychart-beta\n    title "Mean set size on the test split by alpha"\n'
+        "    x-axis [" + ", ".join(f'"{x["alpha"]}"' for x in manual["curve"]) + "]\n"
+        '    y-axis "Mean set size"\n'
+        "    line [" + ", ".join(f"{x['mean_size']:.2f}" for x in manual["curve"]) + "]\n"
+        "    line [" + ", ".join(f"{x['mean_size']:.2f}" for x in ranker["curve"]) + "]\n"
+        "```\n",
+        "First line: manual; second: ranker.\n",
+    ]
+    coverage_gaps = [
+        abs(a["coverage"] - b["coverage"])
+        for a, b in zip(manual["curve"], ranker["curve"], strict=True)
+    ]
+    gaps = [
+        abs(a["mean_size"] - b["mean_size"])
+        for a, b in zip(manual["curve"], ranker["curve"], strict=True)
+    ]
+    md += [
+        f"- Finding: at the same alpha the two scores reach the same coverage within "
+        f"{max(coverage_gaps):.1%} and mean set sizes within {max(gaps):.2f}; development NLL "
+        f"{ranker['dev_nll']:.3f} for the ranker against {manual['dev_nll']:.3f} for the manual "
+        "grid. "
+        + (
+            "The trained ranker gives sets of practically the same size at the same alpha, "
+            "with a higher development NLL, so it buys nothing over the manual score and its "
+            "five interpretable weights, which stays."
+            if ranker["dev_nll"] >= manual["dev_nll"] and max(gaps) <= 0.05
+            else "The ranker makes some sets smaller; see the table."
+        ),
+        "",
+    ]
+    return md
+
+
+def _verifier_lines(data: Loaded) -> list[str]:
+    md = ["### Fact checker on and off\n"]
+    if data.verifier_off is None:
+        return [*md, "The run with the fact checker off is not recorded yet.\n"]
+    line, off = data.verifier_off
+    on = data.runs[("trazo", 1)]
+    m_on, m_off = evaluation.measures(on), evaluation.measures(off)
+
+    def claims(rows: list[Scored]) -> tuple[int, int, int]:
+        return (
+            sum(x.run.final.unsupported_sent for x in rows),
+            sum(x.run.final.unsupported_sent > 0 for x in rows),
+            sum(x.run.final.replies_checked for x in rows),
+        )
+
+    c_on, c_off = claims(on), claims(off)
+    kinds = Counter(k for x in off for k in x.run.final.unsupported_kinds)
+    md += [
+        f"TRAZO on the held-out split with the fact checker off: commit `{line['commit'][:9]}` "
+        "(the commit of the single run, so the fact checker is the only change), model "
+        f"`{line['model']}`, repetition 1 of the base run's cache; new LLM spend "
+        f"{line['metrics']['efficiency']['cost_usd']:.4f} USD, refused requests "
+        f"{line['metrics']['efficiency']['llm_refused']}, complete: {line['complete']}. With "
+        "the checker off, the replies still go through it in observer mode, so the claims "
+        "without a source that reach the customer are counted.\n",
+        "| Measure | Checker on (base, rep. 1) | Checker off |",
+        "| --- | --- | --- |",
+        f"| Claims without a source sent | {c_on[0]} | {c_off[0]} |",
+        f"| Cases with a claim without a source | {c_on[1]}/{len(on)} | {c_off[1]}/{len(off)} |",
+        f"| Replies checked | {c_on[2]} | {c_off[2]} |",
+        f"| Safe automated resolution | {evaluation._fmt_rate(m_on['safe_resolution'])} | "
+        f"{evaluation._fmt_rate(m_off['safe_resolution'])} |",
+        f"| Cases with any unsafe outcome | {m_on['unsafe_any']['k']}/{len(on)} | "
+        f"{m_off['unsafe_any']['k']}/{len(off)} |",
+        "",
+        "Kinds of the claims sent with the checker off: "
+        + (", ".join(f"{k} {n}" for k, n in kinds.most_common()) or "none")
+        + ".\n",
+    ]
+    return md
+
+
 def write_report(data: Loaded, out: Path = REPORT_PATH) -> None:
     """Writes docs/reports/analisis.md."""
     trazo = data.lines[("trazo", 1)]
     md = [
         "# Analysis of the held-out run: invariance, repetitions and errors\n",
-        "Generated by `make eval-analysis` (stories TRZ-48 and TRZ-49) from the runs recorded "
+        "Generated by `make eval-analysis` (stories TRZ-48, TRZ-49 and TRZ-50) from the runs "
+        "recorded "
         "in `eval/runs.jsonl`: the single run on the test split, commit "
         f"`{trazo['commit'][:9]}`, model `{trazo['model']}`, comprehension prompt "
         f"`{trazo['prompts']['comprehension']}`, policy `{trazo['policy_version']}`, "
@@ -1402,6 +1674,7 @@ def write_report(data: Loaded, out: Path = REPORT_PATH) -> None:
     md += handwritten_section(data)
     md += watch_section(data)
     md += disparity_section(data)
+    md += ablations_section(data)
     out.write_text("\n".join(md).rstrip() + "\n", encoding="utf-8")
     log.info("analysis_report_written", path=str(out))
 

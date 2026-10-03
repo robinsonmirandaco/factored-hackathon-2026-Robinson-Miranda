@@ -186,3 +186,10 @@ def test_the_watch_can_count_only_the_audits_of_what_the_system_did_alone() -> N
 
     assert (len(every.detected_at_case), len(audits.detected_at_case)) == (0, 5)
     assert sum(audits.unsafe_with) < sum(every.unsafe_with)
+
+
+def test_a_comprehension_cell_shows_the_mean_and_range_only_when_runs_differ() -> None:
+    assert A._cell([0.5, 0.5, 0.5], "Date") == "50.0%"
+    assert A._cell([0.4, 0.5, 0.6], "Date") == "50.0% [40.0%, 60.0%]"
+    assert A._cell([0.9871], "Intent F1") == "0.987"
+    assert A._cell([None], "Date") == "n/a"
