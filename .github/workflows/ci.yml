@@ -44,7 +44,7 @@ jobs:
       # The synthetic generator is the CI fixture: it exercises validation and quarantine.
       - run: uv run --frozen python -m app.cli.seed synthetic --seed 42
       # Each golden case runs on its own throwaway schema.
-      - run: uv run --frozen python -m app.cli.eval eval/cases --out eval/reports
+      - run: make golden
       - uses: actions/upload-artifact@v4
         with:
           name: eval-report

@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo eval density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo golden eval eval-run eval-sensitivity density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -47,8 +47,28 @@ seed-demo:
 seed-synthetic:
 	uv run --frozen python -m app.cli.seed synthetic $(if $(REPLACE),--replace)
 
-eval:
+# Golden conversation cases (eval/cases), with the LLM off, as CI runs them.
+golden:
 	LLM_ENABLED=false uv run --frozen python -m app.cli.eval eval/cases --out eval/reports
+
+# The five measures of the statement for TRAZO and the free agent (TRZ-45):
+# docs/reports/evaluacion.md from the runs recorded in eval/runs.jsonl. Makes no LLM call.
+eval:
+	uv run --frozen python -m pipeline.evaluation report --split $(or $(SPLIT),test)
+
+# One recorded run of a system through the harness, within BUDGET USD of new LLM spend:
+#   make eval-run SPLIT=test SYSTEM=trazo REPS=3 BUDGET=4.5
+# On the test split it runs once: a clean tree is required, and a recorded run of the same
+# system, model, prompt and policy is refused unless RERUN="reason" (a later adjustment).
+eval-run:
+	uv run --frozen python -m pipeline.evaluation run --split $(SPLIT) --system $(SYSTEM) \
+		--repetitions $(or $(REPS),1) --budget $(BUDGET) $(if $(BASES),--bases $(BASES)) \
+		$(if $(RERUN),--rerun-reason "$(RERUN)")
+
+# TRAZO under half and double amount thresholds and alpha 0.10, from the LLM cache only (CA11).
+eval-sensitivity:
+	uv run --frozen python -m pipeline.evaluation sensitivity --split $(SPLIT) \
+		$(if $(BASES),--bases $(BASES))
 
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:
@@ -101,9 +121,12 @@ cases-agreement:
 # development split, from the frozen split files under $(DATA_DIR)/eval:
 # docs/reports/comprension_desarrollo.md. LLM answers are cached in $(DATA_DIR)/eval, so a rerun
 # costs nothing; BASES=N evaluates N base cases only (prompt iterations, with OUT=<path>).
+# SPLIT=test with HARNESS_BUDGET=<USD> reads through the evaluation harness cache (TRZ-45).
 eval-comprehension:
-	uv run --frozen python -m pipeline.comprehension_eval --systems rules llm \
-		$(if $(BASES),--bases $(BASES)) $(if $(OUT),--out $(OUT))
+	uv run --frozen python -m pipeline.comprehension_eval --systems $(or $(SYSTEMS),rules llm) \
+		$(if $(SPLIT),--split $(SPLIT)) $(if $(RUNS),--runs $(RUNS)) \
+		$(if $(BASES),--bases $(BASES)) $(if $(OUT),--out $(OUT)) \
+		$(if $(HARNESS_BUDGET),--harness-budget $(HARNESS_BUDGET))
 
 # Language and variant of the first message on the development split (TRZ-11): the detector,
 # and the turn with and without the LLM variant. The LLM part reads only the answers cached by
@@ -119,9 +142,12 @@ fit-identification:
 	uv run --frozen python -m pipeline.identification_eval fit $(if $(BUDGET),--budget-usd $(BUDGET))
 
 # Coverage, set size, Brier, ECE and reliability of identification from
-# config/identification.yaml: docs/reports/identificacion.md. The test split is not loaded.
+# config/identification.yaml: docs/reports/identificacion.md. TEST=1 also measures the test split
+# with the same parameters, after make eval-comprehension SPLIT=test cached its readings; nothing
+# is fitted on it.
 eval-identification:
-	uv run --frozen python -m pipeline.identification_eval report $(if $(BUDGET),--budget-usd $(BUDGET))
+	uv run --frozen python -m pipeline.identification_eval report \
+		$(if $(BUDGET),--budget-usd $(BUDGET)) $(if $(TEST),--test)
 
 # Policy engine against the TRZ-42 labels on the development split: docs/reports/politica.md.
 # Reads $(DATA_DIR)/eval (make cases) and never the test split.
