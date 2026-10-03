@@ -112,6 +112,22 @@ def test_seed_command_loads_synthetic_once_and_if_empty_skips(
     assert rejected == 5
 
 
+def test_the_synthetic_seed_takes_the_number_of_customers(
+    schema: SchemaUrls, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The load test (TRZ-40 CA7) seeds as many customers as the cohort of design 11.7.
+    monkeypatch.setenv("ADMIN_DATABASE_URL", schema.admin)
+    monkeypatch.setenv("DOCUMENT_HASH_KEY", KEY)
+    assert seed_cli.main(["synthetic", "--customers", "30", "--report-dir", str(tmp_path)]) == 0
+    db = Database(schema.admin)
+    with db.session() as s:
+        customers = s.execute(text("SELECT count(*) FROM customers")).scalar_one()
+        transactions = s.execute(text("SELECT count(*) FROM transactions")).scalar_one()
+    db.dispose()
+    assert customers == 30
+    assert transactions == 30 * 25
+
+
 def test_a_cohort_load_can_keep_only_some_customers(schema: SchemaUrls, cohort_dir: Path) -> None:
     full = _seed_cohort(schema.admin, cohort_dir, replace=True)
     db = Database(schema.admin)
