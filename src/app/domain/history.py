@@ -54,6 +54,15 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "recognized_closed": "el cliente reconoció el cargo, caso cerrado sin acción",
         "no_pending_recognition": "no había ningún cargo esperando respuesta",
         "no_pending_choice": "no había opciones esperando elección",
+        "existing_case": "el cargo ya tenía un caso, y el cliente siguió en ese caso",
+        "with_person": "el caso ya estaba con una analista: el mensaje se agregó al expediente",
+        "declined": "el cliente no aceptó registrar la aclaración, y no se hizo nada",
+        "block_declined": "el cliente no aceptó bloquear la tarjeta",
+        "block_not_run": (
+            "automatización desactivada: el bloqueo no se ejecutó y se indicó el canal del banco"
+        ),
+        "card_blocked": "tarjeta bloqueada",
+        "card_not_blocked": "la tarjeta no se bloqueó",
     },
     "pt": {
         "identifying": "buscando a cobrança com o cliente",
@@ -71,6 +80,15 @@ _OUTCOMES: dict[Lang, dict[str, str]] = {
         "recognized_closed": "o cliente reconheceu a cobrança, caso encerrado sem ação",
         "no_pending_recognition": "não havia nenhuma cobrança aguardando resposta",
         "no_pending_choice": "não havia opções aguardando escolha",
+        "existing_case": "a cobrança já tinha um caso, e o cliente seguiu nesse caso",
+        "with_person": "o caso já estava com uma analista: a mensagem foi incluída no dossiê",
+        "declined": "o cliente não aceitou registrar a contestação, e nada foi feito",
+        "block_declined": "o cliente não aceitou bloquear o cartão",
+        "block_not_run": (
+            "automação desativada: o bloqueio não foi executado e foi indicado o canal do banco"
+        ),
+        "card_blocked": "cartão bloqueado",
+        "card_not_blocked": "o cartão não foi bloqueado",
     },
 }
 
@@ -595,6 +613,8 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "forbidden_request": "pedido prohibido",
         "contact_promise": "promesa de contacto",
         "action_claim": "acción no realizada",
+        "vague_deadline": "plazo impreciso",
+        "relative_date": "fecha relativa",
     },
     "pt": {
         "folio": "protocolo",
@@ -608,6 +628,8 @@ _CLAIM_KINDS: dict[Lang, dict[str, str]] = {
         "forbidden_request": "pedido proibido",
         "contact_promise": "promessa de contato",
         "action_claim": "ação não realizada",
+        "vague_deadline": "prazo impreciso",
+        "relative_date": "data relativa",
     },
 }
 
