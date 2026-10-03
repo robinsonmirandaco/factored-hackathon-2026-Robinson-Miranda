@@ -52,6 +52,17 @@
 /* The sentences of an injected instruction inside the original message (TRZ-46 follow-up). */
 mark.injected { background: var(--bad-soft); color: var(--bad); border-radius: 3px; padding: 0 2px; }
 
+/* Estado de autonomía (TRZ-31) */
+.thresholds { margin-bottom: 14px; }
+.autonomy.card { padding: 0; }
+.autonomy .table { min-width: 1040px; }
+.autonomy .trow { grid-template-columns: 1.3fr 1.2fr 90px 90px 80px 1.3fr 1.6fr 120px; }
+.autonomy .cell-block { border-bottom: 1px solid var(--line-soft); }
+.autonomy .cell-block:last-child { border-bottom: 0; }
+.autonomy .cell-block .trow { border-bottom: 0; }
+.reversed { display: flex; flex-direction: column; gap: 12px; padding: 4px 20px 16px; }
+.reversed-row { gap: 12px; padding: 4px 0; }
+
 /* Global automation switch in the header (TRZ-35) */
 /* A pill sits at the top of a card; in the header it is centered like the other controls. */
 .pill.switch {

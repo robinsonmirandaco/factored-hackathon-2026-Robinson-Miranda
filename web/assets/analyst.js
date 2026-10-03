@@ -1,11 +1,12 @@
-// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-35, TRZ-38): login, the queue with its filters,
-// the dossier of a case, the decisions, and the automation switch and demo reset in the header.
+// Analyst console (TRZ-27, TRZ-28, TRZ-29, TRZ-31, TRZ-35, TRZ-38): login, the queue with its
+// filters, the dossier of a case, the decisions, the Estado de autonomía tab, and the automation
+// switch and demo reset in the header.
 // Every figure is read from the API; text reaches the page only through textContent, never as
 // HTML.
 
 import { createClient } from "./api.js";
 import {
-  INJECTION_REASON, REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
+  INJECTION_REASON, REVERSAL_REASONS, SIMULATED_NOTE, actionLabel, autonomyRow, reversedGroups, thresholdsText, actionStateLabel, auditLabel, automationView, demoResetView,
   identificationTable, recommendationText, cellEvidence,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
   identificationLabel, infoExchanges, kindLabel, markedParts, queueRow, reasonLabel, statusLabel,
@@ -207,7 +208,7 @@ window.addEventListener("trazo:session-lost", () => {
 let filter = "all";
 
 function show(view) {
-  for (const name of ["login", "queue", "case"]) $(`view-${name}`).hidden = name !== view;
+  for (const name of ["login", "queue", "case", "autonomy"]) $(`view-${name}`).hidden = name !== view;
   for (const a of document.querySelectorAll("#nav a")) {
     if (a.dataset.view === view || (view === "case" && a.dataset.view === "queue")) {
       a.setAttribute("aria-current", "page");
@@ -225,6 +226,10 @@ function route() {
   if (match) {
     show("case");
     return renderCase(decodeURIComponent(match[1]));
+  }
+  if (location.hash === "#/autonomia") {
+    show("autonomy");
+    return renderAutonomy();
   }
   show("queue");
   return renderQueue();
@@ -275,6 +280,70 @@ async function renderQueue() {
           el("div", { class: "trow head" }, QUEUE_COLUMNS.map((c, i) => el("span", { class: i === 3 || i === 7 ? "r" : null, text: c }))),
           rows.length ? rows : el("div", { class: "empty", text: "No hay casos en este filtro." }))),
       el("p", { class: "small muted note-below", text: "El SLA corre en el reloj real, según la prioridad. Los montos en USD son los que comparó la política." }));
+  } catch (e) {
+    failure(target, e);
+  }
+}
+
+const AUTONOMY_COLUMNS = ["Celda", "Nivel", "Revisiones del bloque", "Reversiones", "r", "W", "Último cambio", ""];
+
+// Read again every time the tab is opened or the page reloaded, so a decision of the analyst
+// shows up at once (CA4).
+async function renderAutonomy() {
+  const target = $("view-autonomy");
+  target.replaceChildren(el("p", { class: "muted", text: "Cargando el estado de autonomía…" }));
+  try {
+    const tab = await api.call("/autonomy");
+    const rows = tab.cells.map((cell) => {
+      const r = autonomyRow(cell, tab.thresholds);
+      const cases = el("div", { class: "reversed", hidden: true }, reversedGroups(cell).map((g) =>
+        el("div", { class: "stack tight-stack" },
+          el("span", { class: "small strong", text: g.title }),
+          g.items.length
+            ? el("ul", { class: "list" }, g.items.map((i) => el("li", { class: "row reversed-row" },
+              el("a", { class: "mono small", href: i.href, text: i.caseId }),
+              el("span", { class: "small", text: i.reason }),
+              i.simulated ? el("span", { class: "tag sim", text: "[simulado]" }) : null)))
+            : el("p", { class: "small muted", text: "Sin casos revertidos." }))));
+      const toggle = el("button", {
+        type: "button", class: "btn small", "aria-expanded": "false", disabled: r.reversedCount === 0,
+        text: `Ver casos (${r.reversedCount})`,
+      });
+      toggle.addEventListener("click", () => {
+        cases.hidden = !cases.hidden;
+        toggle.setAttribute("aria-expanded", String(!cases.hidden));
+      });
+      return el("div", { class: "cell-block" },
+        el("div", { class: "trow" },
+          el("span", { class: "strong", text: r.cell }),
+          el("span", { class: "cell-stack" },
+            el("span", { class: "strong mono", text: r.level }),
+            el("span", { class: "tiny muted", text: r.levelText })),
+          el("span", { class: "r", text: r.reviews }),
+          el("span", { class: "r", text: r.reversals }),
+          el("span", { class: "r", text: r.rate }),
+          el("span", { class: "cell-stack r" },
+            el("span", { text: r.w }),
+            r.wNote ? el("span", { class: "tiny muted", text: r.wNote }) : null),
+          el("span", { class: "cell-stack" },
+            el("span", { class: "small", text: r.change }),
+            r.changeCase ? el("a", { class: "tiny mono", href: `#/caso/${encodeURIComponent(r.changeCase)}`, text: `Cerró el bloque ${r.changeCase}` }) : null),
+          toggle),
+        cases);
+    });
+    target.replaceChildren(
+      el("div", { class: "page-head" },
+        el("span", { class: "eyebrow", text: "Supervisión" }),
+        el("h1", { text: "Estado de autonomía" })),
+      el("div", { class: "pills thresholds" }, thresholdsText(tab.thresholds).map((text) => el("span", { class: "pill", text }))),
+      el("section", { class: "card flush table-wrap autonomy" },
+        el("div", { class: "table" },
+          el("div", { class: "trow head" }, AUTONOMY_COLUMNS.map((c, i) => el("span", { class: i >= 2 && i <= 5 ? "r" : null, text: c }))),
+          rows)),
+      tab.simulated
+        ? el("p", { class: "small muted note-below" }, el("span", { class: "sim", text: "[simulado]" }), ` ${SIMULATED_NOTE}`)
+        : null,
+      el("p", { class: "small muted", text: "Las revisiones de cada celda se agrupan en bloques de N, en el orden en que decide la analista; W se calcula solo al cerrar un bloque." }));
   } catch (e) {
     failure(target, e);
   }

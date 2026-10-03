@@ -1,0 +1,21 @@
+meta {
+  name: TRZ-37 CA3 a customer session cannot read the metrics
+  type: http
+  seq: 36
+}
+
+get {
+  url: {{baseUrl}}/metrics
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{customerToken}}
+}
+
+tests {
+  test("403", function() {
+    expect(res.getStatus()).to.equal(403);
+  });
+}

@@ -430,3 +430,92 @@ export function dialogKey(key, shift, focusedIndex, count) {
   const next = shift ? (focusedIndex - 1 + count) % count : (focusedIndex + 1) % count;
   return { focus: focusedIndex < 0 ? (shift ? count - 1 : 0) : next };
 }
+
+// ---- Estado de autonomía (TRZ-31) ---------------------------------------------------------
+
+// The levels of design 6.7, with their names.
+export const LEVELS = {
+  A0: "Autónomo con confirmación del cliente",
+  A1: "Requiere aprobación de analista",
+  A2: "Solo analista",
+};
+
+const COUNT_WORDS = { 1: "un", 2: "dos", 3: "tres", 4: "cuatro" };
+
+// The thresholds of the policy, as read from the API, above the table (CA2).
+export function thresholdsText(t) {
+  const blocks = COUNT_WORDS[t.promote_after_consecutive_windows] || String(t.promote_after_consecutive_windows);
+  return [
+    `N = ${t.window_n}`,
+    `Baja si W ≥ ${comma(t.demote_if_wilson_lower_gte, 2)}`,
+    `Sube con ${blocks} bloques seguidos con r < ${comma(t.promote_if_rate_lt, 2)}`,
+    `z = ${comma(t.z, 3)}`,
+  ];
+}
+
+// The figures of a closed block, as the history and the dossier write them.
+function blockFigures(b) {
+  let crossed = "";
+  if (b.threshold === "demote_if_wilson_lower_gte") crossed = ` ≥ ${comma(b.threshold_value, 2)}`;
+  if (b.threshold === "promote_if_rate_lt") crossed = `, bloques seguidos con r < ${comma(b.threshold_value, 2)}`;
+  return `${b.reversals} de ${b.n}, r = ${comma(b.r, 2)}, W = ${comma(b.w, 3)}${crossed}`;
+}
+
+// One row of the table (CA1). W exists only for a closed block: with an open block of fewer
+// than N reviews nothing is computed (design 6.7). The last change has no date: the audit log
+// keeps the real clock, and the screens show only simulated dates (design 10.2, rule 7).
+export function autonomyRow(cell, thresholds) {
+  const n = thresholds.window_n;
+  const last = cell.last_block;
+  const change = cell.last_change;
+  return {
+    cell: `${intentLabel(cell.intent)} · ${cell.language.toUpperCase()}`,
+    level: cell.level,
+    levelText: LEVELS[cell.level] || cell.level,
+    reviews: `${cell.block_reviews} de ${n}`,
+    reversals: String(cell.block_reversals),
+    rate: cell.rate == null ? "Sin revisiones" : comma(cell.rate, 2),
+    w: last ? comma(last.w, 3) : `Se calcula con N = ${n}`,
+    wNote: last ? `Último bloque cerrado: ${blockFigures(last)}` : null,
+    change: change
+      ? `${change.level_before} → ${change.level_after} con ${blockFigures(change)}`
+      : "Sin cambios de nivel",
+    changeCase: change?.closed_by || null,
+    reversedCount: cell.reversed_last_block.length + cell.reversed_open_block.length,
+  };
+}
+
+const reasonWords = Object.fromEntries(REVERSAL_REASONS);
+
+function reversedItem(item) {
+  return {
+    caseId: item.case_id,
+    href: `#/caso/${encodeURIComponent(item.case_id)}`,
+    reason: reasonWords[item.reason] || item.reason,
+    simulated: item.simulated,
+  };
+}
+
+// "Ver casos" (CA3): the reversed cases of the last closed block, which decided its level, and
+// apart those of the open block.
+export function reversedGroups(cell) {
+  const groups = [];
+  const last = cell.last_block;
+  if (last) {
+    const decided = last.changed
+      ? `produjo el cambio de ${last.level_before} a ${last.level_after}`
+      : `la celda siguió en ${last.level_after}`;
+    groups.push({
+      title: `Último bloque cerrado (${last.reversals} de ${last.n}, ${decided})`,
+      items: cell.reversed_last_block.map(reversedItem),
+    });
+  }
+  groups.push({
+    title: `Bloque abierto (${cell.block_reversals} de ${cell.block_reviews} revisiones)`,
+    items: cell.reversed_open_block.map(reversedItem),
+  });
+  return groups;
+}
+
+// Below the table when the reversals come from the demo or the harness (CA5).
+export const SIMULATED_NOTE = "Reversiones simuladas contra verdad de terreno en la evaluación";

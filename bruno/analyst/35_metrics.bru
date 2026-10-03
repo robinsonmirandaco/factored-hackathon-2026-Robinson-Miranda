@@ -1,0 +1,28 @@
+meta {
+  name: TRZ-37 the metrics after the walkthrough, from the audit log
+  type: http
+  seq: 35
+}
+
+get {
+  url: {{baseUrl}}/metrics
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{analystToken}}
+}
+
+tests {
+  test("200 with containment, handoffs, latency, cost and cells", function() {
+    expect(res.getStatus()).to.equal(200);
+    const m = res.getBody();
+    expect(m.cases).to.be.above(0);
+    expect(m.contained + Object.values(m.handed_to_person).reduce((a, b) => a + b, 0)).to.equal(m.cases);
+    expect(m.turn_latency_ms.p95).to.be.at.least(m.turn_latency_ms.p50);
+    expect(m.cost_usd).to.be.a("number");
+    expect(m.simulated.label).to.equal("[simulado]");
+    expect(m.autonomy).to.be.an("array");
+  });
+}
