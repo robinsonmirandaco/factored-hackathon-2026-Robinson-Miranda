@@ -862,6 +862,15 @@ def post_run_section(folder: Path) -> list[str]:
             + " |"
         )
     md.append(
+        "| Dossier completeness (cases with a person) | "
+        + " | ".join(
+            f"{m['dossier']['fields_present']}/{m['dossier']['fields_required']} fields; "
+            f"{m['dossier']['complete_cases']}/{m['dossier']['cases']} complete"
+            for m in ms
+        )
+        + " |"
+    )
+    md.append(
         "| Security stops | "
         + " | ".join(str(sum(x.score.security_flagged for x in r)) for r in rows)
         + " |"
