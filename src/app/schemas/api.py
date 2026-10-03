@@ -560,6 +560,91 @@ class MetricsOut(BaseModel):
     autonomy: list[CellMetricsOut]
 
 
+class ThresholdsOut(BaseModel):
+    """The autonomy settings of the policy the console shows above the cells (TRZ-31 CA2)."""
+
+    window_n: int
+    z: float
+    demote_if_wilson_lower_gte: float
+    promote_if_rate_lt: float
+    promote_after_consecutive_windows: int
+    audit_sample_rate: float
+
+
+class ReversedCaseOut(BaseModel):
+    """A review the analyst reversed, with its reason of the closed list.
+
+    Attributes:
+        simulated: The case was created by the demo state, not by a customer.
+    """
+
+    case_id: str
+    reason: str
+    simulated: bool
+
+
+class ClosedBlockOut(BaseModel):
+    """A closed block of N reviews and what it decided (design 6.7).
+
+    Attributes:
+        audit_id: Its autonomy_block row.
+        closed_by: The case whose review closed it.
+        threshold: Policy key of the threshold it crossed, or None.
+    """
+
+    audit_id: int
+    closed_by: str | None
+    n: int
+    reversals: int
+    r: float
+    w: float
+    threshold: str | None
+    threshold_value: float | None
+    level_before: str
+    level_after: str
+    changed: bool
+
+
+class AutonomyCellOut(BaseModel):
+    """One intent x language cell of the Estado de autonomía tab (TRZ-31 CA1, CA3).
+
+    Attributes:
+        level: Level in force.
+        block_reviews: Reviews in the open block.
+        block_reversals: Reversals among them.
+        rate: r of the open block; None while it has no review.
+        last_block: The last closed block, whose W the tab shows; None before the first one.
+        last_change: The closed block that set the level; None while it never changed.
+        reversed_last_block: The reversed cases of the last closed block.
+        reversed_open_block: The reversed cases of the open block.
+    """
+
+    intent: str
+    language: str
+    level: str
+    block_reviews: int
+    block_reversals: int
+    rate: float | None
+    last_block: ClosedBlockOut | None
+    last_change: ClosedBlockOut | None
+    reversed_last_block: list[ReversedCaseOut]
+    reversed_open_block: list[ReversedCaseOut]
+
+
+class AutonomyOut(BaseModel):
+    """The Estado de autonomía tab (TRZ-31).
+
+    Attributes:
+        cells: Every dispute intent in Spanish and Portuguese, read from autonomy_cells.
+        simulated: Some review comes from a simulated case, or the app runs in demo mode: the
+            tab says the reversals are simulated (CA5).
+    """
+
+    thresholds: ThresholdsOut
+    cells: list[AutonomyCellOut]
+    simulated: bool
+
+
 # ---- the customer's own screens (TRZ-34) ------------------------------------------------
 
 

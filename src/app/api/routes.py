@@ -22,6 +22,7 @@ from app.schemas.api import (
     AnalystLoginIn,
     AutomationIn,
     AutomationOut,
+    AutonomyOut,
     CaseOut,
     ChargeOut,
     ChatIn,
@@ -54,6 +55,7 @@ from app.schemas.dossier import Dossier
 from app.services import (
     auth,
     automation,
+    autonomy,
     cases,
     decisions,
     demo,
@@ -418,6 +420,15 @@ def put_automation(
 ) -> AutomationOut:
     """Turns the global automation switch on or off; sending the current value changes nothing."""
     return automation.set_switch(session, analyst.subject, body.all_to_human)
+
+
+@router.get("/autonomy", response_model=AutonomyOut, responses={**_AUTH, 503: _ERRORS[503]})
+def get_autonomy(session: AnalystSessionDep, runtime: RuntimeDep) -> AutonomyOut:
+    """Returns the autonomy of every cell with its thresholds and reversed cases (TRZ-31)."""
+    policy = runtime.agent.policy.config
+    return autonomy.autonomy_status(
+        session, policy.autonomy, policy.dispute_intents, runtime.settings.demo_mode
+    )
 
 
 @router.get("/metrics", response_model=MetricsOut, responses={**_AUTH, 503: _ERRORS[503]})

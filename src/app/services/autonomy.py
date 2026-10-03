@@ -9,19 +9,28 @@ session reads a cell, so its row keeps counts and no case: the reversed cases co
 audit log when the block closes.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, get_args
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.adapters.db.audit import write_audit
-from app.adapters.db.models import AuditRecord, AutonomyCell
+from app.adapters.db.models import AuditRecord, AutonomyCell, Case
+from app.core.errors import AppError
 from app.core.time import utcnow
 from app.domain.autonomy import BlockClosed, CellState, apply_review
 from app.domain.policy import Autonomy, AutonomyLevel, Language
+from app.schemas.api import (
+    AutonomyCellOut,
+    AutonomyOut,
+    ClosedBlockOut,
+    ReversedCaseOut,
+    ThresholdsOut,
+)
 from app.schemas.comprehension import Intent
 
 
@@ -172,3 +181,116 @@ def block_result(closed: BlockClosed, params: Autonomy) -> dict[str, Any]:
         "threshold_value": getattr(params, closed.threshold) if closed.threshold else None,
         "good_blocks": closed.good_blocks,
     }
+
+
+_DECISIONS = text(
+    "SELECT id, case_id, result->'review' FROM audit_log "
+    "WHERE actor = 'human' AND action = 'decision' AND result ? 'review' ORDER BY id"
+)
+_BLOCKS = text(
+    "SELECT id, case_id, payload->'cell', result FROM audit_log "
+    "WHERE actor = 'system' AND action = 'autonomy_block' ORDER BY id"
+)
+
+
+def autonomy_status(
+    session: Session, params: Autonomy, intents: Sequence[Intent], demo_mode: bool
+) -> AutonomyOut:
+    """The Estado de autonomía tab (TRZ-31): every cell, its blocks and its reversed cases.
+
+    The level and the open block are read from autonomy_cells, the row the policy consults; a
+    cell with no row yet is at the initial level with an empty block. The closed blocks and the
+    reversed cases come from the audit log. No real-clock date is returned: the screens show
+    only dates of the simulated clock (design 10.2, rule 7).
+
+    Args:
+        session: Open session with the analyst role.
+        params: Autonomy settings of the policy.
+        intents: `dispute_intents` of the policy, the intents that act and so have a cell.
+        demo_mode: Whether the app runs in demo mode.
+
+    Returns:
+        The thresholds, one row per intent x language and whether the data are simulated.
+
+    Raises:
+        AppError: 503 db_unavailable if the database fails.
+    """
+    try:
+        stored = {(c.intent, c.language): c for c in session.scalars(select(AutonomyCell))}
+        decisions = session.execute(_DECISIONS).all()
+        blocks = session.execute(_BLOCKS).all()
+        reviewed = {case_id for _, case_id, _ in decisions}
+        simulated = set(
+            session.scalars(select(Case.id).where(Case.id.in_(reviewed), Case.simulated))
+        )
+    except SQLAlchemyError as exc:
+        raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
+    by_id = {block_id: _block_out(block_id, case_id, r) for block_id, case_id, _, r in blocks}
+    last_block = {(c["intent"], c["language"]): by_id[i] for i, _, c, _ in blocks}
+    closed_reversed = {(c["intent"], c["language"]): r.get("reversed", []) for _, _, c, r in blocks}
+
+    def reversed_out(items: list[dict[str, Any]]) -> list[ReversedCaseOut]:
+        return [
+            ReversedCaseOut(
+                case_id=i["case_id"], reason=i["reason"], simulated=i["case_id"] in simulated
+            )
+            for i in items
+        ]
+
+    cells = []
+    for intent in intents:
+        for language in get_args(Language):
+            key = (intent, language)
+            row = stored.get(key)
+            reviews, reversals = (row.block_reviews, row.block_reversals) if row else (0, 0)
+            after = (row.block_after if row else None) or 0
+            open_reversed = [
+                {"case_id": case_id, "reason": review["reason"]}
+                for decision_id, case_id, review in decisions
+                if decision_id > after
+                and review["reversal"]
+                and (review["cell"]["intent"], review["cell"]["language"]) == key
+            ]
+            change = (row.last_change or {}) if row else {}
+            cells.append(
+                AutonomyCellOut(
+                    intent=intent,
+                    language=language,
+                    level=row.level if row else params.initial_level,
+                    block_reviews=reviews,
+                    block_reversals=reversals,
+                    rate=round(reversals / reviews, 4) if reviews else None,
+                    last_block=last_block.get(key),
+                    last_change=by_id.get(change.get("audit_id")),
+                    reversed_last_block=reversed_out(closed_reversed.get(key, [])),
+                    reversed_open_block=reversed_out(open_reversed),
+                )
+            )
+    return AutonomyOut(
+        thresholds=ThresholdsOut(
+            window_n=params.window_n,
+            z=params.z,
+            demote_if_wilson_lower_gte=params.demote_if_wilson_lower_gte,
+            promote_if_rate_lt=params.promote_if_rate_lt,
+            promote_after_consecutive_windows=params.promote_after_consecutive_windows,
+            audit_sample_rate=params.audit_sample_rate,
+        ),
+        cells=cells,
+        simulated=demo_mode or bool(simulated),
+    )
+
+
+def _block_out(audit_id: int, case_id: str | None, r: dict[str, Any]) -> ClosedBlockOut:
+    return ClosedBlockOut(
+        audit_id=audit_id,
+        closed_by=case_id,
+        n=r["n"],
+        reversals=r["reversals"],
+        r=r["r"],
+        w=r["w"],
+        threshold=r.get("threshold"),
+        threshold_value=r.get("threshold_value"),
+        level_before=r["level_before"],
+        level_after=r["level_after"],
+        changed=r["changed"],
+    )
