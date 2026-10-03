@@ -60,6 +60,7 @@ from app.domain.policy import (
 )
 from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, policy_deadline
 from app.domain.recognition import Choice, choices, recognition_text
+from app.domain.security_text import mask_ids, read_signals
 from app.schemas.comprehension import Comprehension, ComprehensionContext, evidence_is_faithful
 from app.services import tools as T
 from app.services.audit_sample import sample
@@ -303,6 +304,11 @@ def handle_message(
                 facts = _recognize(session, deps, customer, case, language, recognition, said)
             else:
                 facts = _choose(session, deps, customer, case, language, str(option), said)
+            stats = LLMCallStats()
+        elif (reason := _text_security(session, customer_id, text)) is not None:
+            case, language, facts = _stop_for_security(
+                session, deps, customer, case_id, redacted, pii_counts, reason
+            )
             stats = LLMCallStats()
         else:
             case, language, facts, stats, read = _understand_and_decide(
@@ -930,12 +936,14 @@ def _stop_for_security(
     case_id: str | None,
     redacted: str,
     pii_counts: dict[str, int],
+    reason: str = "foreign_customer_id",
 ) -> tuple[Case, Language, Facts]:
     """Stops a turn that tried to reach another customer's data, without reading the message.
 
     No comprehension runs, so the turn spends no tokens and its text never reaches the LLM. A
     new case keeps the intent `unread`; a continued case keeps the intent it had. The language
-    comes from the rules detector alone, which runs locally.
+    comes from the rules detector alone, which runs locally. The same stop serves a message
+    whose text names another customer or carries an injected instruction (`reason`).
     """
     previous = (
         _case_language(_own_case(session, customer.customer_id, case_id)) if case_id else None
@@ -947,12 +955,35 @@ def _stop_for_security(
     else:
         case = _own_case(session, customer.customer_id, case_id)
         case.language = language
-    said = Said(redacted, pii_counts, spoken)
+    said = Said(mask_ids(redacted), pii_counts, spoken)
     return (
         case,
         language,
-        _security_stop(session, deps, case, language, said, "foreign_customer_id"),
+        _security_stop(session, deps, case, language, said, reason),
     )
+
+
+def _text_security(session: Session, customer_id: str, text: str) -> str | None:
+    """The reason to stop a free-text turn for security, or None (TRZ-46 follow-up).
+
+    A charge or product id in the text that row level security does not show as the session
+    customer's counts as another customer's: the reply never tells whether it exists. An
+    injected instruction is never obeyed, because the message does not reach the LLM; the case
+    goes to a person.
+    """
+    signals = read_signals(text, customer_id)
+    foreign = any(
+        getattr(
+            session.get(Transaction if i.startswith("TRX-") else Product, i), "customer_id", None
+        )
+        != customer_id
+        for i in signals.owned_ids
+    )
+    if signals.other_customer or foreign:
+        return "other_customer_in_text"
+    if signals.injection:
+        return "instruction_in_text"
+    return None
 
 
 def _security_stop(
