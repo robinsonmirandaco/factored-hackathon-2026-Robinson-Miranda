@@ -24,7 +24,7 @@ from app.main import build_runtime
 from app.schemas.comprehension import ComprehensionContext, Intent
 
 POLICY = Path(__file__).resolve().parents[2] / "config" / "policy.yaml"
-VERSION = "2026.09.4"
+VERSION = "2026.09.5"
 
 
 @pytest.fixture(scope="module")

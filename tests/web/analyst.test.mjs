@@ -215,7 +215,7 @@ test("an identification with no candidate has no table rows", () => {
 
 test("the rule card tells r, W and N of the block that set the level of the cell (TRZ-30)", () => {
   const rule = {
-    rule: "approval.autonomy_a1", version: "2026.09.4", level: "L3", autonomy_level: "A1",
+    rule: "approval.autonomy_a1", version: "2026.09.5", level: "L3", autonomy_level: "A1",
     autonomy_change: {
       level_before: "A0", level_after: "A1", n: 20, reversals: 10, r: 0.5, w: 0.3274,
       threshold: "demote_if_wilson_lower_gte", threshold_value: 0.3,

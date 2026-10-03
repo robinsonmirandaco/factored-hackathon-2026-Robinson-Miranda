@@ -7,7 +7,7 @@
 # escalation and approval stages apply only to `dispute_intents`. Each rule list must name every
 # rule the code knows, exactly once; the order of the list is the order of evaluation.
 
-version: "2026.09.4"
+version: "2026.09.5"
 
 dispute_window_days: 120            # [assumption] the only source of this number at runtime
 open_dispute_lookback_days: 90      # [assumption] look-back of open_dispute_last_90d
@@ -80,7 +80,7 @@ action_level:
 
 autonomy:
   cell: [intent, language]
-  initial_level: A0                 # level of every cell until TRZ-30 reads the real one
+  initial_level: A0                 # level of a cell before its first review (TRZ-30)
   window_n: 20
   z: 1.645
   demote_if_wilson_lower_gte: 0.30
