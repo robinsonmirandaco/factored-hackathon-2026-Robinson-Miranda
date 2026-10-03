@@ -1,0 +1,4583 @@
+{
+ "date": "2026-10-03T09:18:53",
+ "commit": "2cd860cabe7877bfb2b49da98737330a8a2c7d76",
+ "reason": null,
+ "split_sha256": {
+  "test_generated": "fc2673525a3bb2a012446501ff8b303c656eb1773aa5f0fb5e4116dc6a3b76a0",
+  "test_handwritten": "eae92d95b724570885c29ccb6ff62bc8f8ae4e8466566de9fac4d39118b4be87",
+  "dev": "15c5f16987d2bfc89020bfdc59a80ea42fe4a307e066937a6fb1239c94773196",
+  "calibration": "bc9f16e905b58033e3ca02d900dbb91c79da800481e354cbd91be4e24574b420"
+ },
+ "seed": 20261002,
+ "sklearn": "1.9.1",
+ "settings": {
+  "tfidf": {
+   "analyzer": "char_wb",
+   "ngram_range": [
+    2,
+    5
+   ],
+   "sublinear_tf": true,
+   "min_df": 2
+  },
+  "logistic_c": 1.0,
+  "alphas": [
+   0.2,
+   0.1,
+   0.05,
+   0.02
+  ]
+ },
+ "models": {
+  "haiku": "claude-haiku-4-5-20251001",
+  "sonnet": "claude-sonnet-5-5"
+ },
+ "prompt_version": "comprehension-4",
+ "policy_version": "2026.09.5",
+ "identification_version": "identification-3",
+ "llm_spend_usd": 0.0,
+ "test_file_opens": {
+  "test_generated.jsonl:r": 1,
+  "test_handwritten.jsonl:r": 1
+ },
+ "comprehension": {
+  "rules": {
+   "overall": {
+    "cases": 376,
+    "intent_macro_f1": 0.8609249106934497,
+    "intent_f1": {
+     "unrecognized_charge": 0.9682804674457429,
+     "billing_error_amount": 0.7096774193548387,
+     "billing_error_duplicate": 1.0,
+     "claim_status": 0.6666666666666666,
+     "out_of_scope": 0.96
+    },
+    "out_of_scope_recall": {
+     "hits": 24,
+     "n": 24,
+     "rate": 1.0
+    },
+    "in_scope_sent_out": {
+     "hits": 2,
+     "n": 352,
+     "rate": 0.005681818181818182
+    },
+    "faithful": {
+     "hits": 700,
+     "n": 700,
+     "rate": 1.0
+    },
+    "merchant_by_category": 28,
+    "fields": {
+     "amount": {
+      "accuracy": {
+       "hits": 120,
+       "n": 124,
+       "rate": 0.967741935483871
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 252,
+       "rate": 0.0
+      }
+     },
+     "date": {
+      "accuracy": {
+       "hits": 233,
+       "n": 288,
+       "rate": 0.8090277777777778
+      },
+      "spurious": {
+       "hits": 1,
+       "n": 88,
+       "rate": 0.011363636363636364
+      }
+     },
+     "merchant": {
+      "accuracy": {
+       "hits": 81,
+       "n": 92,
+       "rate": 0.8804347826086957
+      },
+      "spurious": {
+       "hits": 1,
+       "n": 256,
+       "rate": 0.00390625
+      }
+     },
+     "channel": {
+      "accuracy": {
+       "hits": 169,
+       "n": 192,
+       "rate": 0.8802083333333334
+      },
+      "spurious": {
+       "hits": 15,
+       "n": 184,
+       "rate": 0.08152173913043478
+      }
+     },
+     "card_in_possession": {
+      "accuracy": {
+       "hits": 61,
+       "n": 172,
+       "rate": 0.3546511627906977
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 204,
+       "rate": 0.0
+      }
+     },
+     "language": {
+      "accuracy": {
+       "hits": 190,
+       "n": 376,
+       "rate": 0.5053191489361702
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     }
+    }
+   },
+   "by_language": {
+    "es": {
+     "cases": 282,
+     "intent_macro_f1": 0.8666988013753656,
+     "intent_f1": {
+      "unrecognized_charge": 0.9711751662971175,
+      "billing_error_amount": 0.6956521739130435,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 18,
+      "n": 18,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 264,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 519,
+      "n": 519,
+      "rate": 1.0
+     },
+     "merchant_by_category": 21,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 90,
+        "n": 93,
+        "rate": 0.967741935483871
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 189,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 171,
+        "n": 216,
+        "rate": 0.7916666666666666
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 66,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 58,
+        "n": 69,
+        "rate": 0.8405797101449275
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 192,
+        "rate": 0.005208333333333333
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 123,
+        "n": 144,
+        "rate": 0.8541666666666666
+       },
+       "spurious": {
+        "hits": 12,
+        "n": 138,
+        "rate": 0.08695652173913043
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 47,
+        "n": 129,
+        "rate": 0.3643410852713178
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 153,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 103,
+        "n": 282,
+        "rate": 0.36524822695035464
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "pt": {
+     "cases": 94,
+     "intent_macro_f1": 0.8466537966537967,
+     "intent_f1": {
+      "unrecognized_charge": 0.9594594594594594,
+      "billing_error_amount": 0.75,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 0.8571428571428571
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 2,
+      "n": 88,
+      "rate": 0.022727272727272728
+     },
+     "faithful": {
+      "hits": 181,
+      "n": 181,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 30,
+        "n": 31,
+        "rate": 0.967741935483871
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 62,
+        "n": 72,
+        "rate": 0.8611111111111112
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 22,
+        "rate": 0.045454545454545456
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 46,
+        "n": 48,
+        "rate": 0.9583333333333334
+       },
+       "spurious": {
+        "hits": 3,
+        "n": 46,
+        "rate": 0.06521739130434782
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 14,
+        "n": 43,
+        "rate": 0.32558139534883723
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 87,
+        "n": 94,
+        "rate": 0.925531914893617
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    }
+   },
+   "by_variant": {
+    "es-AR": {
+     "cases": 94,
+     "intent_macro_f1": 0.8779999999999999,
+     "intent_f1": {
+      "unrecognized_charge": 0.9733333333333334,
+      "billing_error_amount": 0.75,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 173,
+      "n": 173,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 30,
+        "n": 31,
+        "rate": 0.967741935483871
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 45,
+        "n": 72,
+        "rate": 0.625
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 22,
+        "n": 23,
+        "rate": 0.9565217391304348
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 64,
+        "rate": 0.015625
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 46,
+        "n": 48,
+        "rate": 0.9583333333333334
+       },
+       "spurious": {
+        "hits": 4,
+        "n": 46,
+        "rate": 0.08695652173913043
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 16,
+        "n": 43,
+        "rate": 0.37209302325581395
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 30,
+        "n": 94,
+        "rate": 0.3191489361702128
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "es-CO": {
+     "cases": 94,
+     "intent_macro_f1": 0.9070842654735273,
+     "intent_f1": {
+      "unrecognized_charge": 0.9798657718120806,
+      "billing_error_amount": 0.8888888888888888,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 178,
+      "n": 178,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 30,
+        "n": 31,
+        "rate": 0.967741935483871
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 71,
+        "n": 72,
+        "rate": 0.9861111111111112
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 13,
+        "n": 23,
+        "rate": 0.5652173913043478
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 46,
+        "n": 48,
+        "rate": 0.9583333333333334
+       },
+       "spurious": {
+        "hits": 4,
+        "n": 46,
+        "rate": 0.08695652173913043
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 12,
+        "n": 43,
+        "rate": 0.27906976744186046
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 24,
+        "n": 94,
+        "rate": 0.2553191489361702
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "es-MX": {
+     "cases": 94,
+     "intent_macro_f1": 0.7921052631578946,
+     "intent_f1": {
+      "unrecognized_charge": 0.9605263157894737,
+      "billing_error_amount": 0.3333333333333333,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 168,
+      "n": 168,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 30,
+        "n": 31,
+        "rate": 0.967741935483871
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 55,
+        "n": 72,
+        "rate": 0.7638888888888888
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 31,
+        "n": 48,
+        "rate": 0.6458333333333334
+       },
+       "spurious": {
+        "hits": 4,
+        "n": 46,
+        "rate": 0.08695652173913043
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 19,
+        "n": 43,
+        "rate": 0.4418604651162791
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 49,
+        "n": 94,
+        "rate": 0.5212765957446809
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "pt-BR": {
+     "cases": 94,
+     "intent_macro_f1": 0.8466537966537967,
+     "intent_f1": {
+      "unrecognized_charge": 0.9594594594594594,
+      "billing_error_amount": 0.75,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 0.8571428571428571
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 2,
+      "n": 88,
+      "rate": 0.022727272727272728
+     },
+     "faithful": {
+      "hits": 181,
+      "n": 181,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 30,
+        "n": 31,
+        "rate": 0.967741935483871
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 62,
+        "n": 72,
+        "rate": 0.8611111111111112
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 22,
+        "rate": 0.045454545454545456
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 46,
+        "n": 48,
+        "rate": 0.9583333333333334
+       },
+       "spurious": {
+        "hits": 3,
+        "n": 46,
+        "rate": 0.06521739130434782
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 14,
+        "n": 43,
+        "rate": 0.32558139534883723
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 87,
+        "n": 94,
+        "rate": 0.925531914893617
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    }
+   }
+  },
+  "tfidf_lr": {
+   "overall": {
+    "cases": 376,
+    "intent_macro_f1": 0.5031767745858033,
+    "intent_f1": {
+     "unrecognized_charge": 0.9054263565891473,
+     "billing_error_amount": 0.4,
+     "billing_error_duplicate": 0.5882352941176471,
+     "claim_status": 0.2222222222222222,
+     "out_of_scope": 0.4
+    },
+    "out_of_scope_recall": {
+     "hits": 6,
+     "n": 24,
+     "rate": 0.25
+    },
+    "in_scope_sent_out": {
+     "hits": 0,
+     "n": 352,
+     "rate": 0.0
+    },
+    "faithful": {
+     "hits": 0,
+     "n": 0,
+     "rate": null
+    },
+    "merchant_by_category": 0,
+    "fields": {
+     "amount": {
+      "accuracy": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     },
+     "date": {
+      "accuracy": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     },
+     "merchant": {
+      "accuracy": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     },
+     "channel": {
+      "accuracy": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     },
+     "card_in_possession": {
+      "accuracy": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     },
+     "language": {
+      "accuracy": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     }
+    }
+   },
+   "by_language": {
+    "es": {
+     "cases": 282,
+     "intent_macro_f1": 0.5006054551509097,
+     "intent_f1": {
+      "unrecognized_charge": 0.9049586776859504,
+      "billing_error_amount": 0.3333333333333333,
+      "billing_error_duplicate": 0.6153846153846154,
+      "claim_status": 0.2857142857142857,
+      "out_of_scope": 0.36363636363636365
+     },
+     "out_of_scope_recall": {
+      "hits": 4,
+      "n": 18,
+      "rate": 0.2222222222222222
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 264,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "merchant_by_category": 0,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "pt": {
+     "cases": 94,
+     "intent_macro_f1": 0.49565217391304345,
+     "intent_f1": {
+      "unrecognized_charge": 0.906832298136646,
+      "billing_error_amount": 0.5714285714285714,
+      "billing_error_duplicate": 0.5,
+      "claim_status": 0.0,
+      "out_of_scope": 0.5
+     },
+     "out_of_scope_recall": {
+      "hits": 2,
+      "n": 6,
+      "rate": 0.3333333333333333
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "merchant_by_category": 0,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    }
+   },
+   "by_variant": {
+    "es-AR": {
+     "cases": 94,
+     "intent_macro_f1": 0.5146997929606625,
+     "intent_f1": {
+      "unrecognized_charge": 0.906832298136646,
+      "billing_error_amount": 0.0,
+      "billing_error_duplicate": 0.5,
+      "claim_status": 0.6666666666666666,
+      "out_of_scope": 0.5
+     },
+     "out_of_scope_recall": {
+      "hits": 2,
+      "n": 6,
+      "rate": 0.3333333333333333
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "merchant_by_category": 0,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "es-CO": {
+     "cases": 94,
+     "intent_macro_f1": 0.4516754850088184,
+     "intent_f1": {
+      "unrecognized_charge": 0.9012345679012346,
+      "billing_error_amount": 0.5714285714285714,
+      "billing_error_duplicate": 0.5,
+      "claim_status": 0.0,
+      "out_of_scope": 0.2857142857142857
+     },
+     "out_of_scope_recall": {
+      "hits": 1,
+      "n": 6,
+      "rate": 0.16666666666666666
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "merchant_by_category": 0,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "es-MX": {
+     "cases": 94,
+     "intent_macro_f1": 0.465175983436853,
+     "intent_f1": {
+      "unrecognized_charge": 0.906832298136646,
+      "billing_error_amount": 0.3333333333333333,
+      "billing_error_duplicate": 0.8,
+      "claim_status": 0.0,
+      "out_of_scope": 0.2857142857142857
+     },
+     "out_of_scope_recall": {
+      "hits": 1,
+      "n": 6,
+      "rate": 0.16666666666666666
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "merchant_by_category": 0,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "pt-BR": {
+     "cases": 94,
+     "intent_macro_f1": 0.49565217391304345,
+     "intent_f1": {
+      "unrecognized_charge": 0.906832298136646,
+      "billing_error_amount": 0.5714285714285714,
+      "billing_error_duplicate": 0.5,
+      "claim_status": 0.0,
+      "out_of_scope": 0.5
+     },
+     "out_of_scope_recall": {
+      "hits": 2,
+      "n": 6,
+      "rate": 0.3333333333333333
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "merchant_by_category": 0,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    }
+   }
+  },
+  "haiku": [
+   {
+    "overall": {
+     "cases": 376,
+     "intent_macro_f1": 0.9872025918801256,
+     "intent_f1": {
+      "unrecognized_charge": 0.9948364888123924,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 0.9411764705882353
+     },
+     "out_of_scope_recall": {
+      "hits": 24,
+      "n": 24,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 3,
+      "n": 352,
+      "rate": 0.008522727272727272
+     },
+     "faithful": {
+      "hits": 885,
+      "n": 886,
+      "rate": 0.9988713318284425
+     },
+     "merchant_by_category": 28,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 124,
+        "n": 124,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 252,
+        "rate": 0.003968253968253968
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 272,
+        "n": 288,
+        "rate": 0.9444444444444444
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 88,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 92,
+        "n": 92,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 256,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 171,
+        "n": 192,
+        "rate": 0.890625
+       },
+       "spurious": {
+        "hits": 8,
+        "n": 184,
+        "rate": 0.043478260869565216
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 172,
+        "n": 172,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 14,
+        "n": 204,
+        "rate": 0.06862745098039216
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 235,
+        "n": 376,
+        "rate": 0.625
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "by_language": {
+     "es": {
+      "cases": 282,
+      "intent_macro_f1": 0.9832360742705571,
+      "intent_f1": {
+       "unrecognized_charge": 0.993103448275862,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 0.9230769230769231
+      },
+      "out_of_scope_recall": {
+       "hits": 18,
+       "n": 18,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 3,
+       "n": 264,
+       "rate": 0.011363636363636364
+      },
+      "faithful": {
+       "hits": 669,
+       "n": 669,
+       "rate": 1.0
+      },
+      "merchant_by_category": 21,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 93,
+         "n": 93,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 189,
+         "rate": 0.005291005291005291
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 201,
+         "n": 216,
+         "rate": 0.9305555555555556
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 66,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 69,
+         "n": 69,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 192,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 131,
+         "n": 144,
+         "rate": 0.9097222222222222
+        },
+        "spurious": {
+         "hits": 6,
+         "n": 138,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 129,
+         "n": 129,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 11,
+         "n": 153,
+         "rate": 0.0718954248366013
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 141,
+         "n": 282,
+         "rate": 0.5
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "pt": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 216,
+       "n": 217,
+       "rate": 0.9953917050691244
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 51,
+         "rate": 0.058823529411764705
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 94,
+         "n": 94,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     }
+    },
+    "by_variant": {
+     "es-AR": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 224,
+       "n": 224,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 64,
+         "n": 72,
+         "rate": 0.8888888888888888
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 45,
+         "n": 48,
+         "rate": 0.9375
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 46,
+         "rate": 0.021739130434782608
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 7,
+         "n": 51,
+         "rate": 0.13725490196078433
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 53,
+         "n": 94,
+         "rate": 0.5638297872340425
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "es-CO": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 223,
+       "n": 223,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 63,
+         "rate": 0.015873015873015872
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 45,
+         "n": 48,
+         "rate": 0.9375
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 46,
+         "rate": 0.06521739130434782
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 51,
+         "rate": 0.0
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 36,
+         "n": 94,
+         "rate": 0.3829787234042553
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "es-MX": {
+      "cases": 94,
+      "intent_macro_f1": 0.9558041958041958,
+      "intent_f1": {
+       "unrecognized_charge": 0.9790209790209791,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 0.8
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 3,
+       "n": 88,
+       "rate": 0.03409090909090909
+      },
+      "faithful": {
+       "hits": 222,
+       "n": 222,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 66,
+         "n": 72,
+         "rate": 0.9166666666666666
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 41,
+         "n": 48,
+         "rate": 0.8541666666666666
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 4,
+         "n": 51,
+         "rate": 0.0784313725490196
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 52,
+         "n": 94,
+         "rate": 0.5531914893617021
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "pt-BR": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 216,
+       "n": 217,
+       "rate": 0.9953917050691244
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 51,
+         "rate": 0.058823529411764705
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 94,
+         "n": 94,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     }
+    }
+   },
+   {
+    "overall": {
+     "cases": 376,
+     "intent_macro_f1": 0.9872025918801256,
+     "intent_f1": {
+      "unrecognized_charge": 0.9948364888123924,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 0.9411764705882353
+     },
+     "out_of_scope_recall": {
+      "hits": 24,
+      "n": 24,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 3,
+      "n": 352,
+      "rate": 0.008522727272727272
+     },
+     "faithful": {
+      "hits": 884,
+      "n": 885,
+      "rate": 0.9988700564971752
+     },
+     "merchant_by_category": 28,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 124,
+        "n": 124,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 252,
+        "rate": 0.003968253968253968
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 273,
+        "n": 288,
+        "rate": 0.9479166666666666
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 88,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 92,
+        "n": 92,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 256,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 170,
+        "n": 192,
+        "rate": 0.8854166666666666
+       },
+       "spurious": {
+        "hits": 8,
+        "n": 184,
+        "rate": 0.043478260869565216
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 172,
+        "n": 172,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 14,
+        "n": 204,
+        "rate": 0.06862745098039216
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 235,
+        "n": 376,
+        "rate": 0.625
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "by_language": {
+     "es": {
+      "cases": 282,
+      "intent_macro_f1": 0.9832360742705571,
+      "intent_f1": {
+       "unrecognized_charge": 0.993103448275862,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 0.9230769230769231
+      },
+      "out_of_scope_recall": {
+       "hits": 18,
+       "n": 18,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 3,
+       "n": 264,
+       "rate": 0.011363636363636364
+      },
+      "faithful": {
+       "hits": 667,
+       "n": 667,
+       "rate": 1.0
+      },
+      "merchant_by_category": 21,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 93,
+         "n": 93,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 189,
+         "rate": 0.005291005291005291
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 202,
+         "n": 216,
+         "rate": 0.9351851851851852
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 66,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 69,
+         "n": 69,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 192,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 130,
+         "n": 144,
+         "rate": 0.9027777777777778
+        },
+        "spurious": {
+         "hits": 6,
+         "n": 138,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 129,
+         "n": 129,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 10,
+         "n": 153,
+         "rate": 0.06535947712418301
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 141,
+         "n": 282,
+         "rate": 0.5
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "pt": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 217,
+       "n": 218,
+       "rate": 0.9954128440366973
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 4,
+         "n": 51,
+         "rate": 0.0784313725490196
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 94,
+         "n": 94,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     }
+    },
+    "by_variant": {
+     "es-AR": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 224,
+       "n": 224,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 64,
+         "n": 72,
+         "rate": 0.8888888888888888
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 45,
+         "n": 48,
+         "rate": 0.9375
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 46,
+         "rate": 0.021739130434782608
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 7,
+         "n": 51,
+         "rate": 0.13725490196078433
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 53,
+         "n": 94,
+         "rate": 0.5638297872340425
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "es-CO": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 223,
+       "n": 223,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 63,
+         "rate": 0.015873015873015872
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 45,
+         "n": 48,
+         "rate": 0.9375
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 46,
+         "rate": 0.06521739130434782
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 51,
+         "rate": 0.0
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 37,
+         "n": 94,
+         "rate": 0.39361702127659576
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "es-MX": {
+      "cases": 94,
+      "intent_macro_f1": 0.9558041958041958,
+      "intent_f1": {
+       "unrecognized_charge": 0.9790209790209791,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 0.8
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 3,
+       "n": 88,
+       "rate": 0.03409090909090909
+      },
+      "faithful": {
+       "hits": 220,
+       "n": 220,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 67,
+         "n": 72,
+         "rate": 0.9305555555555556
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 51,
+         "rate": 0.058823529411764705
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 51,
+         "n": 94,
+         "rate": 0.5425531914893617
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "pt-BR": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 217,
+       "n": 218,
+       "rate": 0.9954128440366973
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 4,
+         "n": 51,
+         "rate": 0.0784313725490196
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 94,
+         "n": 94,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     }
+    }
+   },
+   {
+    "overall": {
+     "cases": 376,
+     "intent_macro_f1": 0.9872025918801256,
+     "intent_f1": {
+      "unrecognized_charge": 0.9948364888123924,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 0.9411764705882353
+     },
+     "out_of_scope_recall": {
+      "hits": 24,
+      "n": 24,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 3,
+      "n": 352,
+      "rate": 0.008522727272727272
+     },
+     "faithful": {
+      "hits": 884,
+      "n": 885,
+      "rate": 0.9988700564971752
+     },
+     "merchant_by_category": 28,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 124,
+        "n": 124,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 252,
+        "rate": 0.003968253968253968
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 273,
+        "n": 288,
+        "rate": 0.9479166666666666
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 88,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 92,
+        "n": 92,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 256,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 169,
+        "n": 192,
+        "rate": 0.8802083333333334
+       },
+       "spurious": {
+        "hits": 8,
+        "n": 184,
+        "rate": 0.043478260869565216
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 172,
+        "n": 172,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 14,
+        "n": 204,
+        "rate": 0.06862745098039216
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 235,
+        "n": 376,
+        "rate": 0.625
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "by_language": {
+     "es": {
+      "cases": 282,
+      "intent_macro_f1": 0.9832360742705571,
+      "intent_f1": {
+       "unrecognized_charge": 0.993103448275862,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 0.9230769230769231
+      },
+      "out_of_scope_recall": {
+       "hits": 18,
+       "n": 18,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 3,
+       "n": 264,
+       "rate": 0.011363636363636364
+      },
+      "faithful": {
+       "hits": 667,
+       "n": 667,
+       "rate": 1.0
+      },
+      "merchant_by_category": 21,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 93,
+         "n": 93,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 189,
+         "rate": 0.005291005291005291
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 202,
+         "n": 216,
+         "rate": 0.9351851851851852
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 66,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 69,
+         "n": 69,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 192,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 129,
+         "n": 144,
+         "rate": 0.8958333333333334
+        },
+        "spurious": {
+         "hits": 6,
+         "n": 138,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 129,
+         "n": 129,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 10,
+         "n": 153,
+         "rate": 0.06535947712418301
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 141,
+         "n": 282,
+         "rate": 0.5
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "pt": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 217,
+       "n": 218,
+       "rate": 0.9954128440366973
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 4,
+         "n": 51,
+         "rate": 0.0784313725490196
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 94,
+         "n": 94,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     }
+    },
+    "by_variant": {
+     "es-AR": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 225,
+       "n": 225,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 64,
+         "n": 72,
+         "rate": 0.8888888888888888
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 45,
+         "n": 48,
+         "rate": 0.9375
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 46,
+         "rate": 0.021739130434782608
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 7,
+         "n": 51,
+         "rate": 0.13725490196078433
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 53,
+         "n": 94,
+         "rate": 0.5638297872340425
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "es-CO": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 223,
+       "n": 223,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 1,
+         "n": 63,
+         "rate": 0.015873015873015872
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 45,
+         "n": 48,
+         "rate": 0.9375
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 46,
+         "rate": 0.06521739130434782
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 51,
+         "rate": 0.0
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 37,
+         "n": 94,
+         "rate": 0.39361702127659576
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "es-MX": {
+      "cases": 94,
+      "intent_macro_f1": 0.9558041958041958,
+      "intent_f1": {
+       "unrecognized_charge": 0.9790209790209791,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 0.8
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 3,
+       "n": 88,
+       "rate": 0.03409090909090909
+      },
+      "faithful": {
+       "hits": 219,
+       "n": 219,
+       "rate": 1.0
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 67,
+         "n": 72,
+         "rate": 0.9305555555555556
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 39,
+         "n": 48,
+         "rate": 0.8125
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 3,
+         "n": 51,
+         "rate": 0.058823529411764705
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 51,
+         "n": 94,
+         "rate": 0.5425531914893617
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     },
+     "pt-BR": {
+      "cases": 94,
+      "intent_macro_f1": 1.0,
+      "intent_f1": {
+       "unrecognized_charge": 1.0,
+       "billing_error_amount": 1.0,
+       "billing_error_duplicate": 1.0,
+       "claim_status": 1.0,
+       "out_of_scope": 1.0
+      },
+      "out_of_scope_recall": {
+       "hits": 6,
+       "n": 6,
+       "rate": 1.0
+      },
+      "in_scope_sent_out": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      },
+      "faithful": {
+       "hits": 217,
+       "n": 218,
+       "rate": 0.9954128440366973
+      },
+      "merchant_by_category": 7,
+      "fields": {
+       "amount": {
+        "accuracy": {
+         "hits": 31,
+         "n": 31,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 63,
+         "rate": 0.0
+        }
+       },
+       "date": {
+        "accuracy": {
+         "hits": 71,
+         "n": 72,
+         "rate": 0.9861111111111112
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 22,
+         "rate": 0.0
+        }
+       },
+       "merchant": {
+        "accuracy": {
+         "hits": 23,
+         "n": 23,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 64,
+         "rate": 0.0
+        }
+       },
+       "channel": {
+        "accuracy": {
+         "hits": 40,
+         "n": 48,
+         "rate": 0.8333333333333334
+        },
+        "spurious": {
+         "hits": 2,
+         "n": 46,
+         "rate": 0.043478260869565216
+        }
+       },
+       "card_in_possession": {
+        "accuracy": {
+         "hits": 43,
+         "n": 43,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 4,
+         "n": 51,
+         "rate": 0.0784313725490196
+        }
+       },
+       "language": {
+        "accuracy": {
+         "hits": 94,
+         "n": 94,
+         "rate": 1.0
+        },
+        "spurious": {
+         "hits": 0,
+         "n": 0,
+         "rate": null
+        }
+       }
+      }
+     }
+    }
+   }
+  ],
+  "sonnet": {
+   "overall": {
+    "cases": 376,
+    "intent_macro_f1": 1.0,
+    "intent_f1": {
+     "unrecognized_charge": 1.0,
+     "billing_error_amount": 1.0,
+     "billing_error_duplicate": 1.0,
+     "claim_status": 1.0,
+     "out_of_scope": 1.0
+    },
+    "out_of_scope_recall": {
+     "hits": 24,
+     "n": 24,
+     "rate": 1.0
+    },
+    "in_scope_sent_out": {
+     "hits": 0,
+     "n": 352,
+     "rate": 0.0
+    },
+    "faithful": {
+     "hits": 848,
+     "n": 848,
+     "rate": 1.0
+    },
+    "merchant_by_category": 28,
+    "fields": {
+     "amount": {
+      "accuracy": {
+       "hits": 124,
+       "n": 124,
+       "rate": 1.0
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 252,
+       "rate": 0.0
+      }
+     },
+     "date": {
+      "accuracy": {
+       "hits": 254,
+       "n": 288,
+       "rate": 0.8819444444444444
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 88,
+       "rate": 0.0
+      }
+     },
+     "merchant": {
+      "accuracy": {
+       "hits": 92,
+       "n": 92,
+       "rate": 1.0
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 256,
+       "rate": 0.0
+      }
+     },
+     "channel": {
+      "accuracy": {
+       "hits": 162,
+       "n": 192,
+       "rate": 0.84375
+      },
+      "spurious": {
+       "hits": 5,
+       "n": 184,
+       "rate": 0.02717391304347826
+      }
+     },
+     "card_in_possession": {
+      "accuracy": {
+       "hits": 170,
+       "n": 172,
+       "rate": 0.9883720930232558
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 204,
+       "rate": 0.0
+      }
+     },
+     "language": {
+      "accuracy": {
+       "hits": 279,
+       "n": 376,
+       "rate": 0.7420212765957447
+      },
+      "spurious": {
+       "hits": 0,
+       "n": 0,
+       "rate": null
+      }
+     }
+    }
+   },
+   "by_language": {
+    "es": {
+     "cases": 282,
+     "intent_macro_f1": 1.0,
+     "intent_f1": {
+      "unrecognized_charge": 1.0,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 18,
+      "n": 18,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 264,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 637,
+      "n": 637,
+      "rate": 1.0
+     },
+     "merchant_by_category": 21,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 93,
+        "n": 93,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 189,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 190,
+        "n": 216,
+        "rate": 0.8796296296296297
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 66,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 69,
+        "n": 69,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 192,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 123,
+        "n": 144,
+        "rate": 0.8541666666666666
+       },
+       "spurious": {
+        "hits": 4,
+        "n": 138,
+        "rate": 0.028985507246376812
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 127,
+        "n": 129,
+        "rate": 0.9844961240310077
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 153,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 186,
+        "n": 282,
+        "rate": 0.6595744680851063
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "pt": {
+     "cases": 94,
+     "intent_macro_f1": 1.0,
+     "intent_f1": {
+      "unrecognized_charge": 1.0,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 211,
+      "n": 211,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 31,
+        "n": 31,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 64,
+        "n": 72,
+        "rate": 0.8888888888888888
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 39,
+        "n": 48,
+        "rate": 0.8125
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 46,
+        "rate": 0.021739130434782608
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 43,
+        "n": 43,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 93,
+        "n": 94,
+        "rate": 0.9893617021276596
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    }
+   },
+   "by_variant": {
+    "es-AR": {
+     "cases": 94,
+     "intent_macro_f1": 1.0,
+     "intent_f1": {
+      "unrecognized_charge": 1.0,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 213,
+      "n": 213,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 31,
+        "n": 31,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 59,
+        "n": 72,
+        "rate": 0.8194444444444444
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 42,
+        "n": 48,
+        "rate": 0.875
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 46,
+        "rate": 0.021739130434782608
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 42,
+        "n": 43,
+        "rate": 0.9767441860465116
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 73,
+        "n": 94,
+        "rate": 0.776595744680851
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "es-CO": {
+     "cases": 94,
+     "intent_macro_f1": 1.0,
+     "intent_f1": {
+      "unrecognized_charge": 1.0,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 214,
+      "n": 214,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 31,
+        "n": 31,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 71,
+        "n": 72,
+        "rate": 0.9861111111111112
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 43,
+        "n": 48,
+        "rate": 0.8958333333333334
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 46,
+        "rate": 0.021739130434782608
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 42,
+        "n": 43,
+        "rate": 0.9767441860465116
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 39,
+        "n": 94,
+        "rate": 0.4148936170212766
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "es-MX": {
+     "cases": 94,
+     "intent_macro_f1": 1.0,
+     "intent_f1": {
+      "unrecognized_charge": 1.0,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 210,
+      "n": 210,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 31,
+        "n": 31,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 60,
+        "n": 72,
+        "rate": 0.8333333333333334
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 38,
+        "n": 48,
+        "rate": 0.7916666666666666
+       },
+       "spurious": {
+        "hits": 2,
+        "n": 46,
+        "rate": 0.043478260869565216
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 43,
+        "n": 43,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 74,
+        "n": 94,
+        "rate": 0.7872340425531915
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    },
+    "pt-BR": {
+     "cases": 94,
+     "intent_macro_f1": 1.0,
+     "intent_f1": {
+      "unrecognized_charge": 1.0,
+      "billing_error_amount": 1.0,
+      "billing_error_duplicate": 1.0,
+      "claim_status": 1.0,
+      "out_of_scope": 1.0
+     },
+     "out_of_scope_recall": {
+      "hits": 6,
+      "n": 6,
+      "rate": 1.0
+     },
+     "in_scope_sent_out": {
+      "hits": 0,
+      "n": 88,
+      "rate": 0.0
+     },
+     "faithful": {
+      "hits": 211,
+      "n": 211,
+      "rate": 1.0
+     },
+     "merchant_by_category": 7,
+     "fields": {
+      "amount": {
+       "accuracy": {
+        "hits": 31,
+        "n": 31,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 63,
+        "rate": 0.0
+       }
+      },
+      "date": {
+       "accuracy": {
+        "hits": 64,
+        "n": 72,
+        "rate": 0.8888888888888888
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 22,
+        "rate": 0.0
+       }
+      },
+      "merchant": {
+       "accuracy": {
+        "hits": 23,
+        "n": 23,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 64,
+        "rate": 0.0
+       }
+      },
+      "channel": {
+       "accuracy": {
+        "hits": 39,
+        "n": 48,
+        "rate": 0.8125
+       },
+       "spurious": {
+        "hits": 1,
+        "n": 46,
+        "rate": 0.021739130434782608
+       }
+      },
+      "card_in_possession": {
+       "accuracy": {
+        "hits": 43,
+        "n": 43,
+        "rate": 1.0
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 51,
+        "rate": 0.0
+       }
+      },
+      "language": {
+       "accuracy": {
+        "hits": 93,
+        "n": 94,
+        "rate": 0.9893617021276596
+       },
+       "spurious": {
+        "hits": 0,
+        "n": 0,
+        "rate": null
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "tfidf": {
+  "classes": [
+   "billing_error_amount",
+   "billing_error_duplicate",
+   "claim_status",
+   "out_of_scope",
+   "unrecognized_charge"
+  ],
+  "temperature": 0.4630229559432765,
+  "dev_cases": 600,
+  "calibration_cases": 400,
+  "calibration_split": {
+   "cases": 400,
+   "intent_macro_f1": 0.8501278772378517,
+   "intent_f1": {
+    "unrecognized_charge": 0.9647058823529412,
+    "billing_error_amount": 0.8405797101449275,
+    "billing_error_duplicate": 0.7450980392156863
+   },
+   "out_of_scope_recall": {
+    "hits": 0,
+    "n": 0,
+    "rate": null
+   },
+   "in_scope_sent_out": {
+    "hits": 0,
+    "n": 400,
+    "rate": 0.0
+   },
+   "faithful": {
+    "hits": 0,
+    "n": 0,
+    "rate": null
+   },
+   "merchant_by_category": 0,
+   "fields": {
+    "amount": {
+     "accuracy": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "spurious": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     }
+    },
+    "date": {
+     "accuracy": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "spurious": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     }
+    },
+    "merchant": {
+     "accuracy": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "spurious": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     }
+    },
+    "channel": {
+     "accuracy": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "spurious": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     }
+    },
+    "card_in_possession": {
+     "accuracy": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "spurious": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     }
+    },
+    "language": {
+     "accuracy": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     },
+     "spurious": {
+      "hits": 0,
+      "n": 0,
+      "rate": null
+     }
+    }
+   }
+  },
+  "test_uncalibrated": {
+   "brier": 0.22504716185477083,
+   "ece": 0.1262946603811969
+  },
+  "test_calibrated": {
+   "brier": 0.24157240902895732,
+   "ece": 0.0985617149615136
+  }
+ },
+ "identification": {
+  "manual": {
+   "weights": {
+    "amount": 0.2,
+    "date": 0.1,
+    "merchant": 0.5,
+    "channel": 0.2,
+    "currency": 0.0
+   },
+   "temperature": 0.04295988524913415,
+   "dev_nll": 0.28886809521931406,
+   "curve": [
+    {
+     "alpha": 0.2,
+     "qhat": 0.5000678080571462,
+     "n": 304,
+     "bases": 76,
+     "covered": 247,
+     "coverage": 0.8125,
+     "mean_size": 0.9835526315789473,
+     "size_one": 0.7006578947368421,
+     "brier": 0.19625354481245977,
+     "ece": 0.0695402420844953
+    },
+    {
+     "alpha": 0.1,
+     "qhat": 0.6666884931991575,
+     "n": 304,
+     "bases": 76,
+     "covered": 286,
+     "coverage": 0.9407894736842105,
+     "mean_size": 1.2664473684210527,
+     "size_one": 0.680921052631579,
+     "brier": 0.19625354481245977,
+     "ece": 0.0695402420844953
+    },
+    {
+     "alpha": 0.05,
+     "qhat": 0.8,
+     "n": 304,
+     "bases": 76,
+     "covered": 300,
+     "coverage": 0.9868421052631579,
+     "mean_size": 1.444078947368421,
+     "size_one": 0.6677631578947368,
+     "brier": 0.19625354481245977,
+     "ece": 0.0695402420844953
+    },
+    {
+     "alpha": 0.02,
+     "qhat": 0.8571428571428572,
+     "n": 304,
+     "bases": 76,
+     "covered": 304,
+     "coverage": 1.0,
+     "mean_size": 1.5361842105263157,
+     "size_one": 0.6677631578947368,
+     "brier": 0.19625354481245977,
+     "ece": 0.0695402420844953
+    }
+   ],
+   "production": {
+    "n": 304,
+    "bases": 76,
+    "covered": 298,
+    "coverage": 0.9802631578947368,
+    "mean_size": 1.4342105263157894,
+    "size_one": 0.6644736842105263,
+    "brier": 0.19625354481245977,
+    "ece": 0.0695402420844953
+   }
+  },
+  "ranker": {
+   "weights": {
+    "amount": 0.1365119757532978,
+    "date": 0.2885625449164077,
+    "merchant": 0.0812035564839146,
+    "channel": 0.24239473290911467,
+    "currency": 0.25132718993726527
+   },
+   "temperature": 0.09250396375341555,
+   "dev_nll": 0.2998000658807263,
+   "curve": [
+    {
+     "alpha": 0.2,
+     "qhat": 0.5000234637994168,
+     "n": 304,
+     "bases": 76,
+     "covered": 253,
+     "coverage": 0.8322368421052632,
+     "mean_size": 1.0328947368421053,
+     "size_one": 0.6973684210526315,
+     "brier": 0.19288352211876023,
+     "ece": 0.08552893194608266
+    },
+    {
+     "alpha": 0.1,
+     "qhat": 0.6672541098143985,
+     "n": 304,
+     "bases": 76,
+     "covered": 285,
+     "coverage": 0.9375,
+     "mean_size": 1.2401315789473684,
+     "size_one": 0.6677631578947368,
+     "brier": 0.19288352211876023,
+     "ece": 0.08552893194608266
+    },
+    {
+     "alpha": 0.05,
+     "qhat": 0.8,
+     "n": 304,
+     "bases": 76,
+     "covered": 300,
+     "coverage": 0.9868421052631579,
+     "mean_size": 1.4407894736842106,
+     "size_one": 0.6611842105263158,
+     "brier": 0.19288352211876023,
+     "ece": 0.08552893194608266
+    },
+    {
+     "alpha": 0.02,
+     "qhat": 0.8571428571428572,
+     "n": 304,
+     "bases": 76,
+     "covered": 304,
+     "coverage": 1.0,
+     "mean_size": 1.5328947368421053,
+     "size_one": 0.6611842105263158,
+     "brier": 0.19288352211876023,
+     "ece": 0.08552893194608266
+    }
+   ]
+  },
+  "population": {
+   "dev": 496,
+   "calibration": 400,
+   "test": 304
+  }
+ }
+}
