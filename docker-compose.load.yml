@@ -1,0 +1,16 @@
+# Isolated stack of the load test (TRZ-40 CA7), on top of docker-compose.yml:
+#   docker compose -p load -f docker-compose.yml -f docker-compose.load.yml up -d --wait
+# make load starts it with its own ports, so the default project and its data are never touched.
+# Only here, the per-address and per-document login limits are lifted: every simulated customer
+# logs in from the same address, and the public URL keeps its limits.
+services:
+  api:
+    environment:
+      IP_REQUEST_LIMIT: "1000000"
+      OTP_REQUEST_LIMIT: "1000000"
+      DEMO_MODE: "true"
+      LLM_ENABLED: ${LOAD_LLM_ENABLED:-false}
+      # The simulated LLM of make load runs on the host; the real one is Anthropic's default URL.
+      ANTHROPIC_BASE_URL: ${LOAD_ANTHROPIC_BASE_URL:-https://api.anthropic.com}
+      ANTHROPIC_API_KEY: ${LOAD_ANTHROPIC_API_KEY:-${ANTHROPIC_API_KEY:-}}
+    extra_hosts: ["host.docker.internal:host-gateway"]
