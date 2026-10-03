@@ -215,3 +215,8 @@ def test_an_answer_line_tells_the_redacted_answer() -> None:
         "El cliente respondió a la pregunta de la analista: «No, mi correo es [EMAIL]»; el caso "
         "volvió a la cola."
     )
+
+
+def test_an_injection_stop_is_not_told_as_another_customers_data() -> None:
+    line = describe("agent", "security_event", {"reason": "instruction_in_text"}, {}, "1", "es")
+    assert "instrucción" in line and "otro cliente" not in line

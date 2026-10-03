@@ -42,6 +42,7 @@ from app.services.cases import (
     REGISTERS,
     VERIFICATION_FAILED_REASON,
     approvable,
+    injection_stop,
 )
 from app.services.notifications import notify
 from app.services.verification import verify_dispute
@@ -93,9 +94,10 @@ def _record(
         if (stored := _replay(session, case_id, body.decision)) is not None:
             return stored
         raise AppError("case_not_escalated", f"Case is {case.status}, not with a person.", 409)
-    _validate(deps, case, body)
+    _validate(session, deps, case, body)
     # A security event is not a clarification of the customer: it is never told (TRZ-27 CA8).
-    security = case.status == "security_blocked"
+    # An injection stop is the customer's own clarification, decided and told like any other.
+    security = _closed_only(session, case)
     result: dict[str, Any] = {"analyst": analyst, "system_recommended": case.recommended_action}
     # Only a registration recommended on an identified charge is a review: without a charge the
     # system would never have acted, so a rejection says nothing of its autonomy.
@@ -103,7 +105,7 @@ def _record(
         result["review"] = _review("recommended_action", case, body)
     question: str | None = None
     if body.decision == "approve":
-        result |= _approve(session, deps, case)
+        result |= _approve(session, deps, case, security)
     elif body.decision == "reject":
         case.status = "rejected"
     else:
@@ -177,7 +179,7 @@ def _audit(
         raise AppError(
             "decision_not_allowed", "An audit sample can only be confirmed or reversed.", 409
         )
-    _validate(deps, case, body)
+    _validate(session, deps, case, body)
     reversal = body.decision == "reject"
     result: dict[str, Any] = {
         "analyst": analyst,
@@ -212,8 +214,18 @@ def _audit(
     return _out(case.id, body.decision, result)
 
 
-def _validate(deps: AgentDeps, case: Case, body: HumanDecisionIn) -> None:
-    security = case.status == "security_blocked"
+def _closed_only(session: Session, case: Case) -> bool:
+    """A security event that only an approval closing it may decide (TRZ-27 CA8).
+
+    TRZ-27 CA8 protects another customer's data. A stop for an instruction injected in the
+    customer's own message holds only the customer's data, so it is decided like any other case
+    (TRZ-46 follow-up).
+    """
+    return case.status == "security_blocked" and not injection_stop(session, case)
+
+
+def _validate(session: Session, deps: AgentDeps, case: Case, body: HumanDecisionIn) -> None:
+    security = _closed_only(session, case)
     # Asking the customer for more would hand a case stopped by security back to the chat.
     if security and body.decision == "need_info":
         raise AppError(
@@ -237,9 +249,9 @@ def _validate(deps: AgentDeps, case: Case, body: HumanDecisionIn) -> None:
         )
 
 
-def _approve(session: Session, deps: AgentDeps, case: Case) -> dict[str, Any]:
+def _approve(session: Session, deps: AgentDeps, case: Case, security: bool) -> dict[str, Any]:
     """Runs the approved registration and reads it back; a security event is only closed."""
-    if case.status == "security_blocked":
+    if security:
         case.status = "approved"
         return {}
     customer = _customer(session, case)

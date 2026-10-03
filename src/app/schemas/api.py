@@ -342,7 +342,8 @@ QueueFilter = Literal["high_priority", "over_1000_usd", "no_match", "verificatio
 class QueueItemOut(BaseModel):
     """One open row of the analyst queue (TRZ-27 CA1).
 
-    A security event shows no customer data: no customer, intent or amount (CA8).
+    A security event shows no customer data: no customer, intent or amount (CA8), unless it
+    was raised by an instruction injected in the customer's own message.
 
     Attributes:
         queue_id: Row of case_queue; a decision closes it.
@@ -362,6 +363,8 @@ class QueueItemOut(BaseModel):
         recommended_action: What the system suggests.
         can_approve: Approving has something to do: run the recommended registration, or
             close a security event.
+        injection: A security event raised by an instruction injected in the customer's own
+            message: its data are shown and it is decided like any other case.
         created_at: When the row entered the queue.
         simulated: The demo state created the case, not a customer (TRZ-38).
     """
@@ -369,6 +372,7 @@ class QueueItemOut(BaseModel):
     queue_id: int
     case_id: str
     kind: Literal["escalation", "audit_sample", "security_event"]
+    injection: bool = False
     customer_id: str | None
     intent: str | None
     amount_usd: float | None

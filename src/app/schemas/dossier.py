@@ -206,3 +206,8 @@ class Dossier(_Strict):
     # False when no charge was identified: there is nothing to register, so nothing is
     # recommended.
     charge_identified: bool = True
+    # A security event raised by an instruction injected in the customer's own message: unlike
+    # a stop for another customer's data (TRZ-27 CA8), its data are shown, and the sentences
+    # with the instruction are marked as character spans of `original_message`.
+    injection: bool = False
+    injected_spans: list[tuple[int, int]] = []

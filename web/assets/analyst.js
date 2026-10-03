@@ -5,10 +5,10 @@
 
 import { createClient } from "./api.js";
 import {
-  REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
+  INJECTION_REASON, REVERSAL_REASONS, actionLabel, actionStateLabel, auditLabel, automationView, demoResetView,
   identificationTable, recommendationText,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
-  identificationLabel, infoExchanges, kindLabel, queueRow, reasonLabel, statusLabel,
+  identificationLabel, infoExchanges, kindLabel, markedParts, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
 const api = createClient("analyst");
@@ -333,7 +333,8 @@ function dossierCards(d, history) {
     cards.push(el("section", { class: "card tight" },
       el("h2", { text: "Mensaje original" }),
       el("div", { class: "message" },
-        el("p", { class: "original", text: d.original_message }),
+        el("p", { class: "original" }, markedParts(d.original_message, d.injected_spans).map((p) =>
+          p.marked ? el("mark", { class: "injected", title: "Instrucción inyectada: no se obedeció", text: p.text }) : p.text)),
         d.machine_translation
           ? el("div", { class: "translation" },
             el("span", { class: "sim", text: `Traducción automática${d.machine_translation.model ? ` · ${d.machine_translation.model}` : ""}` }),
@@ -453,7 +454,7 @@ function ruleCard(d) {
   return el("section", { class: "card tight" },
     el("h2", { text: d.case_kind === "audit_sample" ? "Regla que decidió" : "Regla que escaló" }),
     el("span", { class: "rule mono", text: rule.rule }),
-    el("span", { text: reasonLabel(rule.rule) }),
+    el("span", { text: d.injection ? INJECTION_REASON : reasonLabel(rule.rule) }),
     el("span", { class: "tiny muted mono", text: `política ${rule.version} · nivel ${rule.level}${rule.autonomy_level ? ` · celda ${rule.autonomy_level}` : ""}` }));
 }
 

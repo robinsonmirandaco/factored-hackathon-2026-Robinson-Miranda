@@ -60,12 +60,12 @@ from app.domain.policy import (
 )
 from app.domain.policy_passages import Passage, PolicyDeadline, Unsupported, policy_deadline
 from app.domain.recognition import Choice, choices, recognition_text
-from app.domain.security_text import mask_ids, read_signals
+from app.domain.security_text import instruction_spans, mask_ids, read_signals, without_spans
 from app.schemas.comprehension import Comprehension, ComprehensionContext, evidence_is_faithful
 from app.services import tools as T
 from app.services.audit_sample import sample
 from app.services.automation import all_to_human
-from app.services.cases import HANDOFF_STATUSES, VERIFICATION_FAILED_REASON
+from app.services.cases import HANDOFF_STATUSES, REGISTERS, VERIFICATION_FAILED_REASON
 from app.services.clues import CLUE_FIELDS, Clues, last_clues
 from app.services.identification import (
     candidate_of,
@@ -88,6 +88,9 @@ Facts = dict[str, Any]
 # Rule id of a case the global automation switch sent to a person (TRZ-35).
 AUTOMATION_DISABLED_RULE = "escalate.automation_disabled"
 
+# Reason of a security stop raised by an injected instruction: unlike the other stops, the case
+# is the customer's own, and an analyst decides it like any other (TRZ-46 follow-up).
+INJECTION_REASON = "instruction_in_text"
 # Intent of a new case stopped for security before its message was read.
 UNREAD_INTENT = "unread"
 # Outcome of a message on a case already with a person: nothing is decided again.
@@ -956,10 +959,93 @@ def _stop_for_security(
         case = _own_case(session, customer.customer_id, case_id)
         case.language = language
     said = Said(mask_ids(redacted), pii_counts, spoken)
-    return (
-        case,
-        language,
-        _security_stop(session, deps, case, language, said, reason),
+    facts = _security_stop(session, deps, case, language, said, reason)
+    if reason == INJECTION_REASON:
+        _read_beside_instruction(session, deps, customer, case, said)
+    return case, language, facts
+
+
+def _read_beside_instruction(
+    session: Session, deps: AgentDeps, customer: Customer, case: Case, said: Said
+) -> None:
+    """Reads the customer's own request around an injected instruction, for the analyst.
+
+    An injection stop is the customer's own case (TRZ-46 follow-up): the analyst decides it like
+    any other, so the legitimate dispute needs its charge. The sentences with the instruction
+    are taken out and the rest is read by the local rules and identified with their parameters;
+    the LLM is never called. The case keeps the charge and the registration the policy would
+    recommend without the security rule, which an analyst's approval runs without a card block.
+    Nothing here runs an action or answers the customer.
+    """
+    masked = said.redacted
+    spans = instruction_spans(masked)
+    local = local_currency(customer.country_code)
+    context = ComprehensionContext(
+        now=deps.clock.now, country_code=customer.country_code, local_currency=local
+    )
+    clues = comprehend_rules(without_spans(masked, spans), context)
+    write_audit(
+        session,
+        "agent",
+        "comprehend",
+        case.id,
+        {
+            "redacted_text": masked[:500],
+            "pii": said.pii_counts,
+            # Marked for the analyst in the stored text, which keeps its first 500 characters.
+            "injected_spans": [[a, min(b, 500)] for a, b in spans if a < 500],
+        },
+        {**clues.model_dump(mode="json"), "fallback": True, "error": INJECTION_REASON},
+    )
+    if case.intent == UNREAD_INTENT:
+        case.intent = clues.intent
+    policy = deps.policy.config
+    if case.intent not in policy.dispute_intents:
+        return
+    case.card_in_possession = clues.card_in_possession.value if clues.card_in_possession else None
+    found = identify_charge(
+        session,
+        deps.clock,
+        customer.customer_id,
+        clues,
+        deps.identification["rules"],
+        local,
+        policy.dispute_window_days,
+        case.id,
+    )
+    charge, twin = _chosen(clues, found)
+    if charge is None:
+        return
+    tx = _charge_facts(session, charge, local)
+    profile = T.get_customer_profile(
+        session, deps.clock, customer.customer_id, policy.open_dispute_lookback_days, case.id
+    ).data
+    ctx = PolicyContext(
+        intent=case.intent,
+        language=case.language or "es",
+        amount_usd=tx["amount_usd"],
+        card_in_possession=case.card_in_possession,
+        open_dispute_last_90d=bool(profile.get("open_dispute_last_90d")),
+        conformal_set_size=1,
+        duplicate_twin=twin,
+        automation_disabled=all_to_human(session),
+    )
+    d = deps.policy.decide(ctx, deps.autonomy)
+    recommended = d.action if d.action in REGISTERS else d.recommended
+    case.transaction_id = charge.transaction_id
+    case.recommended_action = recommended if recommended in REGISTERS else None
+    write_audit(
+        session,
+        "agent",
+        "read_beside_instruction",
+        case.id,
+        asdict(ctx),
+        {
+            "rule": d.rule,
+            "version": d.version,
+            "recommended_action": case.recommended_action,
+            "transaction_id": charge.transaction_id,
+        },
     )
 
 
@@ -982,7 +1068,7 @@ def _text_security(session: Session, customer_id: str, text: str) -> str | None:
     if signals.other_customer or foreign:
         return "other_customer_in_text"
     if signals.injection:
-        return "instruction_in_text"
+        return INJECTION_REASON
     return None
 
 

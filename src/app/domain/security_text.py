@@ -75,10 +75,19 @@ class TextSignals:
     injection: bool
 
 
+# A sentence: up to its closing mark or the end of a line.
+_SENTENCE = re.compile(r"[^.!?\n]+[.!?]*")
+
+
+def _fold(c: str) -> str:
+    base = [x for x in unicodedata.normalize("NFKD", c.lower()) if not unicodedata.combining(x)]
+    return base[0] if base else " "
+
+
 def _plain(text: str) -> str:
-    """Lowercase text without accents."""
-    folded = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in folded if not unicodedata.combining(c))
+    """Lowercase text without accents, one character per character of `text`, so a position
+    in it is the same position in the original."""
+    return "".join(_fold(c) for c in text)
 
 
 def mask_ids(text: str) -> str:
@@ -106,3 +115,41 @@ def read_signals(text: str, customer_id: str) -> TextSignals:
         owned_ids=tuple(m.upper() for m in OWNED_ID.findall(text)),
         injection=any(p.search(plain) for p in INJECTION),
     )
+
+
+def instruction_spans(text: str) -> list[tuple[int, int]]:
+    """The sentences of a message that carry an injected instruction, as character spans.
+
+    The analyst sees them marked, and the local rules read the message without them.
+
+    Args:
+        text: The message.
+
+    Returns:
+        Start and end of each sentence with an instruction, in order.
+    """
+    plain = _plain(text)
+    spans = []
+    for m in _SENTENCE.finditer(text):
+        start = m.start() + len(m.group()) - len(m.group().lstrip())
+        if start < m.end() and any(p.search(plain[start : m.end()]) for p in INJECTION):
+            spans.append((start, m.end()))
+    return spans
+
+
+def without_spans(text: str, spans: list[tuple[int, int]]) -> str:
+    """The text with the given spans taken out and the spaces left behind collapsed.
+
+    Args:
+        text: The message.
+        spans: Character spans to take out, in order.
+
+    Returns:
+        What is left.
+    """
+    pieces, at = [], 0
+    for start, end in spans:
+        pieces.append(text[at:start])
+        at = end
+    pieces.append(text[at:])
+    return re.sub(r"\s+", " ", "".join(pieces)).strip()

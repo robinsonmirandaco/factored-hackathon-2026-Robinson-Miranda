@@ -49,6 +49,8 @@
 .action-row { padding: 10px 0; }
 .list > li.action-row + li.action-row { border-top: 1px solid var(--line-soft); }
 .rule { font-size: 14px; color: var(--bad); overflow-wrap: anywhere; }
+/* The sentences of an injected instruction inside the original message (TRZ-46 follow-up). */
+mark.injected { background: var(--bad-soft); color: var(--bad); border-radius: 3px; padding: 0 2px; }
 
 /* Global automation switch in the header (TRZ-35) */
 /* A pill sits at the top of a card; in the header it is centered like the other controls. */

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -205,12 +205,42 @@ def approvable(case: Case) -> bool:
     )
 
 
+def injection_stop(session: Session, case: Case) -> bool:
+    """Tells whether the case was stopped for an instruction injected in its message.
+
+    TRZ-27 CA8 hides a security event because it tried to reach another customer's data. In an
+    injection the data are the customer's own: the analyst sees them and decides the case like
+    any other (TRZ-46 follow-up).
+
+    Args:
+        session: Open session.
+        case: The case.
+
+    Returns:
+        True when its latest security event was raised by an injected instruction.
+    """
+    event = session.execute(
+        select(AuditRecord)
+        .where(
+            AuditRecord.case_id == case.id,
+            AuditRecord.actor == "agent",
+            AuditRecord.action == "security_event",
+        )
+        .order_by(AuditRecord.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return event is not None and (event.payload or {}).get("reason") == "instruction_in_text"
+
+
 def _queue_item(session: Session, q: QueueItem, c: Case, now: datetime) -> QueueItemOut:
-    security = c.status == "security_blocked"
+    injection = c.status == "security_blocked" and injection_stop(session, c)
+    # Another customer's data is never shown (CA8); an injection is the customer's own case.
+    security = c.status == "security_blocked" and not injection
     return QueueItemOut(
         queue_id=q.id,
         case_id=c.id,
-        kind="security_event" if security else q.kind,  # type: ignore[arg-type]
+        kind="security_event" if security or injection else q.kind,  # type: ignore[arg-type]
+        injection=injection,
         # A security event shows no customer data (CA8).
         customer_id=None if security else c.customer_id,
         intent=None if security else c.intent,
@@ -236,8 +266,10 @@ def _amount_usd(session: Session, case_id: str) -> float | None:
         select(AuditRecord)
         .where(
             AuditRecord.case_id == case_id,
-            AuditRecord.actor == "policy",
-            AuditRecord.action == "decide",
+            # The reading beside an injected instruction compares the amount after the stop.
+            tuple_(AuditRecord.actor, AuditRecord.action).in_(
+                [("policy", "decide"), ("agent", "read_beside_instruction")]
+            ),
         )
         .order_by(AuditRecord.id.desc())
         .limit(1)
