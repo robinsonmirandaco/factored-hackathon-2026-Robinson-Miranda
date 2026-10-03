@@ -421,12 +421,14 @@ _NOTICES: dict[Lang, dict[str, str]] = {
         "rejected": "el rechazo con su motivo",
         "info_requested": "la pregunta de la analista con su plazo",
         "audit_reversed": "que su aclaración está en revisión",
+        "info_expired": "el cierre por falta de información",
     },
     "pt": {
         "approved": "a aprovação com o protocolo",
         "rejected": "a rejeição com o motivo",
         "info_requested": "a pergunta da analista com o prazo",
         "audit_reversed": "que a contestação está em revisão",
+        "info_expired": "o encerramento por falta de informação",
     },
 }
 
@@ -482,6 +484,19 @@ def _demo_reset(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
     if lang == "es":
         return f"[simulado] {who} reinició el demo: se crearon {cases} casos simulados."
     return f"[simulado] {who} reiniciou a demo: foram criados {cases} casos simulados."
+
+
+def _info_expired(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    due = _day(lang, r["due_on"]) if r.get("due_on") else "?"
+    if lang == "es":
+        return (
+            f"El cliente no respondió a la pregunta de la analista hasta el {due}: el caso se "
+            "cerró por falta de información."
+        )
+    return (
+        f"O cliente não respondeu à pergunta da analista até {due}: o caso foi encerrado por "
+        "falta de informação."
+    )
 
 
 def _info_reply(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -832,6 +847,7 @@ TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "automation_disabled"): _automation_disabled,
     ("human", "automation_switch"): _automation_switch,
     ("customer", "info_reply"): _info_reply,
+    ("system", "info_expired"): _info_expired,
     ("tool", "identify_transaction"): _identify,
     ("tool", "get_customer_profile"): _profile,
     ("tool", "list_recent_transactions"): _recent,

@@ -170,7 +170,7 @@ export function movementDetail(t, m) {
 // The color of a status: done (registered, approved), in review, or rejected.
 export function statusTone(status) {
   if (status === "registered" || status === "approved" || status === "answered") return "ok";
-  if (status === "rejected") return "bad";
+  if (status === "rejected" || status === "closed_no_info") return "bad";
   return "warn";
 }
 
@@ -254,7 +254,7 @@ export function openQuestions(items) {
 // the deadline to answer, in its question (TRZ-28); a rejected one is closed and shows none.
 export function deadlineKind(item) {
   if (item.info_request?.status === "open") return "answer";
-  if (item.status === "rejected") return "closed";
+  if (item.status === "rejected" || item.status === "closed_no_info") return "closed";
   if (item.review_hours != null) return "review";
   if (item.due_date) return "due";
   return "none";
@@ -264,6 +264,7 @@ export function deadlineKind(item) {
 // plain words from the closed list of reasons (TRZ-32 CA3), and what to do next. The analyst's
 // note is never shown (QA of TRZ-27/28).
 export function closedNote(t, item) {
+  if (item.status === "closed_no_info") return t("noInfoNote");
   if (item.status !== "rejected") return null;
   const why = item.reason ? label(t, "reason", item.reason) : null;
   return why && why !== item.reason

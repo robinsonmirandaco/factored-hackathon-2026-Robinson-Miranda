@@ -794,7 +794,7 @@ class NotificationOut(BaseModel):
     Attributes:
         id: The notification.
         case_id: The case it is about.
-        kind: approved, rejected, info_requested or audit_reversed.
+        kind: approved, rejected, info_requested, audit_reversed or info_expired.
         text: What the customer is told, written by code and checked by the fact checker.
         created_at: When it was written.
         read: The customer opened it.
@@ -802,7 +802,7 @@ class NotificationOut(BaseModel):
 
     id: int
     case_id: str
-    kind: Literal["approved", "rejected", "info_requested", "audit_reversed"]
+    kind: Literal["approved", "rejected", "info_requested", "audit_reversed", "info_expired"]
     text: str
     created_at: datetime
     read: bool

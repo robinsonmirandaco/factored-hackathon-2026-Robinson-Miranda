@@ -24,7 +24,7 @@ from app.domain.fact_check import VerifiedFacts, unsupported
 from app.domain.recognition import long_date
 from app.schemas.api import NotificationOut, NotificationsOut
 
-Kind = Literal["approved", "rejected", "info_requested", "audit_reversed"]
+Kind = Literal["approved", "rejected", "info_requested", "audit_reversed", "info_expired"]
 
 # Reasons of the closed list told in plain words to the customer.
 REASONS: dict[str, dict[str, str]] = {
@@ -55,6 +55,10 @@ _TEMPLATES: dict[str, dict[Kind, str]] = {
             "Respóndele en Mis aclaraciones antes del {due}."
         ),
         "audit_reversed": "Tu aclaración está en revisión por una analista.",
+        "info_expired": (
+            "Cerramos tu aclaración por falta de información: no recibimos tu respuesta hasta "
+            "el {due}. Si sigues sin reconocer el cargo, escríbenos de nuevo."
+        ),
     },
     "pt": {
         "approved": (
@@ -66,6 +70,10 @@ _TEMPLATES: dict[str, dict[Kind, str]] = {
             "Responda em Minhas contestações até {due}."
         ),
         "audit_reversed": "A sua contestação está em revisão por uma analista.",
+        "info_expired": (
+            "Encerramos a sua contestação por falta de informação: não recebemos a sua resposta "
+            "até {due}. Se continuar sem reconhecer a cobrança, escreva de novo."
+        ),
     },
 }
 
@@ -90,7 +98,8 @@ def compose(
         language: es or pt; anything else is told in Spanish.
         folio: For an approval, the folio registered and verified.
         reason: For a rejection, the reason of the closed list.
-        due: For a request for information, the last day to answer.
+        due: For a request for information, the last day to answer; for one closed unanswered,
+            the day it was due.
 
     Returns:
         The text and whether the fact checker backed it; when it did not, the text is the one

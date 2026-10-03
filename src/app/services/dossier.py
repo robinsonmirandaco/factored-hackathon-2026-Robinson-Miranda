@@ -58,7 +58,14 @@ from app.services.clues import CLUE_FIELDS, last_clues
 # A dossier opens while the case is with a person, waits for the customer's answer, or was
 # decided by an analyst, who reads there what the decision did; also for a case the audit sample
 # selected (TRZ-29), and for one whose audit an analyst reversed.
-DOSSIER_STATUSES = (*HANDOFF_STATUSES, "awaiting_customer", "approved", "rejected", "in_review")
+DOSSIER_STATUSES = (
+    *HANDOFF_STATUSES,
+    "awaiting_customer",
+    "approved",
+    "rejected",
+    "in_review",
+    "closed_no_info",
+)
 
 # The closed list of what the system could not confirm, in the analyst's language.
 _QUESTIONS: dict[Lang, dict[str, str]] = {

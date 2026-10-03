@@ -114,6 +114,8 @@ FINAL_STATUSES = (
     "awaiting_customer",
     # An audit sample an analyst reversed (TRZ-29): its dispute stays, a person reviews it.
     "in_review",
+    # Closed because the customer did not answer the analyst in time (TRZ-28 CA3).
+    "closed_no_info",
 )
 # A case in one of these statuses holds its charge: another case on the same charge would be a
 # second clarification of one charge, so the customer is taken back to it instead.
