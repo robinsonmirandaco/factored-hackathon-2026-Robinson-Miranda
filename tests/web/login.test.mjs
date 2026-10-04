@@ -36,3 +36,9 @@ test("Send is enabled only with something to send", async () => {
   assert.equal(canSend("   "), false);
   assert.equal(canSend("hola"), true);
 });
+
+test("a 429 from the network limit reads right for the login and for a chat turn", () => {
+  const error = { code: "ip_requests_limited" };
+  assert.equal(errorText(es, error), "Hubo demasiadas solicitudes desde tu red. Espera unos minutos e inténtalo de nuevo.");
+  assert.equal(errorText(pt, error), "Houve solicitações demais a partir da sua rede. Aguarde alguns minutos e tente de novo.");
+});
