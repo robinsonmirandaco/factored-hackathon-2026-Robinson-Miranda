@@ -148,6 +148,12 @@ function chargeRows(t, lang, c) {
   ].filter((row) => row.value);
 }
 
+// What is typed in the chat stays when a send fails, so it can be sent again, and goes when a
+// session ends or starts: whoever signs in next on this browser must not see it.
+export function draftOn(event, draft) {
+  return event === "send_failed" ? draft : "";
+}
+
 // Send is enabled only with something to send; an empty field never reaches the API.
 export function canSend(text) {
   return String(text).trim().length > 0;

@@ -7,7 +7,7 @@ import { createClient } from "./api.js";
 import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   AUDIT_KEY, auditOn, auditSwitchView,
-  buttonMessage, canSend, clarificationLines, closedNote, codeStep, composerState, createConversation,
+  buttonMessage, canSend, clarificationLines, draftOn, closedNote, codeStep, composerState, createConversation,
   deadlineKind, traceHref, traceLines, traceRoute,
   errorText,
   infoRequestViews, movementDetail, notificationsPath, openQuestions, reviewLine, statusKey, statusTone, turnModel,
@@ -219,6 +219,8 @@ function loginForm(form, onDone) {
         method: "POST", body: { ...doc(), code: code.value.trim() },
       });
       api.setToken(r.access_token);
+      $("message").value = draftOn("login", $("message").value);
+      drawComposer();
       await onDone();
     } catch (e) {
       error.textContent = errorText(t, e);
@@ -831,6 +833,7 @@ $("logout").addEventListener("click", async () => {
   }
   api.clear();
   state.me = null;
+  $("message").value = draftOn("logout", $("message").value);
   newConversation();
   location.hash = "";
   route();
