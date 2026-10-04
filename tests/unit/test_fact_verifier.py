@@ -477,3 +477,51 @@ def test_a_promise_to_keep_informed_is_never_backed(text: str) -> None:
 def test_offering_a_person_still_passes_after_the_informed_lexicon() -> None:
     for text in ("¿Quieres hablar con una persona?", "Você quer falar com uma pessoa?"):
         assert _kinds(text, VerifiedFacts()) == []
+
+
+# ---- amounts with a multiplier: "mil", "lucas", "millones" --------------------------------
+
+SCALED = VerifiedFacts(
+    amounts=frozenset({amount_fact(57000.0), amount_fact(100000.0), amount_fact(2000000.0)}),
+    actions=frozenset({"register_dispute"}),
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("Registramos el cargo de 57 mil pesos.", "57000.00"),
+        ("Es la compra de 100 lucas.", "100000.00"),
+        ("El cargo fue de 2 millones de pesos.", "2000000.00"),
+        ("O valor é R$ 2 milhões.", "2000000.00"),
+        ("Un cargo de 1,5 millones.", "1500000.00"),
+        ("Fueron $57 mil.", "57000.00"),
+    ],
+)
+def test_a_multiplier_is_read_as_part_of_the_amount(text: str, value: str) -> None:
+    amounts = [c.value for c in extract(text, frozenset()) if c.kind == "amount"]
+    assert amounts == [value]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Registramos el cargo de 57 mil pesos.",
+        "Es la compra de 100 lucas.",
+        "El cargo fue de 2 millones de pesos.",
+        "O valor é R$ 2 milhões.",
+    ],
+)
+def test_an_amount_with_a_multiplier_backed_by_a_record_passes(text: str) -> None:
+    assert _kinds(text, SCALED) == []
+
+
+def test_an_amount_with_a_multiplier_not_backed_is_caught() -> None:
+    # Before, "57 mil" left "57" as a bare number, which a fact of 57 backed.
+    facts = VerifiedFacts(amounts=frozenset({amount_fact(57.0)}))
+    assert _kinds("El cargo fue de 57 mil pesos.", facts) == [("amount", "57000.00")]
+    assert _kinds("Un cargo de 1,5 millones.", SCALED) == [("amount", "1500000.00")]
+
+
+def test_mil_without_a_figure_is_not_an_amount() -> None:
+    assert [c for c in extract("Mil gracias por escribirnos.", frozenset())] == []
