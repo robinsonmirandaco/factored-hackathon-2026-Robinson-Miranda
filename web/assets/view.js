@@ -65,10 +65,14 @@ export function chipParts(t, lang, chip) {
 // An API error in the screen's language. The API's message is English, for developers: it is
 // never shown; an unknown code gets the generic message.
 export function errorText(t, error) {
-  // The network limit says how long is left of its window, in whole minutes rounded up.
-  if (error?.code === "ip_requests_limited" && error.retryAfter) {
-    const minutes = Math.ceil(error.retryAfter / 60);
-    return minutes <= 1 ? t("error_ip_requests_limited_one") : t("error_ip_requests_limited_wait", { minutes });
+  // The network limit says how long is left of its window, in whole minutes rounded up, and
+  // always the urgent way out: a customer who lost the card cannot wait for the window.
+  if (error?.code === "ip_requests_limited") {
+    const minutes = error.retryAfter ? Math.ceil(error.retryAfter / 60) : null;
+    const wait = minutes === null
+      ? t("error_ip_requests_limited")
+      : minutes <= 1 ? t("error_ip_requests_limited_one") : t("error_ip_requests_limited_wait", { minutes });
+    return `${wait} ${t("error_ip_requests_limited_urgent")}`;
   }
   const key = `error_${error?.code}`;
   const text = t(key);

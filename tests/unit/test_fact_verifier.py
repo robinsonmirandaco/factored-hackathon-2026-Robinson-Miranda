@@ -2,7 +2,9 @@
 the closed lists of forbidden requests and action claims in Spanish and Portuguese, and the
 deadline note written by code (CA7)."""
 
+import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -525,3 +527,32 @@ def test_an_amount_with_a_multiplier_not_backed_is_caught() -> None:
 
 def test_mil_without_a_figure_is_not_an_amount() -> None:
     assert [c for c in extract("Mil gracias por escribirnos.", frozenset())] == []
+
+
+# ---- the notice of the network limit, written by code in the web, passes the checker ------
+
+I18N = Path(__file__).resolve().parents[2] / "web" / "assets" / "i18n.js"
+
+
+def _web_text(language: str, key: str) -> str:
+    es, pt = I18N.read_text(encoding="utf-8").split("\n  pt: {", 1)
+    block = es if language == "es" else pt
+    match = re.search(rf'\n    {key}: "([^"]*)",', block)
+    assert match, (language, key)
+    return match.group(1)
+
+
+@pytest.mark.parametrize("language", ["es", "pt"])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "error_ip_requests_limited",
+        "error_ip_requests_limited_wait",
+        "error_ip_requests_limited_one",
+    ],
+)
+def test_the_network_limit_notice_passes_the_checker(language: str, key: str) -> None:
+    urgent = _web_text(language, "error_ip_requests_limited_urgent")
+    text = f"{_web_text(language, key).replace('{minutes}', '12')} {urgent}"
+    # The minutes come from Retry-After: the one figure the notice states.
+    assert _kinds(text, VerifiedFacts(counts=frozenset({12}))) == []
