@@ -354,3 +354,35 @@ def test_history_reports_a_database_failure_as_503(app: FastAPI, client: TestCli
     assert r.status_code == 503
     assert r.json()["error_code"] == "db_unavailable"
     assert r.json()["trace_id"] == r.headers["x-trace-id"]
+
+
+def test_history_keeps_its_fields_and_adds_the_turn_and_step_of_each_line(
+    client: TestClient,
+) -> None:
+    case_id, traces = _dispute_turns(client)
+    r = client.get(
+        f"/cases/{case_id}/history", params={"lang": "es"}, headers=analyst_headers(client)
+    )
+    assert r.status_code == 200, r.text
+    history = r.json()
+    assert set(history[0]) == {
+        "id",
+        "at",
+        "trace_id",
+        "actor",
+        "action",
+        "text",
+        "turn",
+        "turn_kind",
+        "turn_header",
+        "step",
+        "offset_ms",
+        "duration_ms",
+    }
+    assert [h["step"] for h in history] == list(range(1, len(history) + 1))
+    turns = {(h["turn"], h["trace_id"], h["turn_kind"], h["turn_header"]) for h in history}
+    assert sorted(turns) == [
+        (1, traces[0], "message", "El cliente escribió un mensaje"),
+        (2, traces[1], "recognition", "El cliente dijo que no reconoce el cargo"),
+        (3, traces[2], "confirmation", "El cliente confirmó la acción"),
+    ]

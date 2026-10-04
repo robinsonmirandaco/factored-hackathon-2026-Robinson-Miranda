@@ -11,7 +11,7 @@ from app.adapters.db.models import AuditRecord, Case, QueueItem
 from app.core.errors import AppError
 from app.core.time import utcnow
 from app.domain.autonomy import cells_from_audit
-from app.domain.history import Lang, describe
+from app.domain.history import Lang, describe, group_turns
 from app.domain.policy import AutonomyLevel
 from app.schemas.api import (
     CaseOut,
@@ -27,7 +27,7 @@ from app.schemas.api import (
 )
 
 _HISTORY = text(
-    "SELECT id, trace_id, actor, action, payload, result, policy_version, created_at "
+    "SELECT id, trace_id, actor, action, payload, result, policy_version, latency_ms, created_at "
     "FROM case_history WHERE case_id = :case_id ORDER BY id"
 )
 
@@ -140,16 +140,28 @@ def get_history(session: Session, case_id: str, lang: Lang) -> list[HistoryEntry
         raise AppError("db_unavailable", "Database is not reachable.", 503) from exc
     return [
         HistoryEntryOut(
-            id=r["id"],
-            at=r["created_at"].isoformat(),
-            trace_id=r["trace_id"],
-            actor=r["actor"],
-            action=r["action"],
+            id=step.row["id"],
+            at=step.row["created_at"].isoformat(),
+            trace_id=step.row["trace_id"],
+            actor=step.row["actor"],
+            action=step.row["action"],
             text=describe(
-                r["actor"], r["action"], r["payload"], r["result"], r["policy_version"], lang
+                step.row["actor"],
+                step.row["action"],
+                step.row["payload"],
+                step.row["result"],
+                step.row["policy_version"],
+                lang,
             ),
+            turn=turn.number,
+            turn_kind=turn.kind,
+            turn_header=turn.header,
+            step=step.number,
+            offset_ms=step.offset_ms,
+            duration_ms=step.duration_ms,
         )
-        for r in rows
+        for turn in group_turns([dict(r) for r in rows], "analyst", lang)
+        for step in turn.steps
     ]
 
 

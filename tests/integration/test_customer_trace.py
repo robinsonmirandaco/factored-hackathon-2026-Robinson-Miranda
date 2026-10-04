@@ -110,21 +110,24 @@ def _trace(client: TestClient, case_id: str, lang: str, who: str = "C1") -> Any:
     )
 
 
+def _steps(body: dict[str, Any]) -> list[dict[str, Any]]:
+    return [step for turn in body["turns"] for step in turn["steps"]]
+
+
 def test_the_trace_of_step_seven_tells_the_rule_and_the_cell_in_portuguese(
     client: TestClient,
 ) -> None:
     case_id = _step_seven(client)
     r = _trace(client, case_id, "pt")
     assert r.status_code == 200, r.text
-    steps = r.json()
-    assert set(steps[0]) == {"id", "trace_id", "actor", "action", "text"}
+    steps = _steps(r.json())
     [decide] = [s["text"] for s in steps if (s["actor"], s["action"]) == ("policy", "decide")]
     assert "regra «approval.autonomy_a1»" in decide
     assert (
         "A célula está em A1 desde um bloco de revisões com 10 de 20, r = 0,50, W = 0,327 ≥ 0,30."
         in decide
     )
-    spanish = _trace(client, case_id, "es").json()
+    spanish = _steps(_trace(client, case_id, "es").json())
     assert any("regla «approval.autonomy_a1»" in s["text"] for s in spanish)
 
 
@@ -136,7 +139,7 @@ def test_the_analyst_is_not_named_in_the_customers_trace(client: TestClient) -> 
         headers=analyst_headers(client),
     )
     assert decided.status_code == 200, decided.text
-    steps = _trace(client, case_id, "es").json()
+    steps = _steps(_trace(client, case_id, "es").json())
     [line] = [s["text"] for s in steps if (s["actor"], s["action"]) == ("human", "decision")]
     assert line == "La analista decidió rechazar: datos insuficientes."
     assert "analista.demo" not in json.dumps(steps)
@@ -148,10 +151,14 @@ def test_the_analyst_is_not_named_in_the_customers_trace(client: TestClient) -> 
 def test_the_trace_has_no_percentage_no_raw_row_and_no_real_clock_date(
     client: TestClient,
 ) -> None:
-    body = _trace(client, _step_seven(client), "pt").text
+    trace = _trace(client, _step_seven(client), "pt").json()
+    # The bank date is of the simulated clock; nothing else carries a date or a clock time.
+    trace.pop("bank_date")
+    body = json.dumps(trace, ensure_ascii=False)
     assert "%" not in body
     assert '"payload"' not in body and '"result"' not in body
     assert re.search(r"\d{4}-\d{2}-\d{2}", body) is None
+    assert re.search(r"\d{1,2}:\d{2}", body) is None
 
 
 def test_another_customers_case_is_not_found(client: TestClient) -> None:
@@ -217,3 +224,70 @@ def test_the_raw_trace_with_the_database_down_is_503(client: TestClient) -> None
     r = client.get("/cases/CASE-1/trace")
     app.dependency_overrides.clear()
     assert r.status_code == 503 and r.json()["error_code"] == "db_unavailable"
+
+
+# ---- the trace with structure: header, turns, numbered steps and time ---------------------
+
+
+def test_the_trace_has_its_header_and_its_steps_grouped_by_turn(client: TestClient) -> None:
+    case_id = _step_seven(client)
+    body = _trace(client, case_id, "pt").json()
+    assert set(body) == {"case_id", "bank_date", "language", "status", "turns"}
+    assert (body["case_id"], body["language"], body["status"]) == (
+        case_id,
+        "pt",
+        "pending_analyst_approval",
+    )
+    # No dispute yet: the bank date is the day of the simulated clock.
+    assert body["bank_date"] == NOW.date().isoformat()
+    turns = body["turns"]
+    assert set(turns[0]) == {"number", "kind", "header", "steps"}
+    assert set(turns[0]["steps"][0]) == {
+        "number",
+        "id",
+        "trace_id",
+        "actor",
+        "action",
+        "text",
+        "offset_ms",
+        "duration_ms",
+    }
+    assert [(t["number"], t["kind"]) for t in turns] == [(1, "button"), (2, "recognition")]
+    assert [t["header"] for t in turns] == [
+        "Você tocou em «Não reconheço» em uma movimentação",
+        "Você disse que não reconhece a cobrança",
+    ]
+    steps = _steps(body)
+    assert [s["number"] for s in steps] == list(range(1, len(steps) + 1))
+    assert [s["id"] for s in steps] == sorted(s["id"] for s in steps)
+    assert all(len({s["trace_id"] for s in t["steps"]}) == 1 for t in turns)
+    for turn in turns:
+        offsets = [s["offset_ms"] for s in turn["steps"]]
+        assert offsets[0] == 0 and offsets == sorted(offsets)
+    [done] = [s for s in turns[0]["steps"] if s["action"] == "turn_complete"]
+    assert isinstance(done["duration_ms"], int)
+
+
+def test_the_bank_date_is_the_one_of_the_dispute_when_the_case_has_one(
+    client: TestClient, rows: SchemaUrls
+) -> None:
+    who = customer_headers(client, "C1")
+    first = client.post(
+        "/chat", json={"message": "No lo reconozco", "transaction_id": "TX1"}, headers=who
+    ).json()
+    turn = still_not_recognized(client, first["case_id"], who)
+    pending = turn["pending_action"]["action_id"]
+    done = client.post(
+        "/chat",
+        json={"message": "sí", "case_id": first["case_id"], "confirm_action_id": pending},
+        headers=who,
+    ).json()
+    assert done["outcome"] == "registered_verified", done
+    engine = create_engine(rows.admin)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE disputes SET business_at = '2026-06-10 12:00'"))
+    engine.dispose()
+    body = _trace(client, first["case_id"], "es").json()
+    assert body["bank_date"] == "2026-06-10"
+    assert [t["kind"] for t in body["turns"]] == ["button", "recognition", "confirmation"]
+    assert body["turns"][2]["header"] == "Confirmaste la acción"

@@ -50,7 +50,7 @@ from app.schemas.api import (
     QueueOut,
     TokenOut,
     TraceEventOut,
-    TraceStepOut,
+    TraceOut,
 )
 from app.schemas.dossier import Dossier
 from app.services import (
@@ -294,7 +294,7 @@ def get_clarifications(
 
 @router.get(
     "/me/clarifications/{case_id}/trace",
-    response_model=list[TraceStepOut],
+    response_model=TraceOut,
     responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 503: _ERRORS[503]},
 )
 def get_case_trace(
@@ -302,10 +302,11 @@ def get_case_trace(
     _demo: DemoDep,
     customer: CustomerDep,
     session: CustomerSessionDep,
+    runtime: RuntimeDep,
     lang: Annotated[Lang, Query()] = "es",
-) -> list[TraceStepOut]:
-    """Returns the steps of one of the customer's cases; the route exists only in demo mode."""
-    return me.case_trace(session, customer.subject, case_id, lang)
+) -> TraceOut:
+    """Returns one of the customer's cases by turn; the route exists only in demo mode."""
+    return me.case_trace(session, runtime.agent.clock, customer.subject, case_id, lang)
 
 
 @router.get(

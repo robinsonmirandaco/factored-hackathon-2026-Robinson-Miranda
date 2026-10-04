@@ -278,6 +278,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); }
 .timeline .body { display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px; min-width: 0; }
 .timeline .title { font-size: 14px; font-weight: 500; }
 .timeline .when { font: 12px var(--mono); color: var(--muted); }
+/* A trace by turn: the case above, then each turn with its numbered steps. */
+.trace-meta { margin: 0 0 12px; }
+.trace-turn + .trace-turn { margin-top: 8px; }
+.trace-turn-head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.timeline .step-no { font: 12px var(--mono); color: var(--muted); margin-right: 6px; }
 
 /* List rows: an initial, two lines and the amount on the right */
 .list { list-style: none; margin: 0; padding: 0; }

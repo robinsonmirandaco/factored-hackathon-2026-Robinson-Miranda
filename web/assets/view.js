@@ -358,8 +358,41 @@ export function traceCase(hash) {
 }
 
 // The steps as the API tells them; the screen adds no figure, no date and no internal code.
-export function traceLines(steps) {
-  return (steps || []).map((s) => ({ text: s.text, traceId: s.trace_id }));
+// Time of a step as a difference since the first step of its turn, and its duration: never a
+// clock time, since the audit log keeps the real clock (design 10.2, rule 7).
+// Tenths of a second, halves up (1450 ms is 1.5 s), with the decimal comma of es and pt.
+const seconds = (lang, ms) => (Math.round(ms / 100) / 10).toFixed(1).replace(".", ",");
+
+export function stepTime(lang, ms) {
+  return ms == null ? null : `+${seconds(lang, ms)} s`;
+}
+
+export function stepDuration(lang, ms) {
+  return ms == null ? null : `${seconds(lang, ms)} s`;
+}
+
+// The trace of the customer's case: the bank date, language and status above, then each turn
+// with its header and its steps numbered in audit order, as the API wrote them.
+export function traceView(t, lang, trace) {
+  if (!trace) return { meta: [], turns: [] };
+  return {
+    meta: [
+      `${t("bankDate")}: ${day(lang, trace.bank_date)}`,
+      trace.language ? label(t, "language", trace.language) : null,
+      label(t, "status", trace.status),
+    ].filter(Boolean),
+    turns: trace.turns.map((turn) => ({
+      number: turn.number,
+      header: turn.header,
+      steps: turn.steps.map((s) => ({
+        number: s.number,
+        text: s.text,
+        traceId: s.trace_id,
+        time: stepTime(lang, s.offset_ms),
+        duration: stepDuration(lang, s.duration_ms),
+      })),
+    })),
+  };
 }
 
 // Where a trace route goes. With the audit view off it goes back to Mis aclaraciones before any

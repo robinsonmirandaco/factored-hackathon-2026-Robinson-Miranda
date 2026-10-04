@@ -9,7 +9,7 @@ import {
   AUDIT_KEY, auditOn, auditSwitchView,
   buttonMessage, canSend, chatOpening, clarificationLines, draftOn, greetingFollowsLanguage, closedNote, codeStep,
   composerState, createConversation,
-  deadlineKind, traceHref, traceLines, traceRoute,
+  deadlineKind, traceHref, traceRoute, traceView,
   errorText,
   infoRequestViews, movementDetail, notificationsPath, openQuestions, outgoingNote, reviewLine, statusKey, statusTone,
   turnModel, typingView,
@@ -252,12 +252,22 @@ async function loadMe() {
 // The trace is shown only with the switch on, in demo mode, labeled "demo" by its panel.
 const auditVisible = () => state.audit && Boolean(state.me?.demo);
 
-function timeline(steps) {
-  const lines = traceLines(steps);
-  if (!lines.length) return el("p", { class: "small muted", text: t("traceEmpty") });
-  return el("ol", { class: "timeline" }, lines.map((l) => el("li", {},
-    el("span", { class: "rail" }),
-    el("div", { class: "body" }, el("span", { class: "title", text: l.text })))));
+// The trace by turn: the bank date, language and status of the case, then each turn with its
+// steps numbered in audit order, their time since the start of the turn and their duration.
+function timeline(trace) {
+  const view = traceView(t, state.lang, trace);
+  if (!view.turns.length) return el("p", { class: "small muted", text: t("traceEmpty") });
+  return el("div", { class: "trace" },
+    el("p", { class: "small muted trace-meta", text: view.meta.join(" · ") }),
+    view.turns.map((turn) => el("section", { class: "trace-turn" },
+      el("h3", { class: "trace-turn-head", text: `${t("turn")} ${turn.number} · ${turn.header}` }),
+      el("ol", { class: "timeline" }, turn.steps.map((s) => el("li", {},
+        el("span", { class: "rail" }),
+        el("div", { class: "body" },
+          el("span", { class: "title" }, el("span", { class: "step-no", text: `${s.number}.` }), s.text),
+          s.time || s.duration
+            ? el("span", { class: "when", text: [s.time, s.duration && `(${s.duration})`].filter(Boolean).join(" ") })
+            : null)))))));
 }
 
 const traceOf = (caseId) => api.call(
@@ -278,8 +288,8 @@ async function loadPanelTrace() {
   const caseId = state.caseId;
   if (!caseId) return target.replaceChildren(el("p", { class: "small muted", text: t("traceNoCase") }));
   try {
-    const steps = await traceOf(caseId);
-    if (state.caseId === caseId && auditVisible()) target.replaceChildren(timeline(steps));
+    const trace = await traceOf(caseId);
+    if (state.caseId === caseId && auditVisible()) target.replaceChildren(timeline(trace));
   } catch (e) {
     target.replaceChildren(el("p", { class: "small error", text: errorText(t, e) }));
   }
@@ -288,7 +298,7 @@ async function loadPanelTrace() {
 async function renderTrace(caseId) {
   const target = $("view-trace");
   try {
-    const steps = await traceOf(caseId);
+    const trace = await traceOf(caseId);
     target.replaceChildren(
       el("div", { class: "page-head" },
         el("a", { class: "back", href: "#/aclaraciones", text: t("backClarifications") }),
@@ -296,7 +306,7 @@ async function renderTrace(caseId) {
       el("section", { class: "card" },
         el("span", { class: "tiny muted mono", text: `${t("caseLabel")} ${caseId}` }),
         el("p", { class: "small muted", text: t("traceNote") }),
-        timeline(steps)));
+        timeline(trace)));
   } catch (e) {
     const next = traceRoute(location.hash, auditVisible(), e);
     if (next?.redirect) location.replace(next.redirect);
