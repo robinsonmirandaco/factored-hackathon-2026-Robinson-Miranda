@@ -17,6 +17,7 @@ failure returns a typed fallback. Callers never see an exception from this modul
 import hashlib
 import json
 import re
+import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -301,8 +302,11 @@ class LLMClient:
         self._price_out = settings.llm_price_output_per_mtok
         self._max_retries = settings.llm_max_retries
         self._timeout = settings.llm_timeout_seconds
+        self._queue_wait = settings.llm_queue_wait_seconds
         self._retry_wait = settings.llm_retry_wait_seconds
-        self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm")
+        self._pool = ThreadPoolExecutor(
+            max_workers=settings.llm_pool_size, thread_name_prefix="llm"
+        )
         self._client: Any = None
         if not settings.llm_enabled or not settings.anthropic_api_key:
             return
@@ -364,16 +368,21 @@ class LLMClient:
         while True:
             stats.calls += 1
             try:
+                started = threading.Event()
                 future = self._pool.submit(
-                    self._complete, system, user, max_tokens, temperature, schema
+                    self._started, started, system, user, max_tokens, temperature, schema
                 )
+                # The deadline is the provider's; waiting for a free thread has its own limit.
+                if not started.wait(self._queue_wait) and future.cancel():
+                    raise _QueueFull
                 text, usage = future.result(timeout=timeout or self._timeout)
                 stats.input_tokens, stats.output_tokens = usage[0], usage[1]
                 stats.cache_write_tokens, stats.cache_read_tokens = usage[2], usage[3]
                 stats.error = None
                 break
             except Exception as exc:
-                stats.error = type(exc).__name__
+                queue_full = isinstance(exc, _QueueFull)
+                stats.error = "llm_queue_full" if queue_full else type(exc).__name__
                 log.warning("llm_call_failed", error=stats.error, attempt=stats.calls)
                 if _retryable(exc, self._retry_wait) and budget.retries_left > 0:
                     budget.retries_left -= 1
@@ -405,6 +414,18 @@ class LLMClient:
             failed=stats.fallback,
         )
         return text, stats
+
+    def _started(
+        self,
+        started: threading.Event,
+        system: str,
+        user: str,
+        max_tokens: int,
+        temperature: float | None,
+        schema: dict[str, Any] | None,
+    ) -> tuple[str, tuple[int, int, int, int]]:
+        started.set()
+        return self._complete(system, user, max_tokens, temperature, schema)
 
     def _complete(
         self,
@@ -1033,6 +1054,10 @@ def _strip_fence(s: str) -> str:
         if s.startswith("json"):
             s = s[4:]
     return s.strip()
+
+
+class _QueueFull(Exception):
+    """No LLM thread was free within LLM_QUEUE_WAIT_SECONDS; the call never reached the provider."""
 
 
 def _retryable(exc: Exception, wait: float) -> bool:

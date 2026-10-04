@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 5.0
     llm_max_retries: int = 1
     llm_retry_wait_seconds: float = 0.5
+    # Threads that run LLM calls, and how long a call may wait for one before the turn falls back
+    # to the rules; the deadline of an attempt starts when a thread runs it.
+    llm_pool_size: int = 8
+    llm_queue_wait_seconds: float = 5.0
     # One comprehension call at startup, in the background, so the first turn is not cold.
     llm_warm_up: bool = True
     # False forces the deterministic fallback path (CI and golden cases).
