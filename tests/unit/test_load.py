@@ -219,6 +219,13 @@ def test_the_report_shows_the_capacity_and_every_level(tmp_path: Path) -> None:
     runs.write_text(json.dumps(run) + "\n", encoding="utf-8")
     text = load.report(runs, tmp_path / "carga.md")
     assert "**Capacity: 1 simultaneous cases.** Stopped: level 2 did not hold." in text
+    run["steps"] = judged[:1]
+    run["stopped"] = "all levels run"
+    runs.write_text(json.dumps(run) + "\n", encoding="utf-8")
+    assert "**Capacity: at least 1 simultaneous cases.**" in load.report(runs, tmp_path / "c.md")
+    run["scenario"] = "real"
+    runs.write_text(json.dumps(run) + "\n", encoding="utf-8")
+    assert "Not a capacity" in load.report(runs, tmp_path / "c.md")
     assert "| 1 | 10 | 30 | 50.0 | 100.0 | 120.0 | 1.0 |" in text
     assert "| 2 | 10 | 30 | 100.0 | 200.0 | 240.0 | 2.0 |" in text
     assert "{'TimeoutError': 2}" in text

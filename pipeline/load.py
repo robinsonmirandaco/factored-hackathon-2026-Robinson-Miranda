@@ -845,7 +845,8 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
         "llm_calls": llm_calls,
         "llm_failures": failures,
         "llm_usage": usage,
-        "cost_usd": round(cost, 4),
+        # The simulated LLM reports made-up tokens, so the service prices calls that cost nothing.
+        "cost_usd": round(cost, 4) if scenario == "real" else None,
         "rate_limits": limits,
         "machine": machine(),
     }
@@ -1005,6 +1006,21 @@ def report(path: Path = RUNS_PATH, out: Path = REPORT_PATH) -> str:
     return text_out
 
 
+def _capacity_line(r: dict[str, Any]) -> str:
+    last = r["steps"][-1] if r["steps"] else None
+    if r["scenario"] == "real":
+        return (
+            f"**Highest level measured within the budget: {_cell(last and last['level'])} "
+            "simultaneous cases.** Not a capacity: the run stops at the budget."
+        )
+    if last is not None and last["holds"]:
+        return (
+            f"**Capacity: at least {last['level']} simultaneous cases.** No level failed up to "
+            "the last one run."
+        )
+    return f"**Capacity: {_cell(r['capacity'])} simultaneous cases.**"
+
+
 def _scenario_section(r: dict[str, Any]) -> list[str]:
     m = r["machine"]
     lines = [
@@ -1018,7 +1034,7 @@ def _scenario_section(r: dict[str, Any]) -> list[str]:
         f"Docker {m['docker_cpus']} CPUs, {m['docker_memory_gib']} GiB",
         f"- Measured window per level: {r['measure_seconds']:.0f} s. Charges used: "
         f"{r['fixture']['charges_used']} of {r['fixture']['charges_available']}.",
-        f"- **Capacity: {_cell(r['capacity'])} simultaneous cases.** Stopped: {r['stopped']}.",
+        f"- {_capacity_line(r)} Stopped: {r['stopped']}.",
         "",
         "| Cases at once | Cases done | /chat turns | /chat p50 ms | /chat p95 ms | /chat p99 ms "
         "| p95 / p95 at 1 | Server p95 ms | Error rate | LLM fallback "
@@ -1031,6 +1047,8 @@ def _scenario_section(r: dict[str, Any]) -> list[str]:
         holds = "yes" if s["holds"] else "no"
         if s["mac_limits"]:
             holds += f" (Mac: {', '.join(s['mac_limits'])})"
+        if s.get("budget_reached"):
+            holds += " (budget reached: no new case after it)"
         lines.append(
             "| "
             + " | ".join(
