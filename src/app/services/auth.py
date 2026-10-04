@@ -16,6 +16,7 @@ expired session must stay recorded even though the request fails.
 
 import hashlib
 import hmac
+import math
 import secrets
 import uuid
 from collections.abc import Iterator
@@ -109,7 +110,7 @@ _COUNT_ADDRESS = text(
     ON CONFLICT (scope, ip_key) DO UPDATE SET
         window_start = CASE WHEN l.window_start <= :expired THEN :now ELSE l.window_start END,
         request_count = CASE WHEN l.window_start <= :expired THEN 1 ELSE l.request_count + 1 END
-    RETURNING request_count
+    RETURNING request_count, window_start
     """
 )
 
@@ -134,20 +135,26 @@ def limit_address(
         now: Real current time, naive UTC.
 
     Raises:
-        AppError: ip_requests_limited (429) past the limit of the window.
+        AppError: ip_requests_limited (429) past the limit of the window, with Retry-After
+            set to the seconds left of it.
     """
     key = hmac.new(
         settings.document_hash_key.encode(), f"address:{address}".encode(), hashlib.sha256
     ).hexdigest()
     expired = now - timedelta(minutes=settings.ip_request_window_minutes)
     with _transaction(db) as s:
-        count = s.execute(
+        count, window_start = s.execute(
             _COUNT_ADDRESS, {"scope": scope, "key": key, "now": now, "expired": expired}
-        ).scalar_one()
+        ).one()
     limit = settings.chat_ip_request_limit if scope == "chat" else settings.ip_request_limit
     if count > limit:
+        # Seconds left of the window, so the screen can say how long to wait.
+        left = window_start - expired
         raise AppError(
-            "ip_requests_limited", "Too many requests from this network. Try again later.", 429
+            "ip_requests_limited",
+            "Too many requests from this network. Try again later.",
+            429,
+            headers={"Retry-After": str(max(1, math.ceil(left.total_seconds())))},
         )
 
 

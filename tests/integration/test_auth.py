@@ -874,6 +874,28 @@ def test_a_forged_forwarded_for_does_not_escape_the_chat_limit(
     _error(_turn(c, token, ADDRESS, spoofed="192.0.2.99"), 429, "ip_requests_limited")
 
 
+def test_a_limited_request_says_how_long_is_left_of_the_window(
+    chat_behind_proxy: TestClient, clock: Clock
+) -> None:
+    c = chat_behind_proxy
+    token = _session(c, "C1", ADDRESS)
+    for _ in range(3):
+        _turn(c, token, ADDRESS)
+    first = _turn(c, token, ADDRESS)
+    _error(first, 429, "ip_requests_limited")
+    assert 0 < int(first.headers["retry-after"]) <= 15 * 60
+    clock.advance(10)
+    later = _turn(c, token, ADDRESS)
+    _error(later, 429, "ip_requests_limited")
+    assert 0 < int(later.headers["retry-after"]) <= 5 * 60
+    # The login endpoints answer the same way.
+    for i in range(3):
+        c.post("/auth/otp/request", json=document(f"N{i}"), headers=_from("203.0.113.7"))
+    login = c.post("/auth/otp/request", json=document("N9"), headers=_from("203.0.113.7"))
+    _error(login, 429, "ip_requests_limited")
+    assert 0 < int(login.headers["retry-after"]) <= 15 * 60
+
+
 def test_the_chat_limit_is_120_turns_per_address_by_default() -> None:
     settings = Settings(database_url="postgresql+psycopg://unused@localhost:1/unused")
     assert (settings.chat_ip_request_limit, settings.ip_request_window_minutes) == (120, 15)
