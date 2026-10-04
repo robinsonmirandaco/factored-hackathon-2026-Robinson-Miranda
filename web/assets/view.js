@@ -160,6 +160,18 @@ export function reviewLine(t, item) {
   return { text: t("reviewTime", { hours: item.review_hours }), label: t("reviewLabel") };
 }
 
+// The opening of the chat (QA of TRZ-34). After a reload or in a duplicated tab the tab's case may
+// already be with a person; the chat says so instead of greeting as if nothing were open.
+const WITH_PERSON = new Set(["escalated", "pending_analyst_approval", "failed"]);
+
+export function chatOpening(t, caseId, items) {
+  const item = caseId
+    ? (items || []).find((i) => i.source === "cases" && i.case_id === caseId)
+    : null;
+  if (!item || !WITH_PERSON.has(item.status)) return { text: t("chatIntro"), review: null };
+  return { text: t("chatWithPerson", { caseId }), review: reviewLine(t, item) };
+}
+
 // The second line of a movement: city and channel, and the type unless the channel already
 // says it is a purchase ("Compra en línea").
 export function movementDetail(t, m) {

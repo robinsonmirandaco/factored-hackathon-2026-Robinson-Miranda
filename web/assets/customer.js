@@ -7,7 +7,7 @@ import { createClient } from "./api.js";
 import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   AUDIT_KEY, auditOn, auditSwitchView,
-  buttonMessage, canSend, clarificationLines, closedNote, codeStep, composerState, createConversation,
+  buttonMessage, canSend, chatOpening, clarificationLines, closedNote, codeStep, composerState, createConversation,
   deadlineKind, traceHref, traceLines, traceRoute,
   errorText,
   infoRequestViews, movementDetail, notificationsPath, openQuestions, reviewLine, statusKey, statusTone, turnModel,
@@ -331,6 +331,7 @@ async function route() {
   const view = VIEWS[location.hash] || "home";
   show(view);
   refreshNotifications();
+  if (view === "chat") openChat();
   if (view === "home") renderHome();
   if (view === "movements") renderMovements(true);
   if (view === "clarifications") renderClarifications();
@@ -663,6 +664,29 @@ function bubble(who, ...children) {
 function greet() {
   $("log").replaceChildren();
   bubble("bot", el("div", { class: "bubble", text: t("chatIntro") }));
+}
+
+// After a reload or in a duplicated tab the tab's case may already be with a person: the
+// greeting is replaced by that, as long as nothing else was said in the chat meanwhile.
+async function openChat() {
+  const caseId = state.caseId;
+  const untouched = () => state.caseId === caseId && !state.lastTurn && $("log").children.length === 1;
+  if (!caseId || !untouched()) return;
+  let items;
+  try {
+    items = await api.call("/me/clarifications");
+  } catch {
+    return;
+  }
+  const { text, review } = chatOpening(t, caseId, items);
+  if (!review && text === t("chatIntro")) return;
+  if (!untouched()) return;
+  $("log").replaceChildren();
+  bubble("bot", el("div", { class: "bubble" }, el("span", { class: "line", text }),
+    review
+      ? el("span", { class: "sim-label" }, el("span", { class: "sim", text: "simulado" }),
+        `${review.text} (${review.label})`)
+      : null));
 }
 
 function chargeCard(rows) {
