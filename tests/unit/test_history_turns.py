@@ -131,3 +131,38 @@ def test_no_date_or_clock_time_leaves_the_grouping() -> None:
         assert "2026" not in turn.header
         for step in turn.steps:
             assert all(v is None or isinstance(v, int) for v in (step.offset_ms, step.duration_ms))
+
+
+SEEDED = [
+    # seed-demo writes every scripted turn of a case with one trace_id.
+    _row(20, "seed", "agent", "button_press", 0),
+    _row(21, "seed", "tool", "show_charge_detail", 10),
+    _row(22, "seed", "agent", "turn_complete", 20, latency=25),
+    _row(23, "seed", "agent", "recognize", 30, result={"choice": "not_recognized"}),
+    _row(24, "seed", "policy", "decide", 40),
+    _row(25, "seed", "agent", "turn_complete", 50, latency=22),
+    _row(26, "seed", "system", "mark_simulated", 60),
+]
+
+
+def test_a_turn_ends_after_its_turn_complete_even_within_one_trace() -> None:
+    turns = group_turns(SEEDED, "analyst", "es")
+    assert [t.kind for t in turns] == ["button", "recognition", "demo"]
+    assert [[s.row["id"] for s in t.steps] for t in turns] == [[20, 21, 22], [23, 24, 25], [26]]
+    assert [[s.number for s in t.steps] for t in turns] == [[1, 2, 3], [4, 5, 6], [7]]
+    assert [s.offset_ms for s in turns[1].steps] == [0, 10, 20]
+
+
+def test_mark_simulated_is_a_block_of_its_own() -> None:
+    rows = [
+        _row(1, "seed", "agent", "comprehend", 0),
+        _row(2, "seed", "system", "mark_simulated", 5),
+        _row(3, "seed", "human", "decision", 9),
+    ]
+    turns = group_turns(rows, "customer", "es")
+    assert [[s.row["id"] for s in t.steps] for t in turns] == [[1], [2], [3]]
+    assert [t.header for t in turns] == [
+        "Escribiste un mensaje",
+        "Estado del demo [simulado]",
+        "La analista decidió",
+    ]

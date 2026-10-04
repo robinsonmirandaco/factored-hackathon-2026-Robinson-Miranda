@@ -1047,6 +1047,11 @@ _TURN_HEADERS: dict[Audience, dict[Lang, dict[str, str]]] = {
 }
 
 
+# A turn ends with the agent's turn_complete; mark_simulated is the system's own block.
+_TURN_END = ("agent", "turn_complete")
+_SIMULATED = ("system", "mark_simulated")
+
+
 @dataclass(frozen=True)
 class TurnStep:
     """One audit row of a turn.
@@ -1098,11 +1103,21 @@ def group_turns(rows: Sequence[Fields], audience: Audience, lang: Lang) -> list[
         lang: Language of the headers.
 
     Returns:
-        One turn per request, in the order of their first row.
+        One turn per request, in the order of their first row. A request that wrote several
+        turns under one trace_id, as seed-demo does with its scripted turns, is cut after each
+        turn_complete, and a mark_simulated row is a block of its own, so a seeded case reads
+        like a real one.
     """
-    groups: dict[str, list[Fields]] = {}
+    groups: dict[tuple[str, int], list[Fields]] = {}
+    segment: dict[str, int] = {}
     for row in rows:
-        groups.setdefault(row["trace_id"], []).append(row)
+        trace = row["trace_id"]
+        pair = (row["actor"], row["action"])
+        if pair == _SIMULATED:
+            segment[trace] = segment.get(trace, 0) + 1
+        groups.setdefault((trace, segment.get(trace, 0)), []).append(row)
+        if pair in (_TURN_END, _SIMULATED):
+            segment[trace] = segment.get(trace, 0) + 1
     turns: list[Turn] = []
     number = 0
     for members in groups.values():
