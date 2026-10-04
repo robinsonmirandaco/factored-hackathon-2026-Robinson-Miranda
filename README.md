@@ -150,7 +150,7 @@ make init
 docker compose up --build
 ```
 
-`make init` is required: it creates `.env` from `.env.example` and generates `DOCUMENT_HASH_KEY`, `APP_DB_PASSWORD`, `JWT_SECRET` and `ANALYST_DEMO_PASSWORD`, which Compose needs along with `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`. Values already set in `.env` are kept and none is printed. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
+`make init` is required: it creates `.env` from `.env.example` and generates `DOCUMENT_HASH_KEY`, `APP_DB_PASSWORD`, `JWT_SECRET` and `ANALYST_DEMO_PASSWORD`, which Compose needs along with `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`, and puts the new `APP_DB_PASSWORD` inside `DATABASE_URL`. Values already set in `.env` are kept and none is printed. Set `ANTHROPIC_API_KEY` in `.env` to enable the LLM.
 
 The `db` service starts first. The one-shot `migrate` service then applies the migrations and loads the synthetic fixture (`seed synthetic --seed 42`) only if the database is empty, and the `api` service serves:
 
@@ -325,7 +325,7 @@ Every recorded run states its date, commit, model, prompt versions, policy versi
 - **Silver:** typed Parquet per table and partition. Every row is checked against its table's contract (`pipeline/contracts.py`); a row that breaks a rule goes to `quarantine/` with the rule, column, value, source file and partition, never silently dropped. For every table, bronze rows equal silver rows plus quarantine rows, or the run fails.
 - **Gold:** the demand marts, the case generator input and the serving tables, including the 5,000-customer cohort.
 
-`docs/reports/calidad.md` is regenerated on each run with counts per rule, alerts, duplicates, nulls, schema evolution and the time rule. Running `make data` twice gives the same output hashes (`manifest/outputs.json`).
+`docs/reports/calidad.md` is regenerated on each run with counts per rule, alerts, duplicates, nulls, schema evolution and the time rule. Running `make data` twice in the same `DATA_DIR` gives the same output hashes (`manifest/outputs.json`). A fresh download gives the same rows but other file hashes, because `ingested_at` records the load time.
 
 ### Time in the data
 
@@ -357,7 +357,7 @@ make report-data   # quality and demand reports from silver and gold
 make diff-backup   # partitions, row counts and shared ids against data_backup_20260831
 ```
 
-On the full dataset, a full load takes 3 to 4 minutes and a run that only reads the window about 1.5 minutes. Silver and gold take about 0.75 GB next to the 1.2 GB of bronze.
+On the full dataset, a full load takes 3 to 4 minutes and a run that only reads the window about 1.5 minutes. Silver and gold take about 0.75 GB next to the 1.2 GB of bronze. From an empty folder, the first run also downloads about 1.2 GB (5,490 files) and the Python dependencies; on the clean-machine test it took 37.5 minutes.
 
 ## Synthetic data
 
