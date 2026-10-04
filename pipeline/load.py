@@ -39,6 +39,7 @@ import subprocess
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,7 +69,9 @@ LEVELS = (1, 2, 4, 8, 16, 32)
 REAL_LEVELS = (1, 2, 4, 8)
 WARMUP_SECONDS = 15.0
 MEASURE_SECONDS = 60.0
-REAL_MEASURE_SECONDS = 45.0
+REAL_MEASURE_SECONDS = 30.0
+# How often the real scenario reads its spend from the audit log while a level runs.
+SPEND_CHECK_SECONDS = 5.0
 # Seconds a customer takes to read a reply and press the next button, drawn uniformly.
 THINK_SECONDS = (1.5, 2.5)
 REQUEST_TIMEOUT_SECONDS = 30.0
@@ -348,6 +351,8 @@ class Step:
         self.demo_code = demo_code
         self.samples: list[Sample] = []
         self.cases = 0
+        # Set when the budget is reached: no new case starts; the ones in progress finish.
+        self.closed = False
 
     async def _post(
         self, endpoint: str, path: str, free_text: bool = False, **kwargs: Any
@@ -396,7 +401,7 @@ class Step:
 
     async def customer(self, rng: random.Random, until: float) -> None:
         """Runs cases back to back until the step ends or no charge is left."""
-        while time.perf_counter() < until and self.queue:
+        while time.perf_counter() < until and self.queue and not self.closed:
             await self.case(rng)
 
 
@@ -664,6 +669,8 @@ async def run_step(
     warmup: float,
     measure: float,
     rng_seed: int,
+    spend: Callable[[], float] | None = None,
+    budget: float = math.inf,
 ) -> dict[str, Any]:
     """Runs one concurrency level: a warm-up window, then the measured window.
 
@@ -674,9 +681,11 @@ async def run_step(
         warmup: Seconds before measuring.
         measure: Seconds measured.
         rng_seed: Seed of the think times.
+        spend: Reads the LLM spend so far, every SPEND_CHECK_SECONDS; None to not watch it.
+        budget: Spend at which no new case starts.
 
     Returns:
-        The step from `summarize`.
+        The step from `summarize`, with `budget_reached`.
     """
     limits = httpx.Limits(max_connections=level * 2, max_keepalive_connections=level * 2)
     async with httpx.AsyncClient(
@@ -692,6 +701,8 @@ async def run_step(
         lag: list[float] = []
         rngs = [random.Random(rng_seed * 1000 + i) for i in range(level)]
         tasks = [asyncio.create_task(step.customer(rngs[i], until)) for i in range(level)]
+        if spend is not None:
+            tasks.append(asyncio.create_task(_watch_spend(step, spend, budget, until)))
         await asyncio.sleep(warmup)
         cases_before = step.cases
         sampler.start()
@@ -704,7 +715,16 @@ async def run_step(
         sampler.join()
         res.generator_lag_ms = lag
     measured = [s for s in step.samples if window <= s.at < until]
-    return {**summarize(level, measured, cases, res, cpu_used), "cases_total": step.cases}
+    summary = summarize(level, measured, cases, res, cpu_used)
+    return {**summary, "cases_total": step.cases, "budget_reached": step.closed}
+
+
+async def _watch_spend(step: Step, spend: Callable[[], float], budget: float, until: float) -> None:
+    while time.perf_counter() < until and not step.closed:
+        if await asyncio.to_thread(spend) >= budget:
+            step.closed = True
+            return
+        await asyncio.sleep(SPEND_CHECK_SECONDS)
 
 
 def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]:
@@ -746,8 +766,11 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
         stack.up()
         log.info("load_stack_up", scenario=scenario)
         for level in levels:
+            watch = stack.cost_usd if scenario == "real" else None
             step = asyncio.run(
-                run_step(level, queue, settings, WARMUP_SECONDS, measure, SEED + level)
+                run_step(
+                    level, queue, settings, WARMUP_SECONDS, measure, SEED + level, watch, budget
+                )
             )
             if scenario == "real":
                 step["cost_usd_so_far"] = round(stack.cost_usd(), 4)
@@ -764,6 +787,9 @@ def run(scenario: str, levels: tuple[int, ...], budget: float) -> dict[str, Any]
                 error_rate=last["error_rate"],
                 mac_limits=last["mac_limits"],
             )
+            if step["budget_reached"]:
+                stopped = f"level {level} reached the budget; no new case started after it"
+                break
             if last["mac_limits"]:
                 stopped = (
                     f"level {level} crossed a limit of the Mac: {', '.join(last['mac_limits'])}"

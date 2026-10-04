@@ -1,7 +1,10 @@
 """The pure parts of the load test (TRZ-40 CA7): percentiles, the simulated LLM, the next turn of a
 virtual customer, the criterion, the limits of the Mac and the report."""
 
+import asyncio
 import json
+import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -214,3 +217,26 @@ def test_the_report_shows_the_capacity_and_every_level(tmp_path: Path) -> None:
     assert "{'TimeoutError': 2}" in text
     assert "## Scenario `rules`" not in text
     assert (tmp_path / "carga.md").read_text(encoding="utf-8") == text
+
+
+def test_no_new_case_starts_once_the_budget_is_reached() -> None:
+    queue = [load.Charge("CC", "SYN0000001", load.message_for(5.0, "COP", "Uber"))]
+    step = load.Step(client=None, queue=queue, demo_code="0")  # type: ignore[arg-type]
+    until = time.perf_counter() + 10
+
+    asyncio.run(load._watch_spend(step, lambda: 0.26, 0.25, until))
+    assert step.closed
+    asyncio.run(step.customer(random.Random(0), until))
+    assert step.cases == 0 and len(queue) == 1
+
+
+def test_the_spend_is_watched_while_under_the_budget() -> None:
+    step = load.Step(client=None, queue=[], demo_code="0")  # type: ignore[arg-type]
+    reads: list[int] = []
+
+    def spend() -> float:
+        reads.append(1)
+        return 0.1
+
+    asyncio.run(load._watch_spend(step, spend, 0.25, time.perf_counter() + 0.01))
+    assert not step.closed and reads == [1]
