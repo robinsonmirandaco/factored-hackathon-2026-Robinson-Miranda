@@ -76,5 +76,5 @@ Cohort customers with no product: 388. With no transaction: 549.
 ## Evaluation splits
 
 The splits of TRZ-42 are drawn from gold/cohort/customers.parquet, so every customer
-they name is loaded. `pipeline.cohort.missing_from_cohort` checks it; until TRZ-42
-exists, a fixture split is the only thing it runs against.
+they name is loaded. `pipeline.cohort.missing_from_cohort` is the check, run by the
+unit tests.
