@@ -177,8 +177,22 @@
 .receipt-top .folio { font: 500 clamp(22px, 3vw, 28px) var(--mono); letter-spacing: 0.02em; }
 .receipt-bottom { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
 .meta { font: 11px var(--mono); color: var(--muted); }
-/* Shown while a chat request is in flight; Send stays off until the answer arrives. */
-.pending { margin: 0 0 6px 4px; }
+/* A message the request failed for: its mark and a retry, under its bubble. */
+.msg.me { flex-wrap: wrap; }
+.outgoing-note { flex-basis: 100%; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+/* The bubble of TRAZO while a reply is on its way; still dots for whoever prefers less motion. */
+.typing-dots { display: flex; gap: 5px; align-items: center; color: var(--muted); font-size: 14px; }
+.typing-word { margin-right: 4px; }
+.typing-dots .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: 0.35;
+  animation: typing-dot 1.2s infinite ease-in-out;
+}
+.typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-dot { 0%, 80%, 100% { opacity: 0.35; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .typing-dots .dot { animation: none; opacity: 0.7; }
+}
 .composer {
   display: flex; gap: 8px; align-items: center; padding: 8px 8px 8px 16px; background: var(--surface);
   border: 1px solid var(--field); border-radius: 16px;

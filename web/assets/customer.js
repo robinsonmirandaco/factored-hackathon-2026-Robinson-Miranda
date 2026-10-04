@@ -10,7 +10,8 @@ import {
   buttonMessage, canSend, clarificationLines, draftOn, closedNote, codeStep, composerState, createConversation,
   deadlineKind, traceHref, traceLines, traceRoute,
   errorText,
-  infoRequestViews, movementDetail, notificationsPath, openQuestions, reviewLine, statusKey, statusTone, turnModel,
+  infoRequestViews, movementDetail, notificationsPath, openQuestions, outgoingNote, reviewLine, statusKey, statusTone,
+  turnModel, typingView,
   unreadBadge,
 } from "./view.js";
 
@@ -739,32 +740,67 @@ function redrawLastTurn() {
   if (disabled) for (const b of last.node.querySelectorAll("button")) b.disabled = true;
 }
 
-// Send and Enter are off while a request is in flight, and the reply is shown on its way.
+// Send and Enter are off while a request is in flight, and a typing bubble shows the reply is on
+// its way until it arrives or fails.
 function drawComposer() {
   const view = composerState($("message").value, talk.busy());
   $("send").disabled = !view.canSubmit;
-  $("pending").hidden = !view.pending;
+  drawTyping(view.pending);
 }
 
-// One request at a time: a message, an option or a confirmation pressed while another one is in
-// flight is not sent. `sent` runs once the API answered, so typed text is cleared only then.
-async function send(body, shown, sent) {
+function drawTyping(on) {
+  const shown = $("log").querySelector(".msg.typing");
+  if (!on) return shown?.remove();
+  if (shown) return;
+  const view = typingView(t);
+  const dots = Array.from({ length: view.dots }, () => el("span", { class: "dot" }));
+  const node = el("div", { class: "msg bot typing", role: "status", "aria-live": "polite", "aria-label": view.label },
+    el("span", { class: "bot-mark", "aria-hidden": "true", text: "L" }),
+    el("div", { class: "turn" }, el("div", { class: "bubble typing-dots", "aria-hidden": "true" },
+      el("span", { class: "typing-word", text: view.word }), dots)));
+  $("log").append(node);
+  node.scrollIntoView({ block: "end", behavior: "smooth" });
+}
+
+// The mark under a message of the customer: none, or "not sent" with a retry that sends it again.
+function markOutgoing(node, status, retry) {
+  node.querySelector(".outgoing-note")?.remove();
+  const note = outgoingNote(t, status);
+  if (!note) return;
+  node.append(el("div", { class: "outgoing-note" },
+    el("span", { class: "error", text: note.text }),
+    el("button", { type: "button", class: "btn small", text: note.retry, onclick: retry })));
+}
+
+// One request at a time: a message, an option, a confirmation or a retry pressed while another one
+// is in flight is not sent. The message shows at once; if the request fails, its bubble keeps it
+// with a retry, so it is never lost and never left in the field.
+async function send(body, shown, mine = null) {
   const turn = talk.begin();
   if (turn === null) return;
-  bubble("me", shown);
+  const node = mine ?? bubble("me", shown);
+  markOutgoing(node, "sending");
   for (const b of $("log").querySelectorAll(".choices button")) b.disabled = true;
   drawComposer();
   try {
     const r = await api.call("/chat", { method: "POST", body });
     // The customer started a new conversation meanwhile: this answer belongs to the old one.
     if (!talk.end(turn, true)) return;
-    sent?.();
     setCase(r.case_id);
     renderTurn(r);
   } catch (e) {
     talk.end(turn, false);
     if (!talk.isCurrent(turn)) return;
     if (e.code === "case_not_found") setCase(null);
+    // A retry goes to the case the chat is in now, or opens one if that case is gone.
+    markOutgoing(node, "failed", () => {
+      const again = { ...body };
+      if ("case_id" in body) {
+        if (state.caseId) again.case_id = state.caseId;
+        else delete again.case_id;
+      }
+      send(again, shown, node);
+    });
     bubble("bot", el("div", { class: "bubble" }, el("span", { class: "error", text: errorText(t, e) })),
       e.traceId ? el("span", { class: "meta", text: `trace_id ${e.traceId}` }) : null);
   } finally {
@@ -799,10 +835,8 @@ $("composer").addEventListener("submit", (event) => {
   if (!composerState(text, talk.busy()).canSubmit) return;
   const body = { message: text };
   if (state.caseId) body.case_id = state.caseId;
-  send(body, text, () => {
-    // Only what was sent is cleared, not what the customer typed while waiting.
-    if ($("message").value.trim() === text) $("message").value = "";
-  });
+  $("message").value = draftOn("send", $("message").value);
+  send(body, text);
 });
 
 $("new-case").addEventListener("click", newConversation);

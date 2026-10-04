@@ -157,10 +157,22 @@ function chargeRows(t, lang, c) {
   ].filter((row) => row.value);
 }
 
-// What is typed in the chat stays when a send fails, so it can be sent again, and goes when a
-// session ends or starts: whoever signs in next on this browser must not see it.
+// The field is left empty when a message is sent (a failed one keeps its text in its bubble, with
+// a retry) and when a session ends or starts: whoever signs in next must not see it.
 export function draftOn(event, draft) {
-  return event === "send_failed" ? draft : "";
+  return ["send", "logout", "login"].includes(event) ? "" : draft;
+}
+
+// The bubble of TRAZO while a reply is on its way: the word shown next to the animated dots, and
+// the label read out by screen readers.
+export function typingView(t) {
+  return { word: t("typingWord"), label: t("typing"), dots: 3 };
+}
+
+// The mark of a message of the customer: none while it is sent or once it was, and "not sent"
+// with a retry when the request failed (a limit, the network, the database).
+export function outgoingNote(t, status) {
+  return status === "failed" ? { text: t("notSent"), retry: t("retrySend") } : null;
 }
 
 // Send is enabled only with something to send; an empty field never reaches the API.
