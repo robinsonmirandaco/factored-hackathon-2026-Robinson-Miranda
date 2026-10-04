@@ -158,7 +158,14 @@ def test_the_ceiling_of_each_rate_limit() -> None:
         "anthropic-ratelimit-input-tokens-limit": "50000",
         "anthropic-ratelimit-output-tokens-limit": "10000",
     }
-    usage = {"rows": 20, "input_tokens": 10000, "output_tokens": 2000, "cases": 10}
+    # Cache reads do not count toward the input token limit.
+    usage = {
+        "calls": 20,
+        "input_tokens": 4000,
+        "cache_write_tokens": 6000,
+        "cache_read_tokens": 90000,
+        "output_tokens": 2000,
+    }
     assert load.ceiling(limits, usage, 10) == {
         "requests": 25.0,
         "input-tokens": 50.0,

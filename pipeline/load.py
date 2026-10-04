@@ -606,30 +606,37 @@ class Stack:
         finally:
             engine.dispose()
 
+    def _api_log(self) -> list[dict[str, Any]]:
+        out = subprocess.run(["docker", "logs", f"{PROJECT}-api-1"], capture_output=True, text=True)
+        events = []
+        for line in (out.stdout + out.stderr).splitlines():
+            if line.startswith("{"):
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return events
+
     def llm_usage(self) -> dict[str, int]:
-        """Audit rows with LLM statistics, their tokens and the cases they belong to."""
-        engine = create_engine(self.admin_url)
-        try:
-            with engine.connect() as conn:
-                row = conn.execute(
-                    text(
-                        "SELECT count(*), coalesce(sum(input_tokens), 0), "
-                        "coalesce(sum(output_tokens), 0), count(DISTINCT case_id) "
-                        "FROM audit_log WHERE model IS NOT NULL"
-                    )
-                ).one()
-        finally:
-            engine.dispose()
-        return dict(zip(("rows", "input_tokens", "output_tokens", "cases"), row, strict=True))
+        """LLM calls of the API log and their tokens, cached and not.
+
+        From the log and not the audit log, whose input tokens add up the uncached, the
+        written and the read from cache: only the first two count toward the input token
+        rate limit.
+        """
+        usage = Counter[str]()
+        for e in self._api_log():
+            if e.get("event") == "llm_call":
+                usage["calls"] += 1
+                for key in ("input_tokens", "cache_write_tokens", "cache_read_tokens"):
+                    usage[key] += e.get(key, 0)
+                usage["output_tokens"] += e.get("output_tokens", 0)
+        return dict(usage)
 
     def llm_failures(self) -> dict[str, int]:
         """Failed LLM attempts by error, from the API log of the stack."""
-        out = subprocess.run(["docker", "logs", f"{PROJECT}-api-1"], capture_output=True, text=True)
-        counts: Counter[str] = Counter()
-        for line in (out.stdout + out.stderr).splitlines():
-            if '"llm_call_failed"' in line:
-                counts[json.loads(line).get("error", "unknown")] += 1
-        return dict(counts)
+        failed = (e for e in self._api_log() if e.get("event") == "llm_call_failed")
+        return dict(Counter(e.get("error", "unknown") for e in failed))
 
 
 def rate_limits(settings: Settings) -> dict[str, str]:
@@ -885,19 +892,22 @@ def machine() -> dict[str, Any]:
 def ceiling(limits: dict[str, str], usage: dict[str, int], cases: int) -> dict[str, float] | None:
     """Cases per minute each rate limit of the key allows, from the use per case of a run.
 
+    Tokens read from the cache do not count toward the input token limit (Anthropic rate limits
+    documentation; Haiku 3.5 is the exception); uncached and cache written tokens do.
+
     Args:
         limits: The anthropic-ratelimit-*-limit headers.
-        usage: Audit rows with LLM statistics and their tokens.
+        usage: LLM calls and tokens from `Stack.llm_usage`.
         cases: Cases the run finished, warm-up included, as `usage` counts them.
 
     Returns:
-        Cases per minute by limit, or None without limits or cases.
+        Cases per minute by limit, or None without limits, cases or calls.
     """
-    if not limits or not cases or not usage.get("rows"):
+    if not limits or not cases or not usage.get("calls"):
         return None
     per_case = {
-        "requests": usage["rows"] / cases,
-        "input-tokens": usage["input_tokens"] / cases,
+        "requests": usage["calls"] / cases,
+        "input-tokens": (usage["input_tokens"] + usage["cache_write_tokens"]) / cases,
         "output-tokens": usage["output_tokens"] / cases,
     }
     out = {}
@@ -1059,12 +1069,14 @@ def _scenario_section(r: dict[str, Any]) -> list[str]:
     if r["scenario"] == "real":
         cases = sum(s["cases_total"] for s in r["steps"])
         lines.append(f"- LLM spend recorded in the audit log: {r['cost_usd']} USD")
+        lines.append(f"- LLM calls and tokens in the API log, warm-up included: {r['llm_usage']}")
         if r["rate_limits"]:
             lines.append(f"- Rate limits of the key: {r['rate_limits']}")
             cap = ceiling(r["rate_limits"], r["llm_usage"], cases)
             if cap:
                 lines.append(
-                    "- Cases per minute each limit allows at the use per case of this run "
+                    "- Cases per minute each limit allows at the use per case of this run; "
+                    "tokens read from the cache do not count toward the input limit "
                     f"(warm-up included, {cases} cases): {cap}"
                 )
     lines.append("")
