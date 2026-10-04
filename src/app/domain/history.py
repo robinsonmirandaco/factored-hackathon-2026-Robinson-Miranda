@@ -3,9 +3,10 @@
 Each (actor, action) pair has one template per language. A template reads only non-personal
 fields (intent, rule, level, counts, outcome, the analyst's user name and closed-list reason;
 without the user name a line says "the analyst"):
-never the redacted customer text, the reply, a product number or an operator note. The one
-exception is a request for information: its question and the customer's answer, both redacted
-before they are stored, are told so the answer can be read against its question (TRZ-28).
+never the redacted customer text, the reply, a product number or an operator note. Two
+exceptions, both redacted before they are stored: a request for information, whose question and
+answer are told so the answer can be read against its question (TRZ-28), and the message a turn
+starts with, so the turn opens with what the customer wrote (trace by turn, TRZ-34 CA4).
 The LLM takes no part in this text.
 """
 
@@ -203,6 +204,15 @@ def _extract(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
         return f"El sistema entendió el mensaje del cliente como «{intent}»{how}."
     how = " (com regras, sem LLM)" if r.get("fallback") else ""
     return f"O sistema entendeu a mensagem do cliente como «{intent}»{how}."
+
+
+def _comprehend(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    # A turn opens with what the customer wrote, stored redacted; the purge marker is translated.
+    said = shown(p.get("redacted_text"), lang)
+    if not said:
+        return _extract(lang, p, r, policy)
+    wrote = f"El cliente escribió: «{said}»." if lang == "es" else f"O cliente escreveu: «{said}»."
+    return f"{wrote} {_extract(lang, p, r, policy)}"
 
 
 def _compose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -873,7 +883,7 @@ Template = Callable[[Lang, Fields, Fields, str | None], str]
 # holds rows of them, which the history must keep telling.
 TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "extract"): _extract,
-    ("agent", "comprehend"): _extract,
+    ("agent", "comprehend"): _comprehend,
     ("agent", "confirm"): _confirm,
     ("agent", "decline"): _decline,
     ("agent", "existing_case"): _existing_case,

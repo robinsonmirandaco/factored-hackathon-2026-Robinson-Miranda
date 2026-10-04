@@ -308,9 +308,11 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
     traces = {first.headers["x-trace-id"], second.headers["x-trace-id"]}
     assert {e["trace_id"] for e in es.json()} == traces
     assert es.json()[0]["text"] == (
+        f"El cliente escribió: «{MESSAGE}». "
         "El sistema entendió el mensaje del cliente como «cargo no reconocido»."
     )
     assert pt.json()[0]["text"] == (
+        f"O cliente escreveu: «{MESSAGE}». "
         "O sistema entendeu a mensagem do cliente como «cobrança não reconhecida»."
     )
     shown = next(e for e in es.json() if e["action"] == "show_charge_detail")
@@ -320,8 +322,9 @@ def test_history_tells_each_step_in_spanish_and_portuguese(
     decide = next(e for e in es.json() if e["action"] == "decide")
     assert decide["text"].startswith("La política v2026.09.5")
     assert all(e["text"] != p["text"] for e, p in zip(es.json(), pt.json(), strict=True))
-    # Only the sentences: timestamps and trace ids can contain "100" by chance.
-    texts = " ".join(e["text"] for e in es.json())
+    # Only the sentences: timestamps and trace ids can contain "100" by chance. The message a
+    # turn starts with is the one line that tells it, redacted; no other line repeats it.
+    texts = " ".join(e["text"] for e in es.json() if e["action"] != "comprehend")
     assert "Walmart" not in texts and "100" not in texts
 
 
