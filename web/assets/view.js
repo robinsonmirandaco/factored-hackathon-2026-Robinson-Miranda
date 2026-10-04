@@ -360,15 +360,17 @@ export function traceCase(hash) {
 // The steps as the API tells them; the screen adds no figure, no date and no internal code.
 // Time of a step as a difference since the first step of its turn, and its duration: never a
 // clock time, since the audit log keeps the real clock (design 10.2, rule 7).
-// Tenths of a second, halves up (1450 ms is 1.5 s), with the decimal comma of es and pt.
-const seconds = (lang, ms) => (Math.round(ms / 100) / 10).toFixed(1).replace(".", ",");
+// Milliseconds under a second ("12 ms"); from one second on, tenths of a second, halves up
+// (1450 ms is 1.5 s), with the decimal comma of es and pt.
+const elapsed = (lang, ms) =>
+  ms < 1000 ? `${Math.round(ms)} ms` : `${(Math.round(ms / 100) / 10).toFixed(1).replace(".", ",")} s`;
 
 export function stepTime(lang, ms) {
-  return ms == null ? null : `+${seconds(lang, ms)} s`;
+  return ms == null ? null : `+${elapsed(lang, ms)}`;
 }
 
 export function stepDuration(lang, ms) {
-  return ms == null ? null : `${seconds(lang, ms)} s`;
+  return ms == null ? null : elapsed(lang, ms);
 }
 
 // The trace of the customer's case: the bank date, language and status above, then each turn

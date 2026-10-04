@@ -251,13 +251,13 @@ test("the history is grouped by turn with numbered steps, time and duration", as
     {
       number: 1, header: "El cliente escribió un mensaje",
       steps: [
-        { number: 1, text: "Paso 1.", meta: "agent · x", time: "+0,0 s", duration: "1,4 s" },
+        { number: 1, text: "Paso 1.", meta: "agent · x", time: "+0 ms", duration: "1,4 s" },
         { number: 2, text: "Paso 2.", meta: "agent · x", time: "+1,5 s", duration: null },
       ],
     },
     {
       number: 2, header: "El cliente dijo que no reconoce el cargo",
-      steps: [{ number: 3, text: "Paso 3.", meta: "agent · x", time: "+0,0 s", duration: null }],
+      steps: [{ number: 3, text: "Paso 3.", meta: "agent · x", time: "+0 ms", duration: null }],
     },
   ]);
   assert.deepEqual(historyTurns([]), []);

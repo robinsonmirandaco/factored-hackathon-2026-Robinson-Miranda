@@ -48,12 +48,17 @@ const TRACE = {
   ],
 };
 
-test("a step's time is a difference inside its turn and its duration, with the decimal comma", () => {
-  assert.equal(stepTime("es", 0), "+0,0 s");
+test("a step's time is in milliseconds under a second and in seconds with one decimal from one", () => {
+  assert.equal(stepTime("es", 0), "+0 ms");
+  assert.equal(stepTime("es", 12), "+12 ms");
+  assert.equal(stepTime("pt", 999), "+999 ms");
+  assert.equal(stepTime("es", 1000), "+1,0 s");
   assert.equal(stepTime("pt", 1234), "+1,2 s");
   assert.equal(stepTime("es", null), null);
+  assert.equal(stepDuration("es", 8), "8 ms");
+  assert.equal(stepDuration("pt", 45), "45 ms");
+  assert.equal(stepDuration("es", 1100), "1,1 s");
   assert.equal(stepDuration("es", 1400), "1,4 s");
-  assert.equal(stepDuration("pt", 45), "0,0 s");
   assert.equal(stepDuration("es", null), null);
 });
 
@@ -65,7 +70,7 @@ test("the trace has its header and its turns with numbered steps, as the API wro
     [2, "Você disse que não reconhece a cobrança"],
   ]);
   assert.deepEqual(pt.turns[0].steps, [
-    { number: 1, text: "Linha 1.", traceId: "t-1", time: "+0,0 s", duration: null },
+    { number: 1, text: "Linha 1.", traceId: "t-1", time: "+0 ms", duration: null },
     { number: 2, text: "Linha 2.", traceId: "t-1", time: "+1,2 s", duration: "1,4 s" },
   ]);
   // QA: "policy · decide" under each line was an internal code the customer does not read.
