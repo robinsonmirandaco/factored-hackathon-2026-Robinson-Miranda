@@ -7,7 +7,7 @@ import { createClient } from "./api.js";
 import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   AUDIT_KEY, auditOn, auditSwitchView,
-  buttonMessage, canSend, clarificationLines, draftOn, closedNote, codeStep, composerState, createConversation,
+  buttonMessage, canSend, clarificationLines, draftOn, greetingFollowsLanguage, closedNote, codeStep, composerState, createConversation,
   deadlineKind, traceHref, traceLines, traceRoute,
   errorText,
   infoRequestViews, movementDetail, notificationsPath, openQuestions, outgoingNote, reviewLine, statusKey, statusTone,
@@ -72,6 +72,7 @@ function setLang(lang) {
   api.store.write(LANG_KEY, lang);
   t = translator(lang);
   applyTexts();
+  if (greetingFollowsLanguage($("log").querySelectorAll(".msg.me").length)) greet();
   redrawLastTurn();
   drawAudit();
   route();

@@ -163,6 +163,12 @@ export function draftOn(event, draft) {
   return ["send", "logout", "login"].includes(event) ? "" : draft;
 }
 
+// The greeting follows the language of the screen until the customer writes; after that, what is
+// in the chat stays as it was written.
+export function greetingFollowsLanguage(customerMessages) {
+  return customerMessages === 0;
+}
+
 // The bubble of TRAZO while a reply is on its way: the word shown next to the animated dots, and
 // the label read out by screen readers.
 export function typingView(t) {
