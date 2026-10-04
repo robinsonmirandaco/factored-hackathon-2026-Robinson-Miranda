@@ -277,3 +277,32 @@ def test_a_ten_digit_cedula_after_its_keyword_stays_a_document() -> None:
 )
 def test_the_new_rules_leave_amounts_folios_and_digits_alone(text: str) -> None:
     assert redact(text) == (text, {})
+
+
+# ---- System identifiers whose random part comes out all digits --------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Tu caso es CASE-1234567890.",
+        "Tu caso es CASE-3001234567.",
+        "acción ACT-5512345678 registrada",
+        "trace 9f1234567890ab",
+        "trace ab11987654321c",
+    ],
+)
+def test_a_system_id_with_ten_or_more_digits_is_not_a_phone(text: str) -> None:
+    assert redact(text) == (text, {})
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("Tu caso es CASE-1234567890, mi número es 5512345678", "5512345678"),
+        ("caso CASE-A1B2C3D4E5; llámame al 3001234567", "3001234567"),
+    ],
+)
+def test_a_phone_next_to_a_system_id_is_still_redacted(text: str, secret: str) -> None:
+    out, counts = redact(text)
+    assert secret not in out and "CASE-" in out and counts == {PHONE: 1}

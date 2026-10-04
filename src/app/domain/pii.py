@@ -21,7 +21,8 @@ folios from the same text, so the patterns are shaped to leave those alone:
   Mexican or Argentine number, is redacted as a phone after the keyword rules, so a 10-digit
   cédula after "cédula" stays a document and one without a keyword is still redacted. An
   amount written as 10 bare digits would lose its clue; no development or calibration message
-  has one.
+  has one. A bare shape glued to a letter or to a prefix and hyphen is a system id such as
+  CASE-1234567890, not a phone.
 - A CURP is redacted by its shape, with or without the keyword, even with a wrong check digit.
 
 Names cannot be found by pattern. The first name of the customer in session is known, so it is
@@ -46,6 +47,12 @@ _NUMBER_FILLER = (
     r"(?:\s*(?:de\s+(?:ciudadan[íi]a|identidad|ahorros)|corriente|poupan[çc]a|n[úu]mero|number"
     r"|nro\.?|no\.?|n[º°]\.?|es|é|is|:|#))*\s*"
 )
+
+
+# Start of a phone found by its bare shape. Not glued to a letter or to a prefix and hyphen, so
+# the random part of a system id (CASE-1234567890, ACT-..., a hex trace id) that comes out all
+# digits is not taken for a phone.
+_BARE = r"(?<![\w.])(?<!\w-)"
 
 
 _Check = Callable[[re.Match[str]], bool]
@@ -156,7 +163,7 @@ _RULES: list[tuple[str, re.Pattern[str], _Check | None]] = [
         re.compile(r"(?<![\d.])(?:\(\d{2,3}\)|\d{2,3})[ .-]\d{3,5}[ .-]?\d{4}(?![\d])"),
         None,
     ),
-    (PHONE, re.compile(r"(?<![\d.])(?:3\d{9}|[1-9]{2}9\d{8})(?![\d])"), None),
+    (PHONE, re.compile(_BARE + r"(?:3\d{9}|[1-9]{2}9\d{8})(?!\w)"), None),
     (
         PHONE,
         re.compile(
@@ -189,7 +196,7 @@ _RULES: list[tuple[str, re.Pattern[str], _Check | None]] = [
         None,
     ),
     # Last, so a keyword above names the number first.
-    (PHONE, re.compile(r"(?<![\d.,])[1-9]\d{9}(?![\d])"), None),
+    (PHONE, re.compile(_BARE + r"(?<!,)[1-9]\d{9}(?!\w)"), None),
 ]
 
 
