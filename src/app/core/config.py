@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 5.0
     llm_max_retries: int = 1
     llm_retry_wait_seconds: float = 0.5
+    # Threads that run LLM calls, and how long a call may wait for one before the turn falls back
+    # to the rules; the deadline of an attempt starts when a thread runs it.
+    llm_pool_size: int = 8
+    llm_queue_wait_seconds: float = 5.0
     # One comprehension call at startup, in the background, so the first turn is not cold.
     llm_warm_up: bool = True
     # False forces the deterministic fallback path (CI and golden cases).
@@ -68,6 +72,9 @@ class Settings(BaseSettings):
     # Requests per client address to each login endpoint in each window (TRZ-40).
     ip_request_limit: int = 30
     ip_request_window_minutes: int = 15
+    # Customer turns per client address in the same window: a case takes several, and evaluators
+    # may share an address, so its limit is its own; it caps the LLM spend of one address.
+    chat_ip_request_limit: int = 120
     # Header the edge proxy sets with the client address: empty reads the socket address
     # (local, CI); x-real-ip behind the edge of Railway, which passes X-Forwarded-For through as
     # the client wrote it.

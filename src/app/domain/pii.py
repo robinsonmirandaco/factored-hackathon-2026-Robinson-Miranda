@@ -17,8 +17,12 @@ folios from the same text, so the patterns are shaped to leave those alone:
   with a valid check digit) and a CBU (22 digits), which no amount or card can be.
 - A phone needs a country code (+52, +54, +55, +57), a national grouping such as
   "(55) 1234-5678" or "300 123 4567", a keyword such as "celular", or the bare shape of a
-  Colombian or Brazilian mobile. A bare Mexican or Argentine number without grouping or keyword
-  cannot be told apart from a document and is left in the text.
+  Colombian or Brazilian mobile. Any other bare run of exactly 10 digits, the length of a
+  Mexican or Argentine number, is redacted as a phone after the keyword rules, so a 10-digit
+  cédula after "cédula" stays a document and one without a keyword is still redacted. An
+  amount written as 10 bare digits would lose its clue; no development or calibration message
+  has one.
+- A CURP is redacted by its shape, with or without the keyword, even with a wrong check digit.
 
 Names cannot be found by pattern. The first name of the customer in session is known, so it is
 replaced wherever it appears, ignoring case and accents; other names are not detected.
@@ -184,6 +188,8 @@ _RULES: list[tuple[str, re.Pattern[str], _Check | None]] = [
         ),
         None,
     ),
+    # Last, so a keyword above names the number first.
+    (PHONE, re.compile(r"(?<![\d.,])[1-9]\d{9}(?![\d])"), None),
 ]
 
 

@@ -3,11 +3,13 @@
 // an analyst can be open side by side. It is never put in a URL or in localStorage.
 
 export class ApiError extends Error {
-  constructor(status, code, message, traceId) {
+  constructor(status, code, message, traceId, retryAfter = null) {
     super(message || code || `HTTP ${status}`);
     this.status = status;
     this.code = code;
     this.traceId = traceId;
+    // Seconds to wait, from Retry-After, when the server says so (a 429 of the network limit).
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -44,7 +46,11 @@ export function createClient(role) {
     });
     const data = response.status === 204 ? null : await response.json().catch(() => null);
     if (!response.ok) {
-      const error = new ApiError(response.status, data?.error_code, data?.message, data?.trace_id);
+      const wait = Number(response.headers.get("retry-after"));
+      const error = new ApiError(
+        response.status, data?.error_code, data?.message, data?.trace_id,
+        Number.isFinite(wait) && wait > 0 ? wait : null,
+      );
       if (response.status === 401 && memory) {
         window.dispatchEvent(new CustomEvent("trazo:session-lost", { detail: error }));
       }

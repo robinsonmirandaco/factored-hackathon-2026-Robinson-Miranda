@@ -2,6 +2,7 @@
 retried, JSON validation, the warm-up call and the fixed replies (TRZ-36)."""
 
 import json
+import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -355,3 +356,64 @@ def test_the_translation_prompt_names_no_placeholder_the_message_lacks() -> None
     _client(lambda _r: message("Hola"), calls).translate("Oi")
     system = calls[0].split("\n")[0]
     assert "[CARD]" not in calls[0] and "[NAME]" not in calls[0], system
+
+
+# ---- the pool of LLM threads: its size, and a deadline that starts with the call ----------
+
+
+def _hold_the_pool(llm: LLMClient) -> threading.Event:
+    """Occupies the only thread of a one-thread pool until the returned event is set."""
+    release = threading.Event()
+    started = threading.Event()
+
+    def hold() -> None:
+        started.set()
+        release.wait(10)
+
+    llm._pool.submit(hold)
+    assert started.wait(5)
+    return release
+
+
+def test_the_pool_size_comes_from_the_settings() -> None:
+    llm = _client(lambda _r: message(json.dumps(READING)), [], llm_pool_size=3)
+    assert llm._pool._max_workers == 3
+
+
+def test_the_deadline_starts_when_a_thread_runs_the_call_not_while_it_waits() -> None:
+    calls: list[str] = []
+    llm = _client(
+        lambda _r: message(json.dumps(READING)),
+        calls,
+        llm_pool_size=1,
+        llm_timeout_seconds=0.3,
+        llm_queue_wait_seconds=5.0,
+    )
+    release = _hold_the_pool(llm)
+    threading.Timer(0.8, release.set).start()
+
+    result, stats = llm.comprehend(MESSAGE, CONTEXT)
+
+    # Queued 0.8 s, longer than the 0.3 s deadline, then answered at once: one call, no fallback.
+    assert not stats.fallback and stats.error is None
+    assert stats.calls == 1 and len(calls) == 1
+    assert result.intent == "unrecognized_charge"
+
+
+def test_a_call_that_waits_too_long_for_a_thread_falls_back_without_reaching_the_provider() -> None:
+    calls: list[str] = []
+    llm = _client(
+        lambda _r: message(json.dumps(READING)),
+        calls,
+        llm_pool_size=1,
+        llm_queue_wait_seconds=0.2,
+    )
+    release = _hold_the_pool(llm)
+    try:
+        result, stats = llm.comprehend(MESSAGE, CONTEXT)
+    finally:
+        release.set()
+
+    assert stats.fallback and stats.error == "llm_queue_full"
+    assert calls == []
+    assert result.intent == "out_of_scope"  # rules baseline

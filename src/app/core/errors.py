@@ -21,22 +21,33 @@ class AppError(Exception):
         error_code: Stable identifier clients can branch on, for example "case_not_found".
         message: Human-readable explanation, safe to show to the client.
         status_code: HTTP status returned to the client.
+        headers: Extra response headers, such as Retry-After on a 429.
     """
 
-    def __init__(self, error_code: str, message: str, status_code: int = 400) -> None:
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        status_code: int = 400,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.message = message
         self.status_code = status_code
+        self.headers = headers
 
 
-def error_response(status_code: int, error_code: str, message: str) -> JSONResponse:
+def error_response(
+    status_code: int, error_code: str, message: str, headers: dict[str, str] | None = None
+) -> JSONResponse:
     """Builds the error envelope for the current request.
 
     Args:
         status_code: HTTP status to return.
         error_code: Stable machine-readable code.
         message: Client-safe explanation.
+        headers: Extra response headers.
 
     Returns:
         A JSON response with error_code, message and the current trace_id.
@@ -44,12 +55,13 @@ def error_response(status_code: int, error_code: str, message: str) -> JSONRespo
     return JSONResponse(
         status_code=status_code,
         content={"error_code": error_code, "message": message, "trace_id": trace_id_var.get()},
+        headers=headers,
     )
 
 
 async def _app_error(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
-    return error_response(exc.status_code, exc.error_code, exc.message)
+    return error_response(exc.status_code, exc.error_code, exc.message, exc.headers)
 
 
 async def _validation_error(_request: Request, exc: Exception) -> JSONResponse:
