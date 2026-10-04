@@ -29,13 +29,64 @@ TRAZO handles the entry of that funnel: it identifies the charge the customer me
 
 ```mermaid
 flowchart LR
-  W[Customer web and analyst console] --> API[FastAPI service, stateless]
-  API --> ID[Test identity: one-time code and JWT with role]
-  API --> LLM[LLM provider behind one client]
-  API --> DB[(Postgres with row level security per customer)]
-  API --> LOG[(Append-only audit log)]
-  API -.-> MAIL[Transactional email behind a flag, off]
+  subgraph TURN["One turn, every step audited"]
+    direction LR
+    MSG["Customer message<br/>ES-MX, ES-CO, ES-AR, PT-BR"] --> PII["PII redaction"]
+    PII --> LLM["LLM comprehension<br/>intent and clues,<br/>each with its literal fragment"]
+    LLM -.->|"LLM slow or down"| RULES["Rules fallback"]
+    LLM --> CONF["Conformal identification<br/>1 charge: shown<br/>2 or 3: offered<br/>more: ask one detail"]
+    RULES -.-> CONF
+    CONF --> REC{"Customer recognizes<br/>the charge?"}
+    REC -->|"yes"| CLOSED["Closed with nothing done"]
+    REC -->|"no"| POL["Policy in config/policy.yaml<br/>and the autonomy level of the cell"]
+    POL --> OK{"Customer confirms<br/>the exact action_id?"}
+    OK -->|"yes"| ACT["Idempotent action<br/>register dispute, block card"]
+    ACT --> RB["Read back from the database<br/>only what is verified is confirmed"]
+    RB --> RCPT["Receipt with folio and deadline<br/>written by code"]
+    CLOSED --> DRAFT["LLM drafts a free reply<br/>within verified facts"]
+    DRAFT --> FC["Deterministic fact checker<br/>unsupported claim: fixed template"]
+    FC --> OUT["Reply to the customer"]
+    RCPT --> OUT
+  end
+
+  subgraph CONSOLE["Analyst console"]
+    direction LR
+    Q["Queue with priority and SLA"] --> DOS["Dossier with sources"]
+    DOS --> AD{"Analyst decision<br/>approve, reject with reason,<br/>ask for information"}
+  end
+
+  subgraph WATCH["Autonomy watch"]
+    direction LR
+    SAMPLE["Audit sample<br/>rho = 0.10 of cases resolved alone"]
+    W["Wilson lower bound<br/>per cell: intent by language"]
+  end
+
+  POL -->|"approval or escalation"| Q
+  AD -->|"approve"| ACT
+  RB -.-> SAMPLE
+  SAMPLE --> Q
+  AD -->|"reviews and reversals"| W
+  W ==>|"demote or promote<br/>one level"| POL
+
+  DB[("Postgres with<br/>row level security")]
+  LOG[("Append-only audit log")]
+  DB --> CONF
+  DB --> RB
+  TURN -.-> LOG
+
+  classDef llm fill:#ede4fb,stroke:#6d3fc0,color:#2a1650
+  classDef code fill:#e3f4e8,stroke:#2f8a4c,color:#123d20
+  classDef stats fill:#fdecd9,stroke:#d0711b,color:#4d2604
+  classDef people fill:#e1edfb,stroke:#2f6db5,color:#0f2c4f
+  classDef store fill:#f2f2f2,stroke:#666666,color:#222222
+  class LLM,DRAFT llm
+  class PII,RULES,POL,ACT,RB,RCPT,FC,CLOSED code
+  class CONF,SAMPLE,W stats
+  class MSG,REC,OK,Q,DOS,AD,OUT people
+  class DB,LOG store
 ```
+
+Purple: LLM (comprehension and the drafting of free replies). Green: deterministic code (PII, rules, policy, action, read back, fact checker). Orange: statistics (conformal set, audit sample, Wilson). Blue: people (the customer, the customer's decisions, the queue, the dossier, the analyst's decision).
 
 | Task | Who | Why |
 | --- | --- | --- |
@@ -49,6 +100,18 @@ flowchart LR
 The LLM never picks a tool, never provides a customer id, never decides autonomy and never states a figure that is not among the verified facts. Why a governed workflow and not a free agent: [ADR 2](docs/adr/0002-governed-workflow-over-a-free-agent.md). Why the ground truth is built from real transactions: [ADR 6](docs/adr/0006-ground-truth-built-from-real-transactions.md).
 
 The code follows thin routers (`src/app/api/`), Pydantic schemas (`schemas/`), application services (`services/`), pure business rules (`domain/`) and adapters (`adapters/`); the schema, row level security and the audit trigger live in versioned SQL migrations (`db/migrations/`).
+
+### Deployment
+
+```mermaid
+flowchart LR
+  W[Customer web and analyst console] --> API[FastAPI service, stateless]
+  API --> ID[Test identity: one-time code and JWT with role]
+  API --> LLM[LLM provider behind one client]
+  API --> DB[(Postgres with row level security per customer)]
+  API --> LOG[(Append-only audit log)]
+  API -.-> MAIL[Transactional email behind a flag, off]
+```
 
 ## Try the public demo
 
