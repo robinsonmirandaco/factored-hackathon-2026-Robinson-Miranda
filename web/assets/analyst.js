@@ -451,7 +451,7 @@ function dossierCards(d, history) {
     el("h2", { text: "Historial" }),
     historyTurns(history).map((turn) => el("section", { class: "trace-turn" },
       el("h3", { class: "trace-turn-head", text: `Turno ${turn.number} · ${turn.header}` }),
-      el("ol", { class: "timeline" }, turn.steps.map((s) => el("li", {},
+      el("div", { class: "timeline", role: "list" }, turn.steps.map((s) => el("div", { class: "step", role: "listitem" },
         el("span", { class: "rail" }),
         el("div", { class: "body" },
           el("span", { class: "title" }, el("span", { class: "step-no", text: `${s.number}.` }), s.text),

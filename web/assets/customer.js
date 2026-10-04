@@ -257,11 +257,12 @@ const auditVisible = () => state.audit && Boolean(state.me?.demo);
 function timeline(trace) {
   const view = traceView(t, state.lang, trace);
   if (!view.turns.length) return el("p", { class: "small muted", text: t("traceEmpty") });
-  return el("div", { class: "trace" },
+  // One number per step, the step's own: a plain list with roles, never a numbered list.
+  return el("div", { class: "trace-body" },
     el("p", { class: "small muted trace-meta", text: view.meta.join(" · ") }),
     view.turns.map((turn) => el("section", { class: "trace-turn" },
       el("h3", { class: "trace-turn-head", text: `${t("turn")} ${turn.number} · ${turn.header}` }),
-      el("ol", { class: "timeline" }, turn.steps.map((s) => el("li", {},
+      el("div", { class: "timeline", role: "list" }, turn.steps.map((s) => el("div", { class: "step", role: "listitem" },
         el("span", { class: "rail" }),
         el("div", { class: "body" },
           el("span", { class: "title" }, el("span", { class: "step-no", text: `${s.number}.` }), s.text),
