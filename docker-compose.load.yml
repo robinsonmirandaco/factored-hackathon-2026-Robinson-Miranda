@@ -1,8 +1,9 @@
 # Isolated stack of the load test (TRZ-40 CA7), on top of docker-compose.yml:
 #   docker compose -p load -f docker-compose.yml -f docker-compose.load.yml up -d --wait
 # make load starts it with its own ports, so the default project and its data are never touched.
-# Only here, the per-address and per-document login limits are lifted: every simulated customer
-# logs in from the same address, and the public URL keeps its limits.
+# Only here, the per-address and per-document login limits and the per-address limit of /chat
+# are lifted: every simulated customer comes from the same address, and the public URL keeps
+# its limits.
 services:
   # As many synthetic customers as the cohort of design 11.7, so each case can be a customer of
   # its own (see pipeline/load.py).
@@ -13,6 +14,7 @@ services:
   api:
     environment:
       IP_REQUEST_LIMIT: "1000000"
+      CHAT_IP_REQUEST_LIMIT: "1000000"
       OTP_REQUEST_LIMIT: "1000000"
       DEMO_MODE: "true"
       LLM_ENABLED: ${LOAD_LLM_ENABLED:-false}

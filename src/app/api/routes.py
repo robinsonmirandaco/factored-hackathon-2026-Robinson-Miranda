@@ -164,12 +164,17 @@ def _token(issued: auth.IssuedToken, runtime: RuntimeDep) -> TokenOut:
 @router.post(
     "/chat",
     response_model=ChatOut,
-    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422]},
+    responses={**_AUTH, 404: _ERRORS[404], 422: _ERRORS[422], 429: _ERRORS[429]},
 )
 def chat(
-    body: ChatIn, customer: CustomerDep, session: CustomerSessionDep, runtime: RuntimeDep
+    body: ChatIn,
+    customer: CustomerDep,
+    session: CustomerSessionDep,
+    runtime: RuntimeDep,
+    address: ClientAddressDep,
 ) -> ChatOut:
     """Handles one customer turn: understand, decide, act or escalate, reply."""
+    auth.limit_address(runtime.db, runtime.settings, "chat", address, runtime.now())
     # The body's customer_id never selects data. Naming someone else is an attempt to reach
     # another customer's data, which the policy stops as a security event.
     foreign = body.customer_id is not None and body.customer_id != customer.subject

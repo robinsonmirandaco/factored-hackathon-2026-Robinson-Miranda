@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # Requests per client address to each login endpoint in each window (TRZ-40).
     ip_request_limit: int = 30
     ip_request_window_minutes: int = 15
+    # Customer turns per client address in the same window: a case takes several, and evaluators
+    # may share an address, so its limit is its own; it caps the LLM spend of one address.
+    chat_ip_request_limit: int = 120
     # Header the edge proxy sets with the client address: empty reads the socket address
     # (local, CI); x-real-ip behind the edge of Railway, which passes X-Forwarded-For through as
     # the client wrote it.

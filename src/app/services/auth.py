@@ -98,7 +98,7 @@ def check_secrets(settings: Settings) -> None:
         raise ValueError("DOCUMENT_HASH_KEY is not set; login hashes the document with it")
 
 
-LimitScope = Literal["otp_request", "otp_verify", "analyst_login"]
+LimitScope = Literal["otp_request", "otp_verify", "analyst_login", "chat"]
 
 # One statement counts the request and restarts a window that ran out, so concurrent requests
 # and several replicas share one count without a lock held across statements.
@@ -117,17 +117,19 @@ _COUNT_ADDRESS = text(
 def limit_address(
     db: Database, settings: Settings, scope: LimitScope, address: str, now: datetime
 ) -> None:
-    """Counts a login request from a client address and refuses it past the limit (TRZ-40).
+    """Counts a request from a client address and refuses it past the limit (TRZ-40).
 
     The limit per document does not stop one address from trying many documents, so each login
     endpoint also allows IP_REQUEST_LIMIT requests per address in each window. It runs before
-    the document is read, so the answer is the same whether a customer has the document. The
-    address is stored only as a keyed hash, and refused requests count too.
+    the document is read, so the answer is the same whether a customer has the document.
+    Customer turns (`chat`) have CHAT_IP_REQUEST_LIMIT in the same window, so one address
+    cannot spend the LLM without bound. The address is stored only as a keyed hash, and
+    refused requests count too.
 
     Args:
         db: Database.
         settings: Application settings.
-        scope: The login endpoint, each with its own count.
+        scope: The endpoint, each with its own count.
         address: Client address, as read by the API layer.
         now: Real current time, naive UTC.
 
@@ -142,7 +144,8 @@ def limit_address(
         count = s.execute(
             _COUNT_ADDRESS, {"scope": scope, "key": key, "now": now, "expired": expired}
         ).scalar_one()
-    if count > settings.ip_request_limit:
+    limit = settings.chat_ip_request_limit if scope == "chat" else settings.ip_request_limit
+    if count > limit:
         raise AppError(
             "ip_requests_limited", "Too many requests from this network. Try again later.", 429
         )

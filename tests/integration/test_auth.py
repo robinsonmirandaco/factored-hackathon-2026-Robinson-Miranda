@@ -794,3 +794,86 @@ def test_the_address_is_stored_only_as_a_keyed_hash(
 
 def _bearer(token: str) -> dict[str, str]:
     return {"authorization": f"Bearer {token}"}
+
+
+# ---- /chat is limited per address too (TRZ-40): a session must not spend the LLM freely ----
+
+
+@pytest.fixture
+def chat_behind_proxy(seeded: SchemaUrls, database_url: str, clock: Clock) -> Iterator[TestClient]:
+    app = _app(
+        database_url,
+        clock,
+        client_ip_header="x-real-ip",
+        chat_ip_request_limit=3,
+        ip_request_limit=3,
+    )
+    with TestClient(app, raise_server_exceptions=False) as c:
+        yield c
+
+
+def _session(c: TestClient, customer_id: str, address: str) -> str:
+    c.post("/auth/otp/request", json=document(customer_id), headers=_from(address))
+    r = c.post(
+        "/auth/otp/verify",
+        json={**document(customer_id), "code": DEMO_CODE},
+        headers=_from(address),
+    )
+    assert r.status_code == 200, r.text
+    return str(r.json()["access_token"])
+
+
+def _turn(c: TestClient, token: str, address: str, spoofed: str | None = None) -> Any:
+    return c.post(
+        "/chat", json={"message": "hola"}, headers=_bearer(token) | _from(address, spoofed)
+    )
+
+
+def test_one_address_gets_its_chat_turns_then_429_until_the_window_ends(
+    chat_behind_proxy: TestClient, clock: Clock
+) -> None:
+    c = chat_behind_proxy
+    token = _session(c, "C1", ADDRESS)
+    for i in range(3):
+        r = _turn(c, token, ADDRESS)
+        assert r.status_code == 200, (i, r.text)
+    _error(_turn(c, token, ADDRESS), 429, "ip_requests_limited")
+    assert _turn(c, token, "203.0.113.5").status_code == 200
+    clock.advance(15)
+    assert _turn(c, token, ADDRESS).status_code == 200
+
+
+def test_the_chat_count_and_the_login_counts_do_not_spend_each_other(
+    chat_behind_proxy: TestClient,
+) -> None:
+    c = chat_behind_proxy
+    token = _session(c, "C1", ADDRESS)
+    for _ in range(3):
+        _turn(c, token, ADDRESS)
+    _error(_turn(c, token, ADDRESS), 429, "ip_requests_limited")
+    # The login of the same address keeps its own count.
+    r = c.post("/auth/otp/request", json=document("C2"), headers=_from(ADDRESS))
+    assert r.status_code == 202
+    for i in range(3):
+        c.post("/auth/otp/request", json=document(f"N{i}"), headers=_from("203.0.113.9"))
+    _error(
+        c.post("/auth/otp/request", json=document("N9"), headers=_from("203.0.113.9")),
+        429,
+        "ip_requests_limited",
+    )
+    assert _turn(c, token, "203.0.113.9").status_code == 200
+
+
+def test_a_forged_forwarded_for_does_not_escape_the_chat_limit(
+    chat_behind_proxy: TestClient,
+) -> None:
+    c = chat_behind_proxy
+    token = _session(c, "C1", ADDRESS)
+    for i in range(3):
+        _turn(c, token, ADDRESS, spoofed=f"192.0.2.{i}")
+    _error(_turn(c, token, ADDRESS, spoofed="192.0.2.99"), 429, "ip_requests_limited")
+
+
+def test_the_chat_limit_is_120_turns_per_address_by_default() -> None:
+    settings = Settings(database_url="postgresql+psycopg://unused@localhost:1/unused")
+    assert (settings.chat_ip_request_limit, settings.ip_request_window_minutes) == (120, 15)
