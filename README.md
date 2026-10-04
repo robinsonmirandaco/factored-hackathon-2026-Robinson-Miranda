@@ -4,7 +4,11 @@ A governed agentic workflow for the intake of disputed card and account charges,
 
 - **Public demo:** https://factored-hackathon-2026-robinson-miranda-production.up.railway.app (customer) and `/analista/` (analyst console)
 - **Run and reproduce it:** [Technical guide](#technical-guide)
-- **Decisions:** [docs/adr/](docs/adr/) · **Declarations:** [docs/declarations.md](docs/declarations.md) · **Data card:** [docs/data-card.md](docs/data-card.md) · **Model card:** [docs/model-card.md](docs/model-card.md) · **Reports:** [docs/reports/](docs/reports/)
+- **Decisions:** [docs/adr/](docs/adr/)
+- **Declarations:** [docs/declarations.md](docs/declarations.md)
+- **Data card:** [docs/data-card.md](docs/data-card.md)
+- **Model card:** [docs/model-card.md](docs/model-card.md)
+- **Reports:** [docs/reports/](docs/reports/)
 
 ## The problem
 
