@@ -5,6 +5,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from sqlalchemy import create_engine, make_url, text
 
 from app.adapters.db.session import SchemaUrls, isolated_schema
 from app.core.config import Settings
@@ -42,6 +43,26 @@ def schema() -> Iterator[SchemaUrls]:
 def database_url(schema: SchemaUrls) -> str:
     """URL of trazo_app on the throwaway schema: what the API connects with."""
     return schema.app
+
+
+@pytest.fixture
+def role_that_creates_roles(schema: SchemaUrls) -> Iterator[str]:
+    """Yields the URL of a throwaway login role with CREATEROLE, dropped after.
+
+    Neither superuser nor BYPASSRLS, so it is privileged only through CREATEROLE.
+    """
+    name = f"createrole_{uuid.uuid4().hex[:12]}"
+    password = uuid.uuid4().hex
+    owner = create_engine(schema.admin)
+    try:
+        with owner.begin() as conn:
+            conn.execute(text(f"CREATE ROLE {name} LOGIN CREATEROLE PASSWORD '{password}'"))
+        url = make_url(schema.admin).set(username=name, password=password)
+        yield url.render_as_string(hide_password=False)
+    finally:
+        with owner.begin() as conn:
+            conn.execute(text(f"DROP ROLE IF EXISTS {name}"))
+        owner.dispose()
 
 
 @pytest.fixture(autouse=True)

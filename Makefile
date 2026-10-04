@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations load report-load density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -102,6 +102,18 @@ eval-analysis:
 # unless REASON="..." is given. No LLM call: readings come from the cache.
 eval-ablations:
 	uv run --frozen python -m pipeline.ablations $(if $(REASON),--reason "$(REASON)")
+
+# Load test of TRZ-40 CA7 on an isolated stack (compose project "load", ports 5442 and 8010),
+# never the public URL. Starts from a fresh database with the synthetic fixture and removes the
+# stack at the end; appends to eval/load/runs.jsonl. Only SCENARIO=real calls the LLM, within
+# BUDGET USD:  make load SCENARIO=rules|simulated|real [LEVELS=1,2,4] [BUDGET=0.25]
+load:
+	uv run --frozen python -m pipeline.load run --scenario $(SCENARIO) \
+		$(if $(LEVELS),--levels $(LEVELS)) $(if $(BUDGET),--budget $(BUDGET))
+
+# docs/reports/carga.md from the last recorded run of each load scenario. Makes no request.
+report-load:
+	uv run --frozen python -m pipeline.load report
 
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:

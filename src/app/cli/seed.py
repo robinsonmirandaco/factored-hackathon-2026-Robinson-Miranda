@@ -2,6 +2,7 @@
 
   python -m app.cli.seed cohort [--replace]                 # make seed: the gold cohort
   python -m app.cli.seed synthetic [--replace] [--if-empty] # the CI and compose fixture
+  python -m app.cli.seed synthetic --customers 5000         # the load test (make load)
 
 A database holds one source only; see app.services.seeding.
 """
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--replace", action="store_true", help="empty the database first")
     ap.add_argument("--if-empty", action="store_true", help="do nothing if a seed is present")
     ap.add_argument("--seed", type=int, default=42, help="synthetic generator seed")
+    ap.add_argument("--customers", type=int, default=200, help="synthetic customers")
     ap.add_argument("--report-dir", default="eval/reports", help="synthetic ingestion report")
     args = ap.parse_args(argv)
 
@@ -59,10 +61,10 @@ def main(argv: list[str] | None = None) -> int:
                     s,
                     "synthetic",
                     settings.document_hash_key,
-                    *generate(settings.trazo_now, seed=args.seed),
+                    *generate(settings.trazo_now, seed=args.seed, n_customers=args.customers),
                 )
                 report.write(args.report_dir)
-                detail = {"seed": args.seed, **report.to_dict()}
+                detail = {"seed": args.seed, "customers": args.customers, **report.to_dict()}
             seeding.record(s, args.source, detail)
     except seeding.SeedError as e:
         raise SystemExit(str(e)) from e

@@ -53,7 +53,7 @@ def bind_context(
 
 
 class PrivilegedRoleError(RuntimeError):
-    """The service connected with a role that bypasses row level security."""
+    """The service connected with a role that can bypass row level security or manage roles."""
 
 
 class Database:
@@ -99,22 +99,29 @@ class Database:
             session.close()
 
     def assert_unprivileged(self) -> None:
-        """Checks that the connected role cannot bypass row level security.
+        """Checks that the connected role cannot bypass row level security or manage roles.
 
         Raises:
-            PrivilegedRoleError: If the role is a superuser or has BYPASSRLS.
+            PrivilegedRoleError: If the role is a superuser or has BYPASSRLS or CREATEROLE.
         """
         with self.engine.connect() as conn:
-            name, superuser, bypass = conn.execute(
+            name, superuser, bypass, createrole = conn.execute(
                 text(
-                    "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles "
+                    "SELECT rolname, rolsuper, rolbypassrls, rolcreaterole FROM pg_roles "
                     "WHERE rolname = current_user"
                 )
             ).one()
-        if superuser or bypass:
-            raise PrivilegedRoleError(
-                f"role {name} bypasses row level security; connect as trazo_app"
+        held = [
+            flag
+            for flag, on in (
+                ("SUPERUSER", superuser),
+                ("BYPASSRLS", bypass),
+                ("CREATEROLE", createrole),
             )
+            if on
+        ]
+        if held:
+            raise PrivilegedRoleError(f"role {name} has {', '.join(held)}; connect as trazo_app")
 
     def dispose(self) -> None:
         """Closes every pooled connection."""

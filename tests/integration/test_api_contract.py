@@ -179,6 +179,15 @@ def test_health_reports_real_llm_availability(database_url: str) -> None:
 def test_api_refuses_to_start_as_a_role_that_bypasses_rls(schema: SchemaUrls) -> None:
     # The owner of the test database is a superuser, as POSTGRES_USER is in compose and CI.
     app = create_app(Settings(database_url=schema.admin, llm_enabled=False, log_level="WARNING"))
-    with pytest.raises(PrivilegedRoleError, match="bypasses row level security"):
+    with pytest.raises(PrivilegedRoleError, match="connect as trazo_app"):
+        with TestClient(app):
+            pass
+
+
+def test_api_refuses_to_start_as_a_role_that_creates_roles(role_that_creates_roles: str) -> None:
+    app = create_app(
+        Settings(database_url=role_that_creates_roles, llm_enabled=False, log_level="WARNING")
+    )
+    with pytest.raises(PrivilegedRoleError, match="CREATEROLE"):
         with TestClient(app):
             pass
