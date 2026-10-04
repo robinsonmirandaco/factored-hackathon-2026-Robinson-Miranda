@@ -144,7 +144,7 @@ No level crossed a limit of the machine. Source: `docs/reports/carga.md`.
 
 ## 10. Known limits of the product
 
-10.1. **PII redaction** does not catch an address written in the message; a customer first name that is also a word or a merchant (Luz, Paz, "Tienda Ana") is replaced by `[NAME]` too, losing that text. Any bare run of exactly 10 digits is redacted as a phone (`eb1d0b5`), so an amount written as 10 digits with no separator would lose its clue; no development or calibration message has one. Source: `src/app/domain/pii.py`.
+10.1. **PII redaction** does not catch an address written in the message; a customer first name that is also a word or a merchant (Luz, Paz, "Tienda Ana") is replaced by `[NAME]` too, losing that text. Any bare run of exactly 10 digits is redacted as a phone (`eb1d0b5`), so an amount written as 10 digits with no separator would lose its clue; no development or calibration message has one. A run attached to a letter or to a hyphenated prefix, such as a system id, is not redacted as a phone (9.13). Source: `src/app/domain/pii.py`.
 
 10.2. **The fact checker** does not read numbers in words ("quince días"); "mil", "lucas" and "millones" are read as part of an amount since `4c855a3`. It does not detect an invented merchant missing from the customer's list; its lexicon of forbidden requests is conservative ("we will never ask for your password" is blocked too); it may block a merchant the LLM repeats from the customer's own words. Source: `src/app/domain/fact_check.py`.
 
@@ -161,6 +161,12 @@ No level crossed a limit of the machine. Source: `docs/reports/carga.md`.
 10.8. **A case stopped for security keeps the greeting on reload.** The chat replaces its greeting when it opens on a case with a person (`ffb04f3`), but a case stopped for security is not listed in Mis aclaraciones, so the web cannot tell and greets as usual. Source: `web/assets/view.js` (`chatOpening`).
 
 10.9. **A draft is lost after an expired session.** The chat field is cleared on sign out and on every sign in, so the next person on the browser never sees what the previous one typed (`cd5ca92`). Someone whose session expires with a message typed loses that text when signing in again: the screen cannot tell the same person, since `/me` carries no customer id. A message whose send failed keeps its text in its bubble, with a retry (`5d71ca1`). Source: `web/assets/customer.js`; `web/assets/view.js`.
+
+10.10. **No Strict-Transport-Security or Permissions-Policy header.** Every response carries `X-Content-Type-Options: nosniff`, and the web pages carry a Content-Security-Policy and `Referrer-Policy: no-referrer`; neither the service nor Railway's edge sends `Strict-Transport-Security` or `Permissions-Policy`. Adding both is an improvement for production. Source: `src/app/core/middleware.py`.
+
+10.11. **One demo credential for the analyst.** The analyst console has a single test user and password, read from `ANALYST_DEMO_USER` and `ANALYST_DEMO_PASSWORD`; both are compared in constant time, but the password is not stored as a hash and there are no analyst accounts of their own. The login is limited per address (9.7). Source: `src/app/services/auth.py` (analyst login).
+
+10.12. **The API documentation is public.** `/docs` and `/openapi.json` are served without a session on purpose during the evaluation, so the jury can read the API; publishing the description gives no access, since each route keeps its own authentication. Source: `src/app/main.py`.
 
 ## 11. Not built (future work)
 
