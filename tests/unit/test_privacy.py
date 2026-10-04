@@ -225,3 +225,55 @@ def test_prompts_sent_to_a_simulated_llm_carry_no_pii() -> None:
     for body in sent:
         for secret in SECRETS:
             assert secret not in body
+
+
+# ---- CURP and bare 10-digit phones of Mexico and Argentina ------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("mi CURP es GOMA850315HDFRRN02", "GOMA850315HDFRRN02"),
+        ("LOPE920701MJCPRS03 es mi curp", "LOPE920701MJCPRS03"),
+        ("el documento gom a: goma850315hdfrrn02", "goma850315hdfrrn02"),
+    ],
+)
+def test_a_curp_is_redacted_with_or_without_its_keyword(text: str, secret: str) -> None:
+    out, counts = redact(text)
+    assert secret not in out and DOCUMENT in out and counts == {DOCUMENT: 1}
+
+
+def test_a_curp_is_redacted_by_its_shape_even_with_a_wrong_check_digit() -> None:
+    # No amount, date or folio has this shape, so a mistyped CURP is redacted too.
+    assert redact("referencia GOMA850315HDFRRN09") == ("referencia [DOCUMENT]", {DOCUMENT: 1})
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ("mi número es 5512345678", "5512345678"),
+        ("es el 1145678901, cualquier hora", "1145678901"),
+        ("anota 3312345678 por si acaso", "3312345678"),
+    ],
+)
+def test_a_bare_ten_digit_phone_is_redacted(text: str, secret: str) -> None:
+    out, counts = redact(text)
+    assert secret not in out and PHONE in out and counts == {PHONE: 1}
+
+
+def test_a_ten_digit_cedula_after_its_keyword_stays_a_document() -> None:
+    assert redact("mi cédula 1012345678") == ("mi cédula [DOCUMENT]", {DOCUMENT: 1})
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "me cobraron 123456789",
+        "fueron 1.234.567.890 pesos",
+        "un cargo de 12345678901 en mi tarjeta",
+        "el folio DSP-2026-09417 por 1800",
+        "la tarjeta terminada en 4821 el 12/06/2026",
+    ],
+)
+def test_the_new_rules_leave_amounts_folios_and_digits_alone(text: str) -> None:
+    assert redact(text) == (text, {})

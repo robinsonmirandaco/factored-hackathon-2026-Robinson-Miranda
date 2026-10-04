@@ -65,6 +65,15 @@ export function chipParts(t, lang, chip) {
 // An API error in the screen's language. The API's message is English, for developers: it is
 // never shown; an unknown code gets the generic message.
 export function errorText(t, error) {
+  // The network limit says how long is left of its window, in whole minutes rounded up, and
+  // always the urgent way out: a customer who lost the card cannot wait for the window.
+  if (error?.code === "ip_requests_limited") {
+    const minutes = error.retryAfter ? Math.ceil(error.retryAfter / 60) : null;
+    const wait = minutes === null
+      ? t("error_ip_requests_limited")
+      : minutes <= 1 ? t("error_ip_requests_limited_one") : t("error_ip_requests_limited_wait", { minutes });
+    return `${wait} ${t("error_ip_requests_limited_urgent")}`;
+  }
   const key = `error_${error?.code}`;
   const text = t(key);
   return text === key ? t("errorGeneric") : text;
@@ -146,6 +155,30 @@ function chargeRows(t, lang, c) {
     { key: "product", label: t("field_product"), value: `${label(t, "product", c.product_type)}${c.last4 ? ` •••• ${c.last4}` : ""}` },
     { key: "status", label: t("field_status"), value: label(t, "tx", c.status) },
   ].filter((row) => row.value);
+}
+
+// The field is left empty when a message is sent (a failed one keeps its text in its bubble, with
+// a retry) and when a session ends or starts: whoever signs in next must not see it.
+export function draftOn(event, draft) {
+  return ["send", "logout", "login"].includes(event) ? "" : draft;
+}
+
+// The greeting follows the language of the screen until the customer writes; after that, what is
+// in the chat stays as it was written.
+export function greetingFollowsLanguage(customerMessages) {
+  return customerMessages === 0;
+}
+
+// The bubble of TRAZO while a reply is on its way: the word shown next to the animated dots, and
+// the label read out by screen readers.
+export function typingView(t) {
+  return { word: t("typingWord"), label: t("typing"), dots: 3 };
+}
+
+// The mark of a message of the customer: none while it is sent or once it was, and "not sent"
+// with a retry when the request failed (a limit, the network, the database).
+export function outgoingNote(t, status) {
+  return status === "failed" ? { text: t("notSent"), retry: t("retrySend") } : null;
 }
 
 // Send is enabled only with something to send; an empty field never reaches the API.

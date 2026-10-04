@@ -10,7 +10,8 @@ What it reads, in this order, each span taken once:
   dates                2026-06-17, 17/06/2026, 17/06, 17 de junio (de 2026), 8 jun, 8 de julho
   card digits          terminada en 1234, com final 1234, ****1234
   durations            15 días hábiles, 15 dias úteis, 120 días naturales, 24 horas
-  amounts              $1,234.56, 1.234,56 MXN, R$ 120,00, US$ 120, 120 dólares, 2.500 pesos
+  amounts              $1,234.56, 1.234,56 MXN, R$ 120,00, US$ 120, 120 dólares, 2.500 pesos,
+                       and with a multiplier: 57 mil pesos, 100 lucas, 2 millones, R$ 2 milhões
   merchants            a closed list: the merchants of the customer's own transactions
   numbers              any digits left: a bare "120" can be an amount, so it needs a fact too
 It also reads, over the whole text:
@@ -146,6 +147,26 @@ _AMOUNT = re.compile(
     rf"|(?:\b({_NUM})\s?(?:{_CURRENCY}|d[oó]lares?|pesos|reais|real|reales|euros?)\b)",
     re.IGNORECASE,
 )
+# "57 mil pesos", "100 lucas", "2 millones": the multiplier is part of the amount, so the figure
+# is compared with the records as 57000, not left as a bare 57.
+_MULTIPLIERS = {
+    "mil": Decimal(1000),
+    "luca": Decimal(1000),
+    "lucas": Decimal(1000),
+    "millon": Decimal(1000000),
+    "millón": Decimal(1000000),
+    "millones": Decimal(1000000),
+    "milhao": Decimal(1000000),
+    "milhão": Decimal(1000000),
+    "milhoes": Decimal(1000000),
+    "milhões": Decimal(1000000),
+}
+_SCALED_AMOUNT = re.compile(
+    rf"(?:(?:{_CURRENCY})\s?)?\b({_NUM})\s?"
+    r"(millones|millón|millon|milhões|milhoes|milhão|milhao|mil|lucas|luca)\b"
+    rf"(?:(?:\s+de)?\s?(?:{_CURRENCY}|d[oó]lares?|pesos|reais|real|reales|euros?)\b)?",
+    re.IGNORECASE,
+)
 _DIGITS = re.compile(r"\d+")
 
 # Promises of news or contact that no step of the case backs: the bank may never call. A person
@@ -263,6 +284,7 @@ def extract(text: str, known_merchants: frozenset[str] = frozenset()) -> list[Cl
     )
     take("card_digits", _CARD_DIGITS, lambda m: m.group(1))
     take("deadline", _DURATION, lambda m: f"{m.group(1)} {m.group(2)[0].lower()}")
+    take("amount", _SCALED_AMOUNT, lambda m: _scaled(m.group(1), m.group(2)))
     take("amount", _AMOUNT, lambda m: _amount(m.group(1) or m.group(2)))
     folded = work.casefold()
     for name in sorted(known_merchants, key=len, reverse=True):
@@ -365,6 +387,13 @@ def _amount(raw: str) -> str:
         return str(Decimal(digits).quantize(Decimal("0.01")))
     except InvalidOperation:
         return ""
+
+
+def _scaled(raw: str, multiplier: str) -> str:
+    base = _amount(raw)
+    if not base:
+        return ""
+    return str((Decimal(base) * _MULTIPLIERS[multiplier.lower()]).quantize(Decimal("0.01")))
 
 
 def _blank(text: str, pattern: re.Pattern[str], folded: str) -> str:
