@@ -4,7 +4,7 @@
 // words and formats of the customer web (i18n.js), in Spanish.
 
 import { day, label, money, translator } from "./i18n.js";
-import { chipParts } from "./view.js";
+import { chipParts, stepDuration, stepTime } from "./view.js";
 
 const es = translator("es");
 
@@ -520,3 +520,24 @@ export function reversedGroups(cell) {
 
 // Below the table when the reversals come from the demo or the harness (CA5).
 export const SIMULATED_NOTE = "Reversiones simuladas contra verdad de terreno en la evaluación";
+
+// The history of a case grouped by turn: each step numbered in audit order, with its time since
+// the start of its turn and its duration. The console is in Spanish.
+export function historyTurns(history) {
+  const turns = [];
+  for (const h of history || []) {
+    let turn = turns[turns.length - 1];
+    if (!turn || turn.number !== h.turn) {
+      turn = { number: h.turn, header: h.turn_header, steps: [] };
+      turns.push(turn);
+    }
+    turn.steps.push({
+      number: h.step,
+      text: h.text,
+      meta: `${h.actor} · ${h.action}`,
+      time: stepTime("es", h.offset_ms),
+      duration: stepDuration("es", h.duration_ms),
+    });
+  }
+  return turns;
+}

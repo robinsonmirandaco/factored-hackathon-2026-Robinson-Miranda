@@ -3,13 +3,15 @@
 Each (actor, action) pair has one template per language. A template reads only non-personal
 fields (intent, rule, level, counts, outcome, the analyst's user name and closed-list reason;
 without the user name a line says "the analyst"):
-never the redacted customer text, the reply, a product number or an operator note. The one
-exception is a request for information: its question and the customer's answer, both redacted
-before they are stored, are told so the answer can be read against its question (TRZ-28).
+never the redacted customer text, the reply, a product number or an operator note. Two
+exceptions, both redacted before they are stored: a request for information, whose question and
+answer are told so the answer can be read against its question (TRZ-28), and the message a turn
+starts with, so the turn opens with what the customer wrote (trace by turn, TRZ-34 CA4).
 The LLM takes no part in this text.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal
 
@@ -202,6 +204,15 @@ def _extract(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
         return f"El sistema entendió el mensaje del cliente como «{intent}»{how}."
     how = " (com regras, sem LLM)" if r.get("fallback") else ""
     return f"O sistema entendeu a mensagem do cliente como «{intent}»{how}."
+
+
+def _comprehend(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
+    # A turn opens with what the customer wrote, stored redacted; the purge marker is translated.
+    said = shown(p.get("redacted_text"), lang)
+    if not said:
+        return _extract(lang, p, r, policy)
+    wrote = f"El cliente escribió: «{said}»." if lang == "es" else f"O cliente escreveu: «{said}»."
+    return f"{wrote} {_extract(lang, p, r, policy)}"
 
 
 def _compose(lang: Lang, p: Fields, r: Fields, policy: str | None) -> str:
@@ -872,7 +883,7 @@ Template = Callable[[Lang, Fields, Fields, str | None], str]
 # holds rows of them, which the history must keep telling.
 TEMPLATES: dict[tuple[str, str], Template] = {
     ("agent", "extract"): _extract,
-    ("agent", "comprehend"): _extract,
+    ("agent", "comprehend"): _comprehend,
     ("agent", "confirm"): _confirm,
     ("agent", "decline"): _decline,
     ("agent", "existing_case"): _existing_case,
@@ -946,3 +957,194 @@ def describe(
             return f"Paso «{action}» de {actor}."
         return f"Etapa «{action}» de {actor}."
     return template(lang, payload or {}, result or {}, policy_version)
+
+
+# ---- the steps of a case grouped by turn (TRZ-34 CA4, follow-up) ---------------------------
+
+Audience = Literal["customer", "analyst"]
+
+# What opened a turn, read from the actions of its request, first match wins: a confirmation or
+# a choice also reads the message, so they are checked before the message.
+_TURN_KINDS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("confirmation", (("agent", "confirm"),)),
+    ("decline", (("agent", "decline"),)),
+    ("option", (("agent", "choose"),)),
+    ("recognition", (("agent", "recognize"),)),
+    ("button", (("agent", "button_press"),)),
+    ("info_reply", (("customer", "info_reply"),)),
+    ("note", (("agent", "customer_note"),)),
+    ("message", (("agent", "comprehend"),)),
+    ("analyst", (("human", "decision"),)),
+    ("demo", (("human", "demo_reset"), ("system", "mark_simulated"))),
+    ("session", (("auth", "case_expired"),)),
+)
+
+_TURN_HEADERS: dict[Audience, dict[Lang, dict[str, str]]] = {
+    "customer": {
+        "es": {
+            "message": "Escribiste un mensaje",
+            "option": "Elegiste una opción",
+            "recognition": "Dijiste que no reconoces el cargo",
+            "recognized": "Dijiste que reconoces el cargo",
+            "confirmation": "Confirmaste la acción",
+            "decline": "No aceptaste la acción",
+            "button": "Pulsaste «No lo reconozco» en un movimiento",
+            "info_reply": "Respondiste la pregunta de la analista",
+            "note": "Escribiste en el caso, que ya estaba con una persona",
+            "analyst": "La analista decidió",
+            "system": "El sistema",
+            "session": "La sesión expiró",
+            "demo": "Estado del demo [simulado]",
+        },
+        "pt": {
+            "message": "Você escreveu uma mensagem",
+            "option": "Você escolheu uma opção",
+            "recognition": "Você disse que não reconhece a cobrança",
+            "recognized": "Você disse que reconhece a cobrança",
+            "confirmation": "Você confirmou a ação",
+            "decline": "Você não aceitou a ação",
+            "button": "Você tocou em «Não reconheço» em uma movimentação",
+            "info_reply": "Você respondeu à pergunta da analista",
+            "note": "Você escreveu no caso, que já estava com uma pessoa",
+            "analyst": "A analista decidiu",
+            "system": "O sistema",
+            "session": "A sessão expirou",
+            "demo": "Estado da demonstração [simulado]",
+        },
+    },
+    "analyst": {
+        "es": {
+            "message": "El cliente escribió un mensaje",
+            "option": "El cliente eligió una opción",
+            "recognition": "El cliente dijo que no reconoce el cargo",
+            "recognized": "El cliente dijo que reconoce el cargo",
+            "confirmation": "El cliente confirmó la acción",
+            "decline": "El cliente no aceptó la acción",
+            "button": "El cliente pulsó «No lo reconozco» en un movimiento",
+            "info_reply": "El cliente respondió la pregunta de la analista",
+            "note": "El cliente escribió en el caso, que ya estaba con una persona",
+            "analyst": "La analista decidió",
+            "system": "El sistema",
+            "session": "La sesión expiró",
+            "demo": "Estado del demo [simulado]",
+        },
+        "pt": {
+            "message": "O cliente escreveu uma mensagem",
+            "option": "O cliente escolheu uma opção",
+            "recognition": "O cliente disse que não reconhece a cobrança",
+            "recognized": "O cliente disse que reconhece a cobrança",
+            "confirmation": "O cliente confirmou a ação",
+            "decline": "O cliente não aceitou a ação",
+            "button": "O cliente tocou em «Não reconheço» em uma movimentação",
+            "info_reply": "O cliente respondeu à pergunta da analista",
+            "note": "O cliente escreveu no caso, que já estava com uma pessoa",
+            "analyst": "A analista decidiu",
+            "system": "O sistema",
+            "session": "A sessão expirou",
+            "demo": "Estado da demonstração [simulado]",
+        },
+    },
+}
+
+
+# A turn ends with the agent's turn_complete; mark_simulated is the system's own block.
+_TURN_END = ("agent", "turn_complete")
+_SIMULATED = ("system", "mark_simulated")
+
+
+@dataclass(frozen=True)
+class TurnStep:
+    """One audit row of a turn.
+
+    Attributes:
+        number: Position of the row among all the rows of the case, in audit order (from 1).
+        row: The audit row, with its id, trace_id, actor, action, payload, result, latency_ms
+            and created_at.
+        offset_ms: Milliseconds since the first row of the turn; None for a turn whose rows
+            were written with one shared instant, before each row got its own.
+        duration_ms: Duration the row recorded (latency_ms), when it has one.
+    """
+
+    number: int
+    row: Fields
+    offset_ms: int | None
+    duration_ms: int | None
+
+
+@dataclass(frozen=True)
+class Turn:
+    """The rows written by one request, headed by what opened it.
+
+    Attributes:
+        number: Position of the turn in the case (from 1).
+        kind: What opened it: message, option, recognition, confirmation, decline, button,
+            info_reply, note, analyst, demo, session or system.
+        header: The kind told in the requested language, to the customer or about them.
+        steps: Its rows, in audit order.
+    """
+
+    number: int
+    kind: str
+    header: str
+    steps: list[TurnStep] = field(default_factory=list)
+
+
+def group_turns(rows: Sequence[Fields], audience: Audience, lang: Lang) -> list[Turn]:
+    """Groups the audit rows of a case by the request that wrote them.
+
+    The audit log is append-only, so the order of ids is the order things happened. Only time
+    differences inside a turn are given, never a date or a clock time of the real clock (design
+    10.2, rule 7).
+
+    Args:
+        rows: Audit rows of one case in id order, each with id, trace_id, actor, action, payload,
+            result, latency_ms and created_at.
+        audience: "customer" tells the turns to the customer, "analyst" about the customer.
+        lang: Language of the headers.
+
+    Returns:
+        One turn per request, in the order of their first row. A request that wrote several
+        turns under one trace_id, as seed-demo does with its scripted turns, is cut after each
+        turn_complete, and a mark_simulated row is a block of its own, so a seeded case reads
+        like a real one.
+    """
+    groups: dict[tuple[str, int], list[Fields]] = {}
+    segment: dict[str, int] = {}
+    for row in rows:
+        trace = row["trace_id"]
+        pair = (row["actor"], row["action"])
+        if pair == _SIMULATED:
+            segment[trace] = segment.get(trace, 0) + 1
+        groups.setdefault((trace, segment.get(trace, 0)), []).append(row)
+        if pair in (_TURN_END, _SIMULATED):
+            segment[trace] = segment.get(trace, 0) + 1
+    turns: list[Turn] = []
+    number = 0
+    for members in groups.values():
+        start = members[0]["created_at"]
+        timed = len({m["created_at"] for m in members}) > 1
+        steps = []
+        for m in members:
+            number += 1
+            offset = int((m["created_at"] - start).total_seconds() * 1000) if timed else None
+            steps.append(TurnStep(number, m, offset, m.get("latency_ms")))
+        kind = _turn_kind(members)
+        turns.append(Turn(len(turns) + 1, kind, _turn_header(kind, members, audience, lang), steps))
+    return turns
+
+
+def _turn_kind(members: Sequence[Fields]) -> str:
+    done = {(m["actor"], m["action"]) for m in members}
+    for kind, pairs in _TURN_KINDS:
+        if done.intersection(pairs):
+            return kind
+    return "system"
+
+
+def _turn_header(kind: str, members: Sequence[Fields], audience: Audience, lang: Lang) -> str:
+    key = kind
+    if kind == "recognition":
+        said = next(m for m in members if (m["actor"], m["action"]) == ("agent", "recognize"))
+        if (said.get("result") or {}).get("choice") == "recognized":
+            key = "recognized"
+    return _TURN_HEADERS[audience][lang][key]

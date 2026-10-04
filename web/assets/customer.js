@@ -7,8 +7,9 @@ import { createClient } from "./api.js";
 import { day, dayMonth, dayTime, label, money, translator } from "./i18n.js";
 import {
   AUDIT_KEY, auditOn, auditSwitchView,
-  buttonMessage, canSend, clarificationLines, draftOn, greetingFollowsLanguage, closedNote, codeStep, composerState, createConversation,
-  deadlineKind, traceHref, traceLines, traceRoute,
+  buttonMessage, canSend, chatOpening, clarificationLines, draftOn, greetingFollowsLanguage, closedNote, codeStep,
+  composerState, createConversation,
+  deadlineKind, traceHref, traceRoute, traceView,
   errorText,
   infoRequestViews, movementDetail, notificationsPath, openQuestions, outgoingNote, reviewLine, statusKey, statusTone,
   turnModel, typingView,
@@ -72,6 +73,8 @@ function setLang(lang) {
   api.store.write(LANG_KEY, lang);
   t = translator(lang);
   applyTexts();
+  // Before the customer's first message the opening follows the language: route() reopens the
+  // chat, so a case with a person gets its line again, now in the new language.
   if (greetingFollowsLanguage($("log").querySelectorAll(".msg.me").length)) greet();
   redrawLastTurn();
   drawAudit();
@@ -249,12 +252,23 @@ async function loadMe() {
 // The trace is shown only with the switch on, in demo mode, labeled "demo" by its panel.
 const auditVisible = () => state.audit && Boolean(state.me?.demo);
 
-function timeline(steps) {
-  const lines = traceLines(steps);
-  if (!lines.length) return el("p", { class: "small muted", text: t("traceEmpty") });
-  return el("ol", { class: "timeline" }, lines.map((l) => el("li", {},
-    el("span", { class: "rail" }),
-    el("div", { class: "body" }, el("span", { class: "title", text: l.text })))));
+// The trace by turn: the bank date, language and status of the case, then each turn with its
+// steps numbered in audit order, their time since the start of the turn and their duration.
+function timeline(trace) {
+  const view = traceView(t, state.lang, trace);
+  if (!view.turns.length) return el("p", { class: "small muted", text: t("traceEmpty") });
+  // One number per step, the step's own: a plain list with roles, never a numbered list.
+  return el("div", { class: "trace-body" },
+    el("p", { class: "small muted trace-meta", text: view.meta.join(" · ") }),
+    view.turns.map((turn) => el("section", { class: "trace-turn" },
+      el("h3", { class: "trace-turn-head", text: `${t("turn")} ${turn.number} · ${turn.header}` }),
+      el("div", { class: "timeline", role: "list" }, turn.steps.map((s) => el("div", { class: "step", role: "listitem" },
+        el("span", { class: "rail" }),
+        el("div", { class: "body" },
+          el("span", { class: "title" }, el("span", { class: "step-no", text: `${s.number}.` }), s.text),
+          s.time || s.duration
+            ? el("span", { class: "when", text: [s.time, s.duration && `(${s.duration})`].filter(Boolean).join(" ") })
+            : null)))))));
 }
 
 const traceOf = (caseId) => api.call(
@@ -275,8 +289,8 @@ async function loadPanelTrace() {
   const caseId = state.caseId;
   if (!caseId) return target.replaceChildren(el("p", { class: "small muted", text: t("traceNoCase") }));
   try {
-    const steps = await traceOf(caseId);
-    if (state.caseId === caseId && auditVisible()) target.replaceChildren(timeline(steps));
+    const trace = await traceOf(caseId);
+    if (state.caseId === caseId && auditVisible()) target.replaceChildren(timeline(trace));
   } catch (e) {
     target.replaceChildren(el("p", { class: "small error", text: errorText(t, e) }));
   }
@@ -285,7 +299,7 @@ async function loadPanelTrace() {
 async function renderTrace(caseId) {
   const target = $("view-trace");
   try {
-    const steps = await traceOf(caseId);
+    const trace = await traceOf(caseId);
     target.replaceChildren(
       el("div", { class: "page-head" },
         el("a", { class: "back", href: "#/aclaraciones", text: t("backClarifications") }),
@@ -293,7 +307,7 @@ async function renderTrace(caseId) {
       el("section", { class: "card" },
         el("span", { class: "tiny muted mono", text: `${t("caseLabel")} ${caseId}` }),
         el("p", { class: "small muted", text: t("traceNote") }),
-        timeline(steps)));
+        timeline(trace)));
   } catch (e) {
     const next = traceRoute(location.hash, auditVisible(), e);
     if (next?.redirect) location.replace(next.redirect);
@@ -335,6 +349,7 @@ async function route() {
   const view = VIEWS[location.hash] || "home";
   show(view);
   refreshNotifications();
+  if (view === "chat") openChat();
   if (view === "home") renderHome();
   if (view === "movements") renderMovements(true);
   if (view === "clarifications") renderClarifications();
@@ -667,6 +682,29 @@ function bubble(who, ...children) {
 function greet() {
   $("log").replaceChildren();
   bubble("bot", el("div", { class: "bubble", text: t("chatIntro") }));
+}
+
+// After a reload or in a duplicated tab the tab's case may already be with a person: the
+// greeting is replaced by that, as long as nothing else was said in the chat meanwhile.
+async function openChat() {
+  const caseId = state.caseId;
+  const untouched = () => state.caseId === caseId && !state.lastTurn && $("log").children.length === 1;
+  if (!caseId || !untouched()) return;
+  let items;
+  try {
+    items = await api.call("/me/clarifications");
+  } catch {
+    return;
+  }
+  const { text, review } = chatOpening(t, caseId, items);
+  if (!review && text === t("chatIntro")) return;
+  if (!untouched()) return;
+  $("log").replaceChildren();
+  bubble("bot", el("div", { class: "bubble" }, el("span", { class: "line", text }),
+    review
+      ? el("span", { class: "sim-label" }, el("span", { class: "sim", text: "simulado" }),
+        `${review.text} (${review.label})`)
+      : null));
 }
 
 function chargeCard(rows) {

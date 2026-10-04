@@ -193,6 +193,18 @@ export function reviewLine(t, item) {
   return { text: t("reviewTime", { hours: item.review_hours }), label: t("reviewLabel") };
 }
 
+// The opening of the chat (QA of TRZ-34). After a reload or in a duplicated tab the tab's case may
+// already be with a person; the chat says so instead of greeting as if nothing were open.
+const WITH_PERSON = new Set(["escalated", "pending_analyst_approval", "failed"]);
+
+export function chatOpening(t, caseId, items) {
+  const item = caseId
+    ? (items || []).find((i) => i.source === "cases" && i.case_id === caseId)
+    : null;
+  if (!item || !WITH_PERSON.has(item.status)) return { text: t("chatIntro"), review: null };
+  return { text: t("chatWithPerson", { caseId }), review: reviewLine(t, item) };
+}
+
 // The second line of a movement: city and channel, and the type unless the channel already
 // says it is a purchase ("Compra en línea").
 export function movementDetail(t, m) {
@@ -346,8 +358,43 @@ export function traceCase(hash) {
 }
 
 // The steps as the API tells them; the screen adds no figure, no date and no internal code.
-export function traceLines(steps) {
-  return (steps || []).map((s) => ({ text: s.text, traceId: s.trace_id }));
+// Time of a step as a difference since the first step of its turn, and its duration: never a
+// clock time, since the audit log keeps the real clock (design 10.2, rule 7).
+// Milliseconds under a second ("12 ms"); from one second on, tenths of a second, halves up
+// (1450 ms is 1.5 s), with the decimal comma of es and pt.
+const elapsed = (lang, ms) =>
+  ms < 1000 ? `${Math.round(ms)} ms` : `${(Math.round(ms / 100) / 10).toFixed(1).replace(".", ",")} s`;
+
+export function stepTime(lang, ms) {
+  return ms == null ? null : `+${elapsed(lang, ms)}`;
+}
+
+export function stepDuration(lang, ms) {
+  return ms == null ? null : elapsed(lang, ms);
+}
+
+// The trace of the customer's case: the bank date, language and status above, then each turn
+// with its header and its steps numbered in audit order, as the API wrote them.
+export function traceView(t, lang, trace) {
+  if (!trace) return { meta: [], turns: [] };
+  return {
+    meta: [
+      `${t("bankDate")}: ${day(lang, trace.bank_date)}`,
+      trace.language ? label(t, "language", trace.language) : null,
+      label(t, "status", trace.status),
+    ].filter(Boolean),
+    turns: trace.turns.map((turn) => ({
+      number: turn.number,
+      header: turn.header,
+      steps: turn.steps.map((s) => ({
+        number: s.number,
+        text: s.text,
+        traceId: s.trace_id,
+        time: stepTime(lang, s.offset_ms),
+        duration: stepDuration(lang, s.duration_ms),
+      })),
+    })),
+  };
 }
 
 // Where a trace route goes. With the audit view off it goes back to Mis aclaraciones before any

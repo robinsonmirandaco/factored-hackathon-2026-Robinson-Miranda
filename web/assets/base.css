@@ -266,7 +266,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); }
 
 /* Timeline */
 .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.timeline li { display: flex; gap: 12px; }
+.timeline li, .timeline > .step { display: flex; gap: 12px; }
 .timeline .rail { display: flex; flex-direction: column; align-items: center; width: 14px; flex: none; }
 .timeline .rail::before {
   content: ""; width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; box-sizing: border-box;
@@ -278,6 +278,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); }
 .timeline .body { display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px; min-width: 0; }
 .timeline .title { font-size: 14px; font-weight: 500; }
 .timeline .when { font: 12px var(--mono); color: var(--muted); }
+/* A trace by turn: the case above, then each turn with its numbered steps. */
+.trace-meta { margin: 0 0 12px; }
+.trace-turn + .trace-turn { margin-top: 8px; }
+.trace-turn-head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.timeline .step-no { font: 12px var(--mono); color: var(--muted); margin-right: 6px; }
 
 /* List rows: an initial, two lines and the amount on the right */
 .list { list-style: none; margin: 0; padding: 0; }

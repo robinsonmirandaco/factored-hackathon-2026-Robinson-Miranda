@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.adapters.db.models import AuditRecord
 from app.adapters.llm import LLMCallStats
 from app.core.logging import get_logger, trace_id_var
+from app.core.time import utcnow
 
 log = get_logger("audit")
 
@@ -84,6 +85,9 @@ def write_audit(
     if key:
         raise ReasoningInAuditError(f"audit row {actor}/{action} carries model reasoning: {key}")
     rec = AuditRecord(
+        # The time of this row, not the start of the transaction (the default of the column):
+        # the steps of one turn then keep their own instants for the trace (TRZ-34 CA4).
+        created_at=utcnow(),
         trace_id=trace_id_var.get(),
         case_id=case_id,
         customer_id=customer_id or session.info.get("customer_id"),

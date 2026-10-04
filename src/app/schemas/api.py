@@ -326,6 +326,13 @@ class HistoryEntryOut(BaseModel):
         actor: Who acted.
         action: What was done.
         text: The step in the requested language.
+        turn: Number of the turn (the request) the step belongs to, from 1.
+        turn_kind: What opened the turn (message, option, recognition, confirmation, ...).
+        turn_header: The turn told about the customer, in the requested language.
+        step: Position of the step among all the steps of the case, in audit order, from 1.
+        offset_ms: Milliseconds since the first step of its turn; None for a turn written
+            before each row kept its own time.
+        duration_ms: Duration the step recorded, when it has one.
     """
 
     id: int
@@ -334,6 +341,12 @@ class HistoryEntryOut(BaseModel):
     actor: str
     action: str
     text: str
+    turn: int
+    turn_kind: str
+    turn_header: str
+    step: int
+    offset_ms: int | None
+    duration_ms: int | None
 
 
 class TraceStepOut(BaseModel):
@@ -344,18 +357,61 @@ class TraceStepOut(BaseModel):
     simulated clock (design 10.2, rule 7).
 
     Attributes:
+        number: Position of the step among all the steps of the case, in audit order, from 1.
         id: Audit row id.
         trace_id: Request that wrote the step.
         actor: Who acted.
         action: What was done.
         text: The step in the requested language.
+        offset_ms: Milliseconds since the first step of its turn: a time difference, never a
+            clock time; None for a turn written before each row kept its own time.
+        duration_ms: Duration the step recorded, when it has one.
     """
 
+    number: int
     id: int
     trace_id: str
     actor: str
     action: str
     text: str
+    offset_ms: int | None
+    duration_ms: int | None
+
+
+class TraceTurnOut(BaseModel):
+    """The steps written by one request of the customer's case, headed by what opened it.
+
+    Attributes:
+        number: Position of the turn in the case, from 1.
+        kind: What opened it (message, option, recognition, confirmation, decline, button,
+            info_reply, note, analyst, demo, session or system).
+        header: The turn told to the customer, in the requested language.
+        steps: Its steps, in audit order.
+    """
+
+    number: int
+    kind: str
+    header: str
+    steps: list[TraceStepOut]
+
+
+class TraceOut(BaseModel):
+    """The customer's own case in the audit view of the demo, with structure (TRZ-34 CA4).
+
+    Attributes:
+        case_id: The case.
+        bank_date: Day of the simulated clock of the case: the business date of its dispute
+            when it has one, otherwise the day of the simulated clock (design 5.1).
+        language: Language of the case (es or pt), if known.
+        status: Status of the case.
+        turns: Its steps grouped by turn, in audit order.
+    """
+
+    case_id: str
+    bank_date: date
+    language: str | None
+    status: str
+    turns: list[TraceTurnOut]
 
 
 QueueFilter = Literal["high_priority", "over_1000_usd", "no_match", "verification_failed", "audit"]

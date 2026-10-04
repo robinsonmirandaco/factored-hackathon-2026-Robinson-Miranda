@@ -149,9 +149,10 @@ def test_a_step_with_no_template_still_gets_a_line() -> None:
     assert describe("system", "new_step", None, None, None, "pt") == "Etapa «new_step» de system."
 
 
-# The answer to an analyst's question is the one free text a line tells (QA of TRZ-27/28): it is
-# stored redacted, and the analyst needs it next to the question. Every other step keeps none.
-TELLS_THE_ANSWER = {("customer", "info_reply")}
+# Two free texts a line tells, both stored redacted: the answer to an analyst's question (QA of
+# TRZ-27/28), read next to the question, and the message a turn starts with (QA of the
+# structured trace), so a turn opens with what the customer wrote. Every other step keeps none.
+TELLS_THE_ANSWER = {("customer", "info_reply"), ("agent", "comprehend")}
 
 
 @pytest.mark.parametrize("step", sorted(set(TEMPLATES) - TELLS_THE_ANSWER))
@@ -315,3 +316,39 @@ def test_purged_text_is_told_in_the_language_of_the_line(lang: str, marker: str)
         lang,  # type: ignore[arg-type]
     )
     assert f"«{marker}»" in answer and f"«{marker}»" in question
+
+
+@pytest.mark.parametrize(
+    ("lang", "expected"),
+    [
+        (
+            "es",
+            "El cliente escribió: «No reconozco un cargo de [AMOUNT] en Netflix». El sistema "
+            "entendió el mensaje del cliente como «cargo no reconocido».",
+        ),
+        (
+            "pt",
+            "O cliente escreveu: «No reconozco un cargo de [AMOUNT] en Netflix». O sistema "
+            "entendeu a mensagem do cliente como «cobrança não reconhecida».",
+        ),
+    ],
+)
+def test_a_message_turn_starts_with_what_the_customer_wrote(lang: str, expected: str) -> None:
+    payload = {"redacted_text": "No reconozco un cargo de [AMOUNT] en Netflix"}
+    result = {"intent": "unrecognized_charge", "fallback": False}
+    assert describe("agent", "comprehend", payload, result, "1", lang) == expected  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_purged_message_shows_the_retention_marker(lang: str) -> None:
+    from app.domain.retention import PURGED_TEXT, shown
+
+    line = describe(  # type: ignore[arg-type]
+        "agent",
+        "comprehend",
+        {"redacted_text": PURGED_TEXT},
+        {"intent": "unrecognized_charge"},
+        "1",
+        lang,
+    )
+    assert f"«{shown(PURGED_TEXT, lang)}»" in line

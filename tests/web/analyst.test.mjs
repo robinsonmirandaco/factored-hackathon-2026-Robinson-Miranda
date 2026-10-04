@@ -234,3 +234,31 @@ test("at A2 the dossier proposes no action (TRZ-30 CA7)", () => {
   assert.match(recommendationText(d), /^Sin propuesta: la celda está en A2/);
   assert.equal(recommendationText({ recommended_action: "register", charge_identified: true }), "Registrar la aclaración");
 });
+
+test("the history is grouped by turn with numbered steps, time and duration", async () => {
+  const { historyTurns } = await import("../../web/assets/analyst-view.js");
+  const entry = (step, turn, header, extra = {}) => ({
+    id: 100 + step, at: "2026-10-04T15:00:00", trace_id: `t-${turn}`, actor: "agent", action: "x",
+    text: `Paso ${step}.`, turn, turn_kind: "message", turn_header: header, step,
+    offset_ms: null, duration_ms: null, ...extra,
+  });
+  const history = [
+    entry(1, 1, "El cliente escribió un mensaje", { offset_ms: 0, duration_ms: 1400 }),
+    entry(2, 1, "El cliente escribió un mensaje", { offset_ms: 1450 }),
+    entry(3, 2, "El cliente dijo que no reconoce el cargo", { offset_ms: 0 }),
+  ];
+  assert.deepEqual(historyTurns(history), [
+    {
+      number: 1, header: "El cliente escribió un mensaje",
+      steps: [
+        { number: 1, text: "Paso 1.", meta: "agent · x", time: "+0 ms", duration: "1,4 s" },
+        { number: 2, text: "Paso 2.", meta: "agent · x", time: "+1,5 s", duration: null },
+      ],
+    },
+    {
+      number: 2, header: "El cliente dijo que no reconoce el cargo",
+      steps: [{ number: 3, text: "Paso 3.", meta: "agent · x", time: "+0 ms", duration: null }],
+    },
+  ]);
+  assert.deepEqual(historyTurns([]), []);
+});

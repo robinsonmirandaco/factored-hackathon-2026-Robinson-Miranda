@@ -87,3 +87,22 @@ def test_the_message_field_leaves_no_room_for_the_browsers_own_warning() -> None
     send = re.search(r'<button[^>]*id="send"[^>]*>', html)
     assert field and "required" not in field.group(0)
     assert send and "disabled" in send.group(0)
+
+
+def _block(path: str, start: str, end: str) -> str:
+    code = Path(path).read_text(encoding="utf-8")
+    i = code.index(start)
+    return code[i : code.index(end, i)]
+
+
+def test_the_trace_and_the_history_number_each_step_once() -> None:
+    # QA of the structured trace: a numbered list added its own number, restarting at each
+    # turn, next to the number of the step ("1. 6."). The steps are a plain list with roles.
+    blocks = [
+        _block("web/assets/customer.js", "function timeline(", "\nconst traceOf"),
+        _block("web/assets/analyst.js", "historyTurns(history).map(", "return cards;"),
+    ]
+    for block in blocks:
+        assert 'el("ol"' not in block and 'el("li"' not in block
+        assert 'role: "list"' in block and 'role: "listitem"' in block
+        assert "step-no" in block

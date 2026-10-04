@@ -256,3 +256,39 @@ def test_the_command_refuses_to_run_as_a_role_that_creates_roles(
     with pytest.raises(SystemExit, match="CREATEROLE"):
         jobs.main(["all", "--now", later])
     assert all(word in _text_of_every_row(schema) for word in WORDS)
+
+
+# ---- the time of each row is set by the application (trace with structure, TRZ-34 CA4) ----
+
+
+def test_rows_of_one_turn_get_their_own_time_and_the_purge_still_takes_them(
+    client: TestClient, schema: SchemaUrls, database_url: str
+) -> None:
+    _conversation(client)
+    rows = _query(schema, ROWS)
+    by_turn: dict[str, list[datetime]] = {}
+    for _id, trace_id, _case, _customer, _actor, _action, created_at in rows:
+        by_turn.setdefault(trace_id, []).append(created_at)
+    # In write order, every turn's times never go back, and the rows of a turn are not all
+    # stamped with one instant any more.
+    assert all(times == sorted(times) for times in by_turn.values())
+    assert any(len(set(times)) > 1 for times in by_turn.values() if len(times) > 1)
+
+    assert _purge(database_url, utcnow() + timedelta(days=89))["audit_rows"] == 0
+    assert _purge(database_url, utcnow() + timedelta(days=91))["audit_rows"] > 0
+    assert not [word for word in WORDS if word in _text_of_every_row(schema)]
+    assert _query(schema, ROWS) == rows
+
+
+def test_the_time_of_a_row_cannot_be_changed(client: TestClient, schema: SchemaUrls) -> None:
+    _conversation(client)
+    engine = create_engine(schema.admin)
+    try:
+        for sql in (
+            "UPDATE audit_log SET created_at = created_at - interval '100 days'",
+            "DELETE FROM audit_log WHERE created_at < now()",
+        ):
+            with pytest.raises(DBAPIError, match="append-only"), engine.begin() as conn:
+                conn.execute(text(sql))
+    finally:
+        engine.dispose()

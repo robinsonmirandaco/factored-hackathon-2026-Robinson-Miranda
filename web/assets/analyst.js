@@ -9,7 +9,7 @@ import {
   INJECTION_REASON, REVERSAL_REASONS, SIMULATED_NOTE, actionLabel, autonomyRow, reversedGroups, thresholdsText, actionStateLabel, auditLabel, automationView, demoResetView,
   identificationTable, recommendationText, cellEvidence,
   caseHeading, clueChips, dialogKey, decisionDone, decisionPanel, decisionProblem, factRows, filterChips,
-  identificationLabel, infoExchanges, kindLabel, markedParts, queueRow, reasonLabel, statusLabel,
+  historyTurns, identificationLabel, infoExchanges, kindLabel, markedParts, queueRow, reasonLabel, statusLabel,
 } from "./analyst-view.js";
 
 const api = createClient("analyst");
@@ -449,11 +449,13 @@ function dossierCards(d, history) {
   }
   cards.push(el("section", { class: "card tight" },
     el("h2", { text: "Historial" }),
-    el("ol", { class: "timeline" }, history.map((h) => el("li", {},
-      el("span", { class: "rail" }),
-      el("div", { class: "body" },
-        el("span", { class: "title", text: h.text }),
-        el("span", { class: "when", text: `${h.actor} · ${h.action}` })))))));
+    historyTurns(history).map((turn) => el("section", { class: "trace-turn" },
+      el("h3", { class: "trace-turn-head", text: `Turno ${turn.number} · ${turn.header}` }),
+      el("div", { class: "timeline", role: "list" }, turn.steps.map((s) => el("div", { class: "step", role: "listitem" },
+        el("span", { class: "rail" }),
+        el("div", { class: "body" },
+          el("span", { class: "title" }, el("span", { class: "step-no", text: `${s.number}.` }), s.text),
+          el("span", { class: "when", text: [s.meta, s.time, s.duration && `(${s.duration})`].filter(Boolean).join(" · ") })))))))));
   return cards;
 }
 
