@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations load report-load density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations load report-load figures density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -114,6 +114,10 @@ load:
 # docs/reports/carga.md from the last recorded run of each load scenario. Makes no request.
 report-load:
 	uv run --frozen python -m pipeline.load report
+
+# README figures from docs/reports; matplotlib comes from the figures group only.
+figures:
+	uv run --frozen --group figures python -m pipeline.figures
 
 # Reads the full dataset under $(DATA_DIR)/raw (default ./data) and writes docs/reports/densidad.md.
 density:

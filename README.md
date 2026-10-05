@@ -132,11 +132,23 @@ https://factored-hackathon-2026-robinson-miranda-production.up.railway.app
 | Claims without a source sent | 0/376 | 212/376 |
 | Cost per safe resolution | 0.00233 USD | 0.03234 USD |
 
+![TRAZO against a free agent on four measures](docs/figures/trazo-vs-free-agent.svg)
+
+Measured offline: the four rates of the table with their 95% bootstrap intervals; unsafe outcomes, dossiers, unsourced claims and cost are in the table.
+
 - Paired difference in safe automated resolution: **+37.5 points** [+30.1, +45.7]. TRAZO's 3 repetitions gave the same measures.
 - Comprehension, intent macro F1: rules 0.861, TF-IDF + logistic regression 0.503, Haiku 4.5 0.987 (3 runs), Sonnet 5.5 1.000 (1 run, 2.4 times the cost; Haiku kept). Source: `docs/reports/analisis.md` (Ablations).
 - Identification with the LLM: the true charge is in the conformal set in 97.9% of 304 cases (target 95%), mean set size 1.43, Brier 0.196, ECE 0.070. Source: `docs/reports/identificacion.md`.
 - Across language variants, TRAZO's final decision changes in 5.3% of base cases, the free agent's in 53.2%. Source: `docs/reports/analisis.md` (Invariance).
 - TRAZO's 36 unsafe outcomes: 15 injections and 12 other-customer ids written in the text, 6 cards blocked after a failed registration, 3 messages redirected as out of scope. The first three causes were fixed after the single run and measured on development only; the held-out split was not run again. See `docs/declarations.md` section 2.
+
+![Conformal coverage at each target](docs/figures/conformal-coverage.svg)
+
+Measured offline: how often the true charge is in the conformal set, on the 304 held-out cases, at each target. The curve gives 98.7% at the 95% target because it has no rejection threshold; the service, with it, covers 98.0% (the diamond, LLM run 0, drawn just right of 95%); the 97.9% above is the mean of the 3 LLM runs. Source: `docs/reports/analisis.md` (Ranker against the manual score) and `docs/reports/identificacion.md` (Test split).
+
+![Autonomy against unsafe outcomes](docs/figures/autonomy-vs-unsafe.svg)
+
+Measured offline: containment against cases with any unsafe outcome when the two approval amounts of the policy are halved or doubled, or alpha is 0.10. The chosen point, 500 / 1,000 USD and alpha 0.05, contains 79.5% with 36 unsafe; halving the amounts hands 212 of 376 cases to a person instead of 77, doubling them raises the unsafe outcomes to 48. With alpha 0.10, 8 LLM requests were not in the cache and fell back as in an outage. Source: `docs/reports/evaluacion.md` (Sensitivity of the thresholds).
 
 ## What protects what
 
@@ -183,6 +195,10 @@ The full list, with sources, is in [docs/declarations.md](docs/declarations.md).
 - **The conformal guarantee** is marginal and calibrated on generated messages; real traffic would need recalibration and coverage monitoring.
 - **Replies the LLM still writes.** The closing of a recognized charge and the explanation of a pending duplicate can promise something the system does not do; the fact checker misses new wordings.
 - **Operation.** One replica, a fixed bank date, a demonstration policy, a test identity service, email off; the LLM key of the demo expires on 2026-10-26, after which it falls back to the rules.
+
+![How often Wilson demotes a cell](docs/figures/wilson-detection.svg)
+
+Simulation: of 10,000 review streams per true error rate, Wilson demotes a healthy cell (10% error) in 0.01% within 10 blocks, and a degraded cell (40% error) in 25.25% at the first block of 20 reviews and in 93.76% within 10. Source: `docs/reports/evaluacion.md` (Known error rates).
 
 ---
 
@@ -338,6 +354,7 @@ What each command needs: **DB** the Postgres of Compose (`docker compose up -d -
 | `npx @usebruno/cli run <folder> --env local` (in `bruno/`) | API checks: `auth`, `dispute`, `claims`, `out_of_scope`, `analyst`, `supervision`, `demo` | running API with `DEMO_MODE=true` | Terminal |
 | `make load SCENARIO=rules\|simulated\|real` | Load test on an isolated stack (project `load`, ports 5442 and 8010) | Docker; `real` needs LLM (`BUDGET`, default 0.25) | `eval/load/runs.jsonl` |
 | `make report-load` | Capacity report from the last run of each scenario | nothing | `docs/reports/carga.md` |
+| `make figures` | The four README figures, each drawn value checked against its report | nothing (installs the `figures` group) | `docs/figures/` |
 | `make extract` | Downloads the in-scope tables from S3, incrementally | S3 access | `DATA_DIR/raw` |
 | `make data` | Extract, bronze manifest, silver with quarantine, gold, cohort | S3 access | `DATA_DIR`; `docs/reports/calidad.md`, `cohorte.md` |
 | `make report-data` | Quality and demand reports from silver and gold | data | `docs/reports/calidad.md`, `demanda.md` |
@@ -457,10 +474,10 @@ Every error answers `{error_code, message, trace_id}`, never a stack trace; ever
 | `src/app/cli/` | `init_env`, `migrate`, `seed`, `seed_demo`, `eval` (golden cases), `jobs` |
 | `config/` | `policy.yaml` (the business policy; code applies it, the LLM never reads it), policy passages, prompts, `identification.yaml`, `cases.yaml`, `demo.yaml`, `holidays.yaml`, `normalization.yaml` |
 | `db/migrations/` | Versioned SQL: schema, row level security, audit trigger, retention |
-| `pipeline/` | Extraction, layers and contracts, cohort, case generator, evaluation harness, reports, load test |
+| `pipeline/` | Extraction, layers and contracts, cohort, case generator, evaluation harness, reports, load test, README figures |
 | `eval/` | Golden cases (`cases/`), split manifest, generator prompts, recorded runs (`runs.jsonl`, `load/runs.jsonl`), `ablations.json` |
 | `web/` | Customer web and analyst console (HTML, CSS and JavaScript), served by FastAPI |
-| `docs/` | ADRs, data card, model card, declarations, generated reports |
+| `docs/` | ADRs, data card, model card, declarations, generated reports and figures |
 | `tests/` | `unit/`, `integration/` and `web/` tests; fixtures |
 | `bruno/` | API collection by folder |
 
