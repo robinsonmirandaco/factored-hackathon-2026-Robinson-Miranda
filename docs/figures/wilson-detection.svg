@@ -654,6 +654,99 @@ z
     </g>
    </g>
    <g id="text_8">
+    <!-- almost never demoted -->
+    <g style="fill: #666666" transform="translate(131.050842 291.6) scale(0.11 -0.11)">
+     <defs>
+      <path id="DejaVuSans-50" d="M 3328 2828 
+Q 3544 3216 3844 3400 
+Q 4144 3584 4550 3584 
+Q 5097 3584 5394 3201 
+Q 5691 2819 5691 2113 
+L 5691 0 
+L 5113 0 
+L 5113 2094 
+Q 5113 2597 4934 2840 
+Q 4756 3084 4391 3084 
+Q 3944 3084 3684 2787 
+Q 3425 2491 3425 1978 
+L 3425 0 
+L 2847 0 
+L 2847 2094 
+Q 2847 2600 2669 2842 
+Q 2491 3084 2119 3084 
+Q 1678 3084 1418 2786 
+Q 1159 2488 1159 1978 
+L 1159 0 
+L 581 0 
+L 581 3500 
+L 1159 3500 
+L 1159 2956 
+Q 1356 3278 1631 3431 
+Q 1906 3584 2284 3584 
+Q 2666 3584 2933 3390 
+Q 3200 3197 3328 2828 
+z
+" transform="scale(0.015625)"/>
+      <path id="DejaVuSans-59" d="M 191 3500 
+L 800 3500 
+L 1894 563 
+L 2988 3500 
+L 3597 3500 
+L 2284 0 
+L 1503 0 
+L 191 3500 
+z
+" transform="scale(0.015625)"/>
+      <path id="DejaVuSans-47" d="M 2906 2969 
+L 2906 4863 
+L 3481 4863 
+L 3481 0 
+L 2906 0 
+L 2906 525 
+Q 2725 213 2448 61 
+Q 2172 -91 1784 -91 
+Q 1150 -91 751 415 
+Q 353 922 353 1747 
+Q 353 2572 751 3078 
+Q 1150 3584 1784 3584 
+Q 2172 3584 2448 3432 
+Q 2725 3281 2906 2969 
+z
+M 947 1747 
+Q 947 1113 1208 752 
+Q 1469 391 1925 391 
+Q 2381 391 2643 752 
+Q 2906 1113 2906 1747 
+Q 2906 2381 2643 2742 
+Q 2381 3103 1925 3103 
+Q 1469 3103 1208 2742 
+Q 947 2381 947 1747 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#DejaVuSans-44"/>
+     <use xlink:href="#DejaVuSans-4f" transform="translate(61.28125 0)"/>
+     <use xlink:href="#DejaVuSans-50" transform="translate(89.0625 0)"/>
+     <use xlink:href="#DejaVuSans-52" transform="translate(186.46875 0)"/>
+     <use xlink:href="#DejaVuSans-56" transform="translate(247.65625 0)"/>
+     <use xlink:href="#DejaVuSans-57" transform="translate(299.75 0)"/>
+     <use xlink:href="#DejaVuSans-3" transform="translate(338.953125 0)"/>
+     <use xlink:href="#DejaVuSans-51" transform="translate(370.734375 0)"/>
+     <use xlink:href="#DejaVuSans-48" transform="translate(434.109375 0)"/>
+     <use xlink:href="#DejaVuSans-59" transform="translate(495.640625 0)"/>
+     <use xlink:href="#DejaVuSans-48" transform="translate(554.828125 0)"/>
+     <use xlink:href="#DejaVuSans-55" transform="translate(616.359375 0)"/>
+     <use xlink:href="#DejaVuSans-3" transform="translate(657.46875 0)"/>
+     <use xlink:href="#DejaVuSans-47" transform="translate(689.25 0)"/>
+     <use xlink:href="#DejaVuSans-48" transform="translate(752.734375 0)"/>
+     <use xlink:href="#DejaVuSans-50" transform="translate(814.265625 0)"/>
+     <use xlink:href="#DejaVuSans-52" transform="translate(911.671875 0)"/>
+     <use xlink:href="#DejaVuSans-57" transform="translate(972.859375 0)"/>
+     <use xlink:href="#DejaVuSans-48" transform="translate(1012.0625 0)"/>
+     <use xlink:href="#DejaVuSans-47" transform="translate(1073.59375 0)"/>
+    </g>
+   </g>
+   <g id="text_9">
     <!-- 25.25% -->
     <g style="fill: #222222" transform="translate(438.874589 258.293136) scale(0.11 -0.11)">
      <defs>
@@ -715,7 +808,7 @@ z
      <use xlink:href="#DejaVuSans-8" transform="translate(286.28125 0)"/>
     </g>
    </g>
-   <g id="text_9">
+   <g id="text_10">
     <!-- 93.76% -->
     <g style="fill: #222222" transform="translate(572.002478 99.741422) scale(0.11 -0.11)">
      <defs>
@@ -830,7 +923,7 @@ z
      <use xlink:href="#DejaVuSans-8" transform="translate(286.28125 0)"/>
     </g>
    </g>
-   <g id="text_10">
+   <g id="text_11">
     <!-- 40% true error (degraded cell) -->
     <g style="fill: #222222" transform="translate(442.468689 357.815424) scale(0.11 -0.11)">
      <defs>
@@ -851,32 +944,6 @@ L 2419 1100
 L 313 1100 
 L 313 1709 
 L 2253 4666 
-z
-" transform="scale(0.015625)"/>
-      <path id="DejaVuSans-47" d="M 2906 2969 
-L 2906 4863 
-L 3481 4863 
-L 3481 0 
-L 2906 0 
-L 2906 525 
-Q 2725 213 2448 61 
-Q 2172 -91 1784 -91 
-Q 1150 -91 751 415 
-Q 353 922 353 1747 
-Q 353 2572 751 3078 
-Q 1150 3584 1784 3584 
-Q 2172 3584 2448 3432 
-Q 2725 3281 2906 2969 
-z
-M 947 1747 
-Q 947 1113 1208 752 
-Q 1469 391 1925 391 
-Q 2381 391 2643 752 
-Q 2906 1113 2906 1747 
-Q 2906 2381 2643 2742 
-Q 2381 3103 1925 3103 
-Q 1469 3103 1208 2742 
-Q 947 2381 947 1747 
 z
 " transform="scale(0.015625)"/>
       <path id="DejaVuSans-4a" d="M 2906 1791 
@@ -947,7 +1014,7 @@ z
     </g>
    </g>
   </g>
-  <g id="text_11">
+  <g id="text_12">
    <!-- How often Wilson demotes a cell -->
    <g style="fill: #222222" transform="translate(36 24.746484) scale(0.15 -0.15)">
     <defs>
@@ -1306,7 +1373,7 @@ z
     <use xlink:href="#DejaVuSans-Bold-4f" transform="translate(1812.453125 0)"/>
    </g>
   </g>
-  <g id="text_12">
+  <g id="text_13">
    <!-- 10,000 simulated review streams per true error rate; blocks of 20 reviews. -->
    <g style="fill: #666666" transform="translate(36 47.982422) scale(0.11 -0.11)">
     <defs>
@@ -1317,46 +1384,6 @@ L 897 -744
 L 494 -744 
 L 750 256 
 L 750 794 
-z
-" transform="scale(0.015625)"/>
-     <path id="DejaVuSans-50" d="M 3328 2828 
-Q 3544 3216 3844 3400 
-Q 4144 3584 4550 3584 
-Q 5097 3584 5394 3201 
-Q 5691 2819 5691 2113 
-L 5691 0 
-L 5113 0 
-L 5113 2094 
-Q 5113 2597 4934 2840 
-Q 4756 3084 4391 3084 
-Q 3944 3084 3684 2787 
-Q 3425 2491 3425 1978 
-L 3425 0 
-L 2847 0 
-L 2847 2094 
-Q 2847 2600 2669 2842 
-Q 2491 3084 2119 3084 
-Q 1678 3084 1418 2786 
-Q 1159 2488 1159 1978 
-L 1159 0 
-L 581 0 
-L 581 3500 
-L 1159 3500 
-L 1159 2956 
-Q 1356 3278 1631 3431 
-Q 1906 3584 2284 3584 
-Q 2666 3584 2933 3390 
-Q 3200 3197 3328 2828 
-z
-" transform="scale(0.015625)"/>
-     <path id="DejaVuSans-59" d="M 191 3500 
-L 800 3500 
-L 1894 563 
-L 2988 3500 
-L 3597 3500 
-L 2284 0 
-L 1503 0 
-L 191 3500 
 z
 " transform="scale(0.015625)"/>
      <path id="DejaVuSans-53" d="M 1159 525 
@@ -1498,7 +1525,7 @@ z
     <use xlink:href="#DejaVuSans-11" transform="translate(3700.8125 0)"/>
    </g>
   </g>
-  <g id="text_13">
+  <g id="text_14">
    <!-- Simulation -->
    <g style="fill: #666666" transform="translate(625.407812 21.657422) scale(0.11 -0.11)">
     <defs>
@@ -1546,7 +1573,7 @@ z
     <use xlink:href="#DejaVuSans-51" transform="translate(469.28125 0)"/>
    </g>
   </g>
-  <g id="text_14">
+  <g id="text_15">
    <!-- Source: docs/reports/evaluacion.md, Known error rates -->
    <g style="fill: #666666" transform="translate(36 390.687891) scale(0.09 -0.09)">
     <defs>

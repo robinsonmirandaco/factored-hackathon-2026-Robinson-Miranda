@@ -408,6 +408,9 @@ def draw(f: Figures) -> None:
             ticks.append(i + dx)
             tick_labels.append(when)
         ax.text(i, -11, title, ha="center", va="top", fontsize=BODY, color=INK)
+        if rate == "10%":
+            # Its bars are near zero; without a note the group reads as missing.
+            ax.text(i, 14, "almost never demoted", ha="center", fontsize=BODY, color=INK2)
     ax.set_xticks(ticks, tick_labels)
     ax.set_ylim(0, 105)
     _clean(ax, left=False)
