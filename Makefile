@@ -1,4 +1,4 @@
-.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations load report-load density extract data report-data diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
+.PHONY: init install dev test test-web lint up down migrate seed seed-synthetic seed-demo jobs expire-info-requests send-email purge golden eval eval-run eval-sensitivity eval-degradation eval-analysis eval-ablations load report-load density extract data report-data report-impact diff-backup cases cases-template cases-check cases-review cases-agreement eval-comprehension eval-language fit-identification eval-identification policy-agreement
 
 install:
 	uv sync --frozen
@@ -133,6 +133,11 @@ data: extract
 # nothing under $(DATA_DIR).
 report-data:
 	uv run --frozen python -m pipeline.reports
+
+# docs/reports/impacto.md from gold/demand_interactions of the last make data: agent hours of
+# disputes and their cost, as a labeled projection. Writes nothing under $(DATA_DIR).
+report-impact:
+	uv run --frozen python -m pipeline.impact
 
 # Downloads the in-scope tables of the backup prefix (read-only, incremental) into
 # $(DATA_DIR)/backup, apart from raw/, and compares them with the current version:

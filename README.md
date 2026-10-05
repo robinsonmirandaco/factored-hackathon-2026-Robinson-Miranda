@@ -341,6 +341,7 @@ What each command needs: **DB** the Postgres of Compose (`docker compose up -d -
 | `make extract` | Downloads the in-scope tables from S3, incrementally | S3 access | `DATA_DIR/raw` |
 | `make data` | Extract, bronze manifest, silver with quarantine, gold, cohort | S3 access | `DATA_DIR`; `docs/reports/calidad.md`, `cohorte.md` |
 | `make report-data` | Quality and demand reports from silver and gold | data | `docs/reports/calidad.md`, `demanda.md` |
+| `make report-impact` | Agent hours of disputes and their cost, as a labeled projection, from gold | data | `docs/reports/impacto.md` |
 | `make diff-backup` | Compares the current data with the organizers' earlier backup | S3 access | `docs/reports/diferencias_versiones.md` |
 | `make density` | Disputable transactions per customer in the window | data | `docs/reports/densidad.md` |
 | `make seed` | Loads the 5,000-customer cohort (`REPLACE=1` empties the database first) | DB, data | database |

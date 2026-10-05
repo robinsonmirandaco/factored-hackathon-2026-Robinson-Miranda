@@ -1,0 +1,291 @@
+"""Impact report (`docs/reports/impacto.md`), written by `make report-impact` from the gold
+interactions mart only (design §14).
+
+Contacts carry no dispute subcategory and complaints are not linked to their call, so the agent
+minutes of disputes cannot be measured: they are the complaint contact minutes times the share of
+disputes among registered complaints, an assumption. The cost per agent hour is a published
+outsourcing rate, so every figure built on it is a projection.
+"""
+
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+import duckdb
+
+from app.core.logging import configure_logging, get_logger
+from pipeline.report import _n, _table
+from pipeline.settings import PipelineSettings
+from pipeline.silver import sql_str
+
+log = get_logger("pipeline.impact")
+
+COMPLAINT_CATEGORY = "Queja"
+# docs/reports/demanda.md, Dispute complaints: 24,491 of 67,095 complaints. Gold has no
+# subcategory, so the share is carried as a declared assumption, not read here.
+DISPUTE_COMPLAINTS = 24_491
+ALL_COMPLAINTS = 67_095
+DAYS_PER_YEAR = 365.25
+# Centris Information Services, "Nearshore Call Center Pricing: 2026 Rates & Costs", 2026-07-28:
+# fully loaded USD per agent hour, Colombia 12 to 20 and Mexico 13 to 23.
+COST_PER_HOUR_USD = (12, 23)
+COST_SOURCE = (
+    'Centris Information Services, "Nearshore Call Center Pricing: 2026 Rates & Costs", '
+    "2026-07-28, https://centrisinfo.com/nearshore-call-center-pricing/"
+)
+# docs/reports/evaluacion.md, the five measures and operational efficiency: TRAZO's safe automated
+# resolution 66.2% [56.8%, 75.6%] (233/352) and its LLM cost per safe resolution. Read from the
+# published report, never from the held-out split; a test keeps them equal to its text.
+SAFE_RESOLUTION = {"central": 0.662, "conservative": 0.568}
+LLM_COST_PER_SAFE_RESOLUTION_USD = 0.00233
+
+
+@dataclass(frozen=True)
+class ComplaintMinutes:
+    """Complaint contact figures of the gold interactions mart.
+
+    Attributes:
+        contacts: Complaint contacts.
+        contacts_with_duration: Complaint contacts whose interaction type has a duration.
+        minutes: Agent minutes of complaint contacts.
+        first_partition: First partition date of the mart.
+        last_partition: Last partition date of the mart.
+        batch_id: Batch id of the mart.
+    """
+
+    contacts: int
+    contacts_with_duration: int
+    minutes: float
+    first_partition: date
+    last_partition: date
+    batch_id: str
+
+    @property
+    def days(self) -> int:
+        """Days covered, both ends included."""
+        return (self.last_partition - self.first_partition).days + 1
+
+
+def complaint_minutes(con: duckdb.DuckDBPyConnection, data_dir: Path) -> ComplaintMinutes:
+    """Reads the complaint contact figures from `gold/demand_interactions`.
+
+    Args:
+        con: DuckDB connection.
+        data_dir: Root data directory.
+
+    Returns:
+        Complaint contacts, those with a duration, their agent minutes, the partition range and
+        the batch id of the whole mart.
+    """
+    mart = sql_str(str(data_dir / "gold" / "demand_interactions.parquet"))
+    contacts, with_duration, minutes = con.execute(
+        f"""
+        SELECT sum(contacts), sum(contacts_with_duration), sum(duration_seconds) / 60
+        FROM read_parquet({mart}) WHERE reason_category = ?
+        """,
+        [COMPLAINT_CATEGORY],
+    ).fetchone()
+    first, last, batch = con.execute(
+        f"SELECT min(partition_date), max(partition_date), string_agg(DISTINCT batch_id, ', ') "
+        f"FROM read_parquet({mart})"
+    ).fetchone()
+    return ComplaintMinutes(int(contacts), int(with_duration), float(minutes), first, last, batch)
+
+
+def dispute_contacts_per_year(figures: ComplaintMinutes) -> float:
+    """Complaint contacts per year attributed to disputes.
+
+    Args:
+        figures: Complaint contact figures.
+
+    Returns:
+        contacts x (disputes / complaints) x (365.25 / days).
+    """
+    share = DISPUTE_COMPLAINTS / ALL_COMPLAINTS
+    return figures.contacts * share * (DAYS_PER_YEAR / figures.days)
+
+
+def dispute_hours_per_year(figures: ComplaintMinutes) -> float:
+    """Agent hours per year attributed to disputes.
+
+    Args:
+        figures: Complaint contact figures.
+
+    Returns:
+        minutes x (disputes / complaints) x (365.25 / days) / 60.
+    """
+    share = DISPUTE_COMPLAINTS / ALL_COMPLAINTS
+    return figures.minutes * share * (DAYS_PER_YEAR / figures.days) / 60
+
+
+def render(figures: ComplaintMinutes) -> str:
+    """Builds the impact report.
+
+    Args:
+        figures: Complaint contact figures.
+
+    Returns:
+        The Markdown report.
+    """
+    share = DISPUTE_COMPLAINTS / ALL_COMPLAINTS
+    factor = DAYS_PER_YEAR / figures.days
+    hours = dispute_hours_per_year(figures)
+    low, high = COST_PER_HOUR_USD
+    lines = [
+        "# Impact",
+        "",
+        "Generated by `make report-impact` (design §14) from `gold/demand_interactions` only. "
+        "Counts and sums only: no row is shown. Labels: **[data]** read from gold; **[offline]** "
+        "measured on the held-out cases, copied from `docs/reports/evaluacion.md`; "
+        "**[assumption]** a value the data does not give; **[projection]** a figure built on an "
+        "assumption, not a measurement.",
+        "",
+        "## Run",
+        "",
+        f"- Batch id: {figures.batch_id}",
+        f"- Partitions: {figures.first_partition} to {figures.last_partition} "
+        f"({_n(figures.days)} days, both ends included)",
+        "",
+        "## Complaint contacts [data]",
+        "",
+        *_table(
+            ["Measure", "Value", "Formula"],
+            [
+                ["Complaint contacts", _n(figures.contacts), "sum(`contacts`)"],
+                [
+                    "Contacts with a duration",
+                    _n(figures.contacts_with_duration),
+                    "sum(`contacts_with_duration`)",
+                ],
+                ["Agent minutes", f"{figures.minutes:,.0f}", "sum(`duration_seconds`) / 60"],
+                [
+                    "Minutes per contact with a duration",
+                    f"{figures.minutes / figures.contacts_with_duration:.2f}",
+                    "agent minutes / contacts with a duration",
+                ],
+            ],
+        ),
+        "",
+        f"Source: `gold/demand_interactions`, `reason_category = '{COMPLAINT_CATEGORY}'`, over "
+        "the whole period. Interaction types without a duration add no minutes.",
+        "",
+        "## Agent hours per year attributed to disputes [projection]",
+        "",
+        "Contacts have no dispute subcategory and `origin_interaction_id` links no complaint to "
+        "its call (`docs/reports/demanda.md`), so dispute minutes are not measured.",
+        "",
+        f"- **[assumption]** Disputes take the same share of complaint contact minutes as of "
+        f"registered complaints: {_n(DISPUTE_COMPLAINTS)} / {_n(ALL_COMPLAINTS)} = "
+        f"{100 * share:.2f}% (`docs/reports/demanda.md`, Dispute complaints).",
+        f"- Annual factor: {DAYS_PER_YEAR} / {_n(figures.days)} = {factor:.5f}.",
+        "",
+        f"Hours per year = {figures.minutes:,.0f} min x {share:.4f} x {factor:.5f} / 60 = "
+        f"**{hours:,.0f} h**.",
+        "",
+        "## Annual cost of those hours [projection]",
+        "",
+        f"- **[assumption]** Cost per agent hour: {low} to {high} USD, the fully loaded nearshore "
+        f"outsourcing rates for Mexico and Colombia in {COST_SOURCE}. It is the price an "
+        "outsourcer charges its clients, not a bank's internal cost, and not specific to "
+        "banking.",
+        "",
+        *_table(
+            ["USD per hour", "USD per minute", "USD per year"],
+            [[str(rate), f"{rate / 60:.3f}", f"{hours * rate:,.0f}"] for rate in COST_PER_HOUR_USD],
+        ),
+        "",
+        "USD per year = hours per year x USD per hour. These are all the agent hours attributed "
+        "to disputes, not the hours an automated system would free.",
+        "",
+        *_freed(figures),
+    ]
+    return "\n".join(lines)
+
+
+def _freed(figures: ComplaintMinutes) -> list[str]:
+    hours = dispute_hours_per_year(figures)
+    contacts = dispute_contacts_per_year(figures)
+    low, high = COST_PER_HOUR_USD
+    rows = []
+    for scenario, rate in SAFE_RESOLUTION.items():
+        freed = hours * rate
+        resolutions = contacts * rate
+        rows.append(
+            [
+                scenario,
+                f"{100 * rate:.1f}%",
+                f"{resolutions:,.0f}",
+                f"{freed:,.0f}",
+                f"{freed * low:,.0f}",
+                f"{freed * high:,.0f}",
+                f"{resolutions * LLM_COST_PER_SAFE_RESOLUTION_USD:,.2f}",
+            ]
+        )
+    return [
+        "## Agent hours TRAZO would free [projection]",
+        "",
+        "Both scenarios are projections: they apply a rate measured offline on the held-out "
+        "cases, with a simulated client, to dispute contacts whose minutes are themselves an "
+        "assumption. Nothing here was measured in production.",
+        "",
+        "- **[offline]** Safe automated resolution of TRAZO: 66.2% [56.8%, 75.6%] (233/352), "
+        "95% bootstrap over base cases (`docs/reports/evaluacion.md`, The five measures). The "
+        "central scenario uses 66.2%, the conservative one the lower end, 56.8%.",
+        f"- **[offline]** LLM cost per safe resolution: {LLM_COST_PER_SAFE_RESOLUTION_USD} USD at "
+        "list prices of 2026-10-02 (`docs/reports/evaluacion.md`, Operational efficiency). It "
+        "leaves out the compute of the service and the database.",
+        "- **[assumption]** A safely resolved case frees all the agent minutes of its contact, "
+        "and the rate measured on the held-out mix holds for the real mix of disputes.",
+        f"- Dispute contacts per year: {_n(figures.contacts)} x "
+        f"{DISPUTE_COMPLAINTS / ALL_COMPLAINTS:.4f} x {DAYS_PER_YEAR / figures.days:.5f} = "
+        f"{contacts:,.0f}.",
+        "",
+        *_table(
+            [
+                "Scenario",
+                "Safe resolution",
+                "Safe resolutions per year",
+                "Hours freed per year",
+                f"USD per year at {low} USD/h",
+                f"USD per year at {high} USD/h",
+                "TRAZO LLM USD per year",
+            ],
+            rows,
+        ),
+        "",
+        "Safe resolutions per year = dispute contacts per year x rate. Hours freed = dispute "
+        f"hours per year ({hours:,.0f}) x rate. USD = hours freed x USD per hour. TRAZO LLM USD "
+        f"= safe resolutions per year x {LLM_COST_PER_SAFE_RESOLUTION_USD}.",
+        "",
+    ]
+
+
+def write_report(settings: PipelineSettings) -> None:
+    """Writes the impact report from the gold mart of the last `make data`.
+
+    Args:
+        settings: Pipeline settings: data directory and report path.
+
+    Raises:
+        FileNotFoundError: `make data` has not produced the gold interactions mart yet.
+    """
+    mart = settings.data_dir / "gold" / "demand_interactions.parquet"
+    if not mart.exists():
+        raise FileNotFoundError(f"no gold interactions mart under {settings.data_dir}")
+    figures = complaint_minutes(duckdb.connect(), settings.data_dir)
+    settings.impact_report_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.impact_report_path.write_text(render(figures))
+    log.info(
+        "impact_report_written", batch_id=figures.batch_id, path=str(settings.impact_report_path)
+    )
+
+
+def main() -> None:
+    """Writes the report with the configured settings."""
+    settings = PipelineSettings()
+    configure_logging(settings.log_level)
+    write_report(settings)
+
+
+if __name__ == "__main__":
+    main()
