@@ -28,6 +28,7 @@ class PipelineSettings(BaseSettings):
     normalization_path: Path = Path("config/normalization.yaml")
     quality_report_path: Path = Path("docs/reports/calidad.md")
     demand_report_path: Path = Path("docs/reports/demanda.md")
+    impact_report_path: Path = Path("docs/reports/impacto.md")
     versions_report_path: Path = Path("docs/reports/diferencias_versiones.md")
     # Serving cohort (TRZ-07): 5,000 customers, the size TRZ-01 kept (plan A).
     cohort_size: int = Field(default=5000, gt=0)
