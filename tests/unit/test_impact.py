@@ -8,7 +8,10 @@ import pytest
 from pipeline.impact import (
     ALL_COMPLAINTS,
     DISPUTE_COMPLAINTS,
+    LLM_COST_PER_SAFE_RESOLUTION_USD,
+    SAFE_RESOLUTION,
     complaint_minutes,
+    dispute_contacts_per_year,
     dispute_hours_per_year,
     write_report,
 )
@@ -62,6 +65,33 @@ def test_report_labels_the_assumption_and_the_projection(data_dir: Path) -> None
     assert "## Annual cost of those hours [projection]" in report
     assert "24,491 / 67,095 = 36.50%" in report
     assert "Centris Information Services" in report and "2026-07-28" in report
+
+
+def test_offline_rates_match_the_published_evaluation_report() -> None:
+    evaluation = Path("docs/reports/evaluacion.md").read_text()
+
+    central = 100 * SAFE_RESOLUTION["central"]
+    conservative = 100 * SAFE_RESOLUTION["conservative"]
+    assert f"| {central:.1f}% [{conservative:.1f}%, 75.6%] (233/352);" in evaluation
+    assert f"| Cost per safe resolution (USD) | {LLM_COST_PER_SAFE_RESOLUTION_USD} |" in evaluation
+
+
+def test_freed_hours_and_llm_cost_apply_each_scenario_rate(data_dir: Path) -> None:
+    settings = PipelineSettings(data_dir=data_dir, impact_report_path=data_dir / "impacto.md")
+    figures = complaint_minutes(duckdb.connect(), data_dir)
+
+    write_report(settings)
+    report = (data_dir / "impacto.md").read_text()
+
+    rate = SAFE_RESOLUTION["central"]
+    freed = dispute_hours_per_year(figures) * rate
+    llm = dispute_contacts_per_year(figures) * rate * LLM_COST_PER_SAFE_RESOLUTION_USD
+    assert dispute_contacts_per_year(figures) == pytest.approx(
+        15 * (DISPUTE_COMPLAINTS / ALL_COMPLAINTS) * (365.25 / 366)
+    )
+    assert "## Agent hours TRAZO would free [projection]" in report
+    assert "| central | 66.2% |" in report and "| conservative | 56.8% |" in report
+    assert f"| {freed * 12:,.0f} | {freed * 23:,.0f} | {llm:,.2f} |" in report
 
 
 def test_report_without_gold_fails(tmp_path: Path) -> None:
